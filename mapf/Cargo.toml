@@ -2,6 +2,7 @@
 name = "mapf"
 version = "0.1.0"
 edition = "2021"
+description = "Base traits and utilities for multi-agent planning"
 license = "Apache-2.0"
 repository = "https://github.com/open-rmf/mapf"
 keywords = ["mapf", "multi", "agent", "planning", "search"]
