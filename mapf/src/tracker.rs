@@ -15,6 +15,14 @@
  *
 */
 
-use std::rc::Rc;
+pub trait Tracker<Node>: Default {
+    fn expanded_to(&mut self, node: &Node);
+}
 
-use super::expander;
+
+#[derive(Default)]
+pub struct NoDebug;
+
+impl<Node> Tracker<Node> for NoDebug {
+    fn expanded_to(&mut self, _: &Node) { }
+}

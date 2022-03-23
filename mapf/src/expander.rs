@@ -15,11 +15,34 @@
  *
 */
 
+use std::rc::Rc;
+use super::node;
+
 pub trait Expander {
 
-    type Configuration;
-    type Options;
-    type Node;
+    type Start;
+    type Node: node::Node;
+    type Options: Clone;
+    type Expansion: Iterator<Item=Rc<Self::Node>>;
 
-    fn new(config: Self::Configuration) -> Self;
+    fn default_options(&self) -> Self::Options;
+
+    fn expand(&self, parent: &Rc<Self::Node>) -> Self::Expansion;
+
+    fn start(&self, start: Self::Start) -> Self::Expansion;
+}
+
+pub trait Reversible<Reverse: Expander>: Expander {
+    /// Note: Reverse::Start must be equivalent to the Forward Expander's Goal
+    fn reverse(&self) -> Rc<Reverse>;
+}
+
+pub trait Heuristic<Node: node::Node> {
+    fn estimate(&self, node: &Node) -> Option<u64>;
+}
+
+pub trait Informed<Node: node::Node> {
+    type Heuristic: Heuristic<Node>;
+
+    fn heuristic(&self) -> Rc<Self::Heuristic>;
 }

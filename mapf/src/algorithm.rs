@@ -15,6 +15,36 @@
  *
 */
 
-use std::rc::Rc;
-
 use super::expander;
+use super::tracker;
+use super::node;
+
+pub enum Result {
+    Incomplete,
+    Impossible,
+    Solved(Solution)
+}
+
+pub struct Solution {
+
+}
+
+
+pub trait Storage<Expander: expander::Expander> {
+    fn node_count(&self) -> usize;
+    fn top_cost_estimate(&self)
+    -> <<Expander as expander::Expander>::Node as node::Node>::Cost;
+}
+
+pub trait Algorithm<Expander: expander::Expander>  {
+    type Storage: Storage<Expander>;
+
+    fn initialize<Goal, Tracker: tracker::Tracker<Expander::Node>>(
+        &self,
+        start: &Expander::Start,
+        goal: &Goal,
+        expander: &Expander,
+        tracker: &Tracker
+    ) -> Self::Storage;
+
+}

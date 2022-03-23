@@ -19,10 +19,21 @@ use std::hash::{Hash, Hasher, BuildHasher};
 use std::rc::Rc;
 use std::collections::hash_map::Entry;
 
+/// The generic trait for a Node. This contains the minimal generalized
+/// information that most algorithms will need from a search node in order to
+/// solve a search problem.
 pub trait Node : Sized {
+    type Cost: Ord;
     type ClosedSet: ClosedSet<Self>;
+
+    fn cost(&self) -> Self::Cost;
+    fn remaining_cost_estimate(&self) -> Self::Cost;
+    fn total_cost_estimate(&self) -> Self::Cost;
+
+    fn parent(&self) -> &Option<Rc<Self>>;
 }
 
+/// The result of attempting to add a node to the Closed Set.
 pub enum CloseResult<NodeType: Node> {
     /// The node was successfully closed. No other node was previously closed
     /// with an equivalent state.
@@ -33,11 +44,16 @@ pub enum CloseResult<NodeType: Node> {
     Prior(Rc<NodeType>)
 }
 
+/// The result of checking whether an equivalent node is already in the
+/// ClosedSet.
 pub enum ClosedStatus<NodeType: Node> {
     Open,
     Closed(Rc<NodeType>)
 }
 
+/// The generic trait of a Closed Set. "Closed Sets" are used to keep avoid
+/// unnecessary search effort. They keep track of the lowest cost node which has
+/// visited a certain location.
 pub trait ClosedSet<NodeType: Node> {
 
     /// Tell the closed set to close this node.
@@ -52,6 +68,14 @@ pub struct HashClosedSet<NodeType> where
     closed_set: std::collections::HashMap<u64, Rc<NodeType>>
 }
 
+impl<NodeType: Hash> Default for HashClosedSet<NodeType> {
+    fn default() -> Self {
+        return HashClosedSet {
+            closed_set: std::collections::HashMap::<u64, Rc<NodeType>>::default()
+        }
+    }
+}
+
 impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
     NodeType: Node + Hash {
 
@@ -64,8 +88,13 @@ impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
         let key = hasher.finish();
         let entry = self.closed_set.entry(key);
         match entry {
-            Entry::Occupied(occupied) => {
-                return CloseResult::Prior(occupied.get().clone());
+            Entry::Occupied(mut occupied) => {
+                if occupied.get().total_cost_estimate() <= node.total_cost_estimate() {
+                    return CloseResult::Prior(occupied.get().clone());
+                }
+
+                occupied.insert(node.clone());
+                return CloseResult::Closed;
             },
             Entry::Vacant(vacant) => {
                 vacant.insert(node.clone());
@@ -87,5 +116,86 @@ impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
                 return ClosedStatus::Open
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    struct TestNode {
+        graph_index: usize,
+        cost: u64,
+        remaining_cost_estimate: u64,
+        parent: Option<Rc<Self>>
+    }
+
+    impl Hash for TestNode {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            state.write_usize(self.graph_index);
+        }
+    }
+
+    impl Node for TestNode {
+        type ClosedSet = HashClosedSet<Self>;
+        type Cost = u64;
+
+        fn cost(&self) -> u64 {
+            return self.cost;
+        }
+        fn remaining_cost_estimate(&self) -> u64 {
+            return self.remaining_cost_estimate;
+        }
+        fn total_cost_estimate(&self) -> u64 {
+            return self.cost + self.remaining_cost_estimate;
+        }
+        fn parent(&self) -> &Option<Rc<Self>> {
+            return &self.parent;
+        }
+    }
+
+    #[test]
+    fn hashable_node_can_enter_closed_set() {
+
+        let mut closed_set = HashClosedSet::<TestNode>::default();
+
+        let node_1 = Rc::<TestNode>::new(
+            TestNode{
+                graph_index: 0,
+                cost: 10,
+                remaining_cost_estimate: 6,
+                parent: None
+            }
+        );
+
+        assert!(matches!(closed_set.status(&node_1), ClosedStatus::Open));
+        assert!(matches!(closed_set.close(&node_1), CloseResult::Closed));
+        assert!(matches!(closed_set.status(&node_1), ClosedStatus::Closed(_)));
+
+        let node_2 = Rc::<TestNode>::new(
+            TestNode {
+                graph_index: 0,
+                cost: 12,
+                remaining_cost_estimate: 6,
+                parent: Some(node_1.clone())
+            }
+        );
+
+        assert!(matches!(closed_set.status(&node_2), ClosedStatus::Closed(_)));
+        assert!(matches!(closed_set.close(&node_2), CloseResult::Prior(_)));
+
+        let node_3 = Rc::<TestNode>::new(
+            TestNode {
+                graph_index: 1,
+                cost: 2,
+                remaining_cost_estimate: 3,
+                parent: Some(node_2.clone())
+            }
+        );
+
+        assert!(matches!(closed_set.status(&node_3), ClosedStatus::Open));
+        assert!(matches!(closed_set.close(&node_3), CloseResult::Closed));
+        assert!(matches!(closed_set.status(&node_3), ClosedStatus::Closed(_)));
     }
 }

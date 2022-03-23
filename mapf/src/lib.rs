@@ -16,10 +16,7 @@
 */
 
 pub mod planner;
-pub use planner::Planner;
-
-pub mod progress;
-pub use progress::Progress;
+pub use planner::{Planner, Progress};
 
 pub mod expander;
 pub use expander::Expander;
@@ -27,11 +24,8 @@ pub use expander::Expander;
 pub mod node;
 pub use node::Node;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+pub mod algorithm;
+pub use algorithm::Algorithm;
+
+pub mod tracker;
+pub use tracker::Tracker;
