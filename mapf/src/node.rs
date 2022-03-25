@@ -18,19 +18,31 @@
 use std::hash::{Hash, Hasher, BuildHasher};
 use std::rc::Rc;
 use std::collections::hash_map::Entry;
+use std::ops::Add;
+use std::cmp::Ord;
 
 /// The generic trait for a Node. This contains the minimal generalized
 /// information that most algorithms will need from a search node in order to
 /// solve a search problem.
 pub trait Node : Sized {
-    type Cost: Ord;
+    type Cost: Ord + Add;
     type ClosedSet: ClosedSet<Self>;
 
     fn cost(&self) -> Self::Cost;
-    fn remaining_cost_estimate(&self) -> Self::Cost;
-    fn total_cost_estimate(&self) -> Self::Cost;
-
     fn parent(&self) -> &Option<Rc<Self>>;
+}
+
+/// A subset of Node which has an informed estimate of how far it is from its goal
+pub trait Informed: Node {
+
+    /// Get the estimate of the remaining cost from the goal
+    fn remaining_cost_estimate(&self) -> Self::Cost;
+
+    /// Get the estimate of the total cost from the goal. This should always be
+    /// equal to cost() + remaining_cost_estimate(), but we make it a separate
+    /// function so that implementers can choose to micro-optimize by adding and
+    /// saving the result.
+    fn total_cost_estimate(&self) -> Self::Cost;
 }
 
 /// The result of attempting to add a node to the Closed Set.
@@ -89,7 +101,7 @@ impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
         let entry = self.closed_set.entry(key);
         match entry {
             Entry::Occupied(mut occupied) => {
-                if occupied.get().total_cost_estimate() <= node.total_cost_estimate() {
+                if occupied.get().cost() <= node.cost() {
                     return CloseResult::Prior(occupied.get().clone());
                 }
 
@@ -128,7 +140,7 @@ mod tests {
         graph_index: usize,
         cost: u64,
         remaining_cost_estimate: u64,
-        parent: Option<Rc<Self>>
+        parent: Option<Rc<Self>>,
     }
 
     impl Hash for TestNode {
@@ -144,14 +156,17 @@ mod tests {
         fn cost(&self) -> u64 {
             return self.cost;
         }
+        fn parent(&self) -> &Option<Rc<Self>> {
+            return &self.parent;
+        }
+    }
+
+    impl Informed for TestNode {
         fn remaining_cost_estimate(&self) -> u64 {
             return self.remaining_cost_estimate;
         }
         fn total_cost_estimate(&self) -> u64 {
             return self.cost + self.remaining_cost_estimate;
-        }
-        fn parent(&self) -> &Option<Rc<Self>> {
-            return &self.parent;
         }
     }
 
