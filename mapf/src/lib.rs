@@ -29,3 +29,5 @@ pub use algorithm::Algorithm;
 
 pub mod tracker;
 pub use tracker::Tracker;
+
+pub mod motion;

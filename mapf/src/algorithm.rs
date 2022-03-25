@@ -17,7 +17,6 @@
 
 use super::expander;
 use super::tracker;
-use super::node;
 use std::rc::Rc;
 
 pub enum Result<Expander: expander::Expander> {
