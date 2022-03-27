@@ -11,3 +11,5 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
+nalgebra = "0.30"
+time-point = "0.1"
