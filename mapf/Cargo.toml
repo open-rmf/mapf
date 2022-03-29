@@ -11,5 +11,10 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
-nalgebra = "0.30"
+# nalgebra = "0.30"
+nalgebra = { path = "../../nalgebra" }
 time-point = "0.1"
+sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
+simba = "*"
+num-complex = "*"
+cached = "0.34"

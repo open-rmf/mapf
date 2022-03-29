@@ -19,14 +19,54 @@ use time_point::TimePoint;
 
 pub trait Timed {
     fn time(&self) -> &TimePoint;
+    fn set_time(&mut self, new_time: TimePoint);
 }
 
-pub(crate) mod private {
-    /// This is a private trait that should only be used internally by trajectory.
-    /// We do not want users arbitrarily setting the times of waypoints because
-    /// changing the time goes hand-in-hand with the ordering of waypoints inside
-    /// the trajectory.
-    pub trait SetTime {
-        fn set_time(&mut self, new_time: super::TimePoint);
+#[derive(Clone, Debug)]
+pub struct TimeCmp<W: Timed>(pub W);
+
+impl<W: Timed> std::cmp::PartialEq<TimePoint> for TimeCmp<W> {
+    fn eq(&self, other: &TimePoint) -> bool {
+        return self.0.time().nanos_since_zero == other.nanos_since_zero;
+    }
+
+    fn ne(&self, other: &TimePoint) -> bool {
+        return self.0.time().nanos_since_zero != other.nanos_since_zero;
+    }
+}
+
+impl<W: Timed> std::cmp::PartialEq<Self> for TimeCmp<W> {
+    fn eq(&self, other: &Self) -> bool {
+        return self.0.time().nanos_since_zero == other.0.time().nanos_since_zero;
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        return self.0.time().nanos_since_zero != other.0.time().nanos_since_zero;
+    }
+}
+
+impl<W: Timed> std::cmp::Eq for TimeCmp<W> { }
+
+impl<W: Timed> std::cmp::PartialOrd<TimePoint> for TimeCmp<W> {
+    fn partial_cmp(&self, other: &TimePoint) -> Option<std::cmp::Ordering> {
+        return self.0.time().nanos_since_zero.partial_cmp(
+            &other.nanos_since_zero
+        );
+    }
+}
+
+impl<W: Timed> std::cmp::PartialOrd<Self> for TimeCmp<W> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        return self.0.time().nanos_since_zero.partial_cmp(
+            &other.0.time().nanos_since_zero
+        );
+    }
+}
+
+impl<W: Timed> std::cmp::Ord for TimeCmp<W> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        return self.0.time().nanos_since_zero.cmp(
+            &other.0.time().nanos_since_zero
+        );
     }
 }

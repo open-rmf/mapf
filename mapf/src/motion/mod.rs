@@ -20,13 +20,27 @@ pub mod timed;
 pub mod se2;
 
 pub mod trajectory;
-use trajectory::Trajectory;
+pub use trajectory::Trajectory;
 
-use time_point::TimePoint;
+use time_point::{TimePoint, Duration};
+
+pub enum InterpError {
+    /// The requested time is outside the time range of the motion
+    OutOfBounds,
+
+    /// The requested interpolation does not have a unique solution
+    Indeterminate,
+}
 
 pub trait Motion<Position, Velocity> {
-    fn compute_position(&self, time: &TimePoint) -> Position;
-    fn compute_velocity(&self, time: &TimePoint) -> Velocity;
+
+    /// Compute the position of this motion at a specific time. If the requested
+    /// time is outside the bounds of the motion, then this will return an Err.
+    fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError>;
+
+    /// Compute the velocity of this motion at a specific time. If the requested
+    /// time is outside the bounds of the motion, then this will return an Err.
+    fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError>;
 }
 
 pub trait Interpolation<Position, Velocity> {
