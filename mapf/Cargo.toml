@@ -18,3 +18,4 @@ sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
 simba = "*"
 num-complex = "*"
 cached = "0.34"
+approx = "*"

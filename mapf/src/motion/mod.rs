@@ -24,6 +24,7 @@ pub use trajectory::Trajectory;
 
 use time_point::{TimePoint, Duration};
 
+#[derive(Clone, Copy, Debug)]
 pub enum InterpError {
     /// The requested time is outside the time range of the motion
     OutOfBounds,
