@@ -15,20 +15,20 @@
  *
 */
 
-use super::{TimePoint, Duration, Motion, Interpolation, timed::TimeCmp};
+use super::{TimePoint, Duration, Motion, Interpolation, InterpError, timed::TimeCmp};
 use sorted_vec::{SortedSet, FindOrInsert};
-use cached::UnboundCache;
+use cached::{Cached, UnboundCache};
 use std::cell::RefCell;
+use std::rc::Rc;
 
 pub trait Waypoint:
     super::timed::Timed
     + Interpolation<Self::Position, Self::Velocity>
     + Clone
-    + std::fmt::Debug {
-
+    + std::fmt::Debug
+{
     type Position;
     type Velocity;
-    type Motion: Motion<Self::Position, Self::Velocity>;
 }
 
 pub enum Find {
@@ -67,11 +67,9 @@ pub enum MutateError {
 
 #[derive(Clone, Debug)]
 pub struct Trajectory<W>
-where W: Waypoint {
-
+where W: Waypoint
+{
     waypoints: SortedSet<TimeCmp<W>>,
-    indefinite_start: bool,
-    indefinite_finish: bool
 }
 
 impl<'a, W: Waypoint> Trajectory<W> {
@@ -83,11 +81,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
             return Result::Err(());
         }
 
-        let mut result = Self{
-            waypoints: SortedSet::new(),
-            indefinite_start: false,
-            indefinite_finish: false
-        };
+        let mut result = Self{ waypoints: SortedSet::new() };
 
         result.waypoints.push(TimeCmp(start));
         result.waypoints.push(TimeCmp(finish));
@@ -111,12 +105,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Trajectory with them. If the final number of elements that would be in
     /// the trajectory is less than 2, then this function returns an Err.
     pub fn from_iter<I: Iterator<Item=W>>(iter: I) -> Result<Self, ()> {
-        let mut result = Self{
-            waypoints: SortedSet::new(),
-            indefinite_start: false,
-            indefinite_finish: false
-        };
-
+        let mut result = Self{ waypoints: SortedSet::new() };
         for element in iter {
             result.waypoints.push(TimeCmp(element));
         }
@@ -190,6 +179,14 @@ impl<'a, W: Waypoint> Trajectory<W> {
         }
     }
 
+    /// Get the waypoint at the requested index if it is available, otherwise
+    /// get None.
+    pub fn get(&self, index: usize) -> Option<&W> {
+        // TODO(MXG): Investigate how SliceIndex can be used here. The TimeCmp
+        // wrapper complicates this.
+        return self.waypoints.get(index).map(|x| &x.0);
+    }
+
     /// Make changes to the waypoint at a specified index. If a change is made
     /// to the waypoint's time that would cause its order within the vector to
     /// change, then its time value will be reverted back to the original and
@@ -239,6 +236,30 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return Result::Ok(());
     }
 
+    /// Unsafe access to a waypoint in the trajectory
+    pub unsafe fn get_unchecked(&self, index: usize) -> &W {
+        &self.waypoints.get_unchecked(index).0
+    }
+
+    /// Get the number of Waypoint elements in the trajectory.
+    pub fn len(&self) -> usize {
+        return self.waypoints.len();
+    }
+
+    /// Reserve space in the trajectory for `additional` more Waypoints.
+    /// This will not change the length of the trajectory, but it can improve
+    /// performance by preventing redundant memory allocations if the trajectory
+    /// needs to grow much further.
+    pub fn reserve(&mut self, additional: usize) {
+        self.waypoints.reserve(additional);
+    }
+
+    /// Returns the number of Waypoints that the trajectory can hold without
+    /// reallocating.
+    pub fn capacity(&self) -> usize {
+        return self.waypoints.capacity();
+    }
+
     /// Get a motion for this trajectory
     pub fn motion(&'a self) -> TrajectoryMotion<'a, W> {
         return TrajectoryMotion{
@@ -250,54 +271,129 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
 pub struct TrajectoryMotion<'a, W: Waypoint> {
     trajectory: &'a Trajectory<W>,
-    motion_cache: RefCell<UnboundCache<usize, <W as Waypoint>::Motion>>,
+    motion_cache: RefCell<UnboundCache<usize, Rc<W::Motion>>>,
+}
+
+impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
+    fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
+        match self.trajectory.find(time) {
+            Find::Exact(index) => {
+                // TODO(MXG): We could consider averaging the values appproaching
+                // from the left and right segments, but for now let's just use
+                // the segment that approaches this point (except for index 0).
+                if index == 0 {
+                    return Ok(self.get_motion_segment(index + 1));
+                } else {
+                    return Ok(self.get_motion_segment(index));
+                }
+            },
+            Find::Approaching(index) => {
+                return Ok(self.get_motion_segment(index));
+            },
+            Find::BeforeStart | Find::AfterFinish => {
+                return Err(InterpError::OutOfBounds);
+            }
+        }
+    }
+
+    fn get_motion_segment(&self, index: usize) -> Rc<W::Motion> {
+        return self.motion_cache.borrow_mut().cache_get_or_set_with(
+            index,
+            || {
+                // SAFETY: This should only be called by find_motion_segment
+                // which should only call this function with an index greater
+                // than zero and less than the length of the underlying vec.
+                unsafe {
+                    let wp0 = self.trajectory.get_unchecked(index - 1);
+                    let wp1 = self.trajectory.get_unchecked(index);
+                    return Rc::new(wp0.interpolate(wp1));
+                }
+            }
+        ).clone();
+    }
+}
+
+impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, W> {
+    fn compute_position(&self, time: &TimePoint) -> Result<W::Position, InterpError> {
+        return self.find_motion_segment(time)?.compute_position(time);
+    }
+
+    fn compute_velocity(&self, time: &TimePoint) -> Result<W::Velocity, InterpError> {
+        return self.find_motion_segment(time)?.compute_velocity(time);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use nalgebra::Vector2;
-    use nalgebra::Isometry2;
-    use num_complex::Complex64;
-    use std::f64::consts::PI;
+    use super::*;
+    use crate::motion::se2;
+    use crate::motion::se2::timed_position::Waypoint as WaypointSE2;
+    use crate::motion::Motion;
+    use approx::assert_relative_eq;
 
     #[test]
-    fn test_nalgebra() {
-        let p0 = Vector2::<f64>::new(0f64, 1f64);
-        let p1 = Vector2::<f64>::new(10f64, 2f64);
+    fn test_valid_motion() {
+        let t0 = time_point::TimePoint::new(0);
+        let mut trajectory = se2::LinearTrajectory::new(
+            WaypointSE2::new(t0, 0.0, 0.0, 0.0),
+            WaypointSE2::new(t0 + time_point::Duration::from_secs(2), 1.0, 0.0, 90f64.to_radians())
+        ).expect("Trajectory failed to be created");
 
-        let delta_p = p1 - p0;
-        assert_eq!(delta_p[0], 10f64);
-        assert_eq!(delta_p[1], 1f64);
-
-        let tf0 = Isometry2::<f64>::new(
-            p0.clone(),
-            PI/2.0
+        let insertion = trajectory.insert(
+            WaypointSE2::new(t0 + time_point::Duration::from_secs(3), 1.0, 1.0, 180f64.to_radians())
         );
+        assert_eq!(insertion.ok(), Some(2));
 
-        let tf1 = Isometry2::<f64>::new(
-            p1.clone(),
-            -PI/2.0
+        let insertion = trajectory.insert(
+            WaypointSE2::new(t0 + time_point::Duration::from_secs(1), 0.0, 1.0, -45f64.to_radians())
         );
+        assert_eq!(insertion.ok(), Some(1));
 
-        let delta_p = tf1.translation.vector - tf0.translation.vector;
-        assert_eq!(delta_p[0], 10f64);
-        assert_eq!(delta_p[1], 1f64);
+        assert_eq!(trajectory.len(), 4);
 
-        let result = tf0.lerp_slerp(&tf1, 0.5);
-        // println!("Slerped Angle: {}", result.rotation.angle()*180.0/PI);
-        // assert!(result.rotation.angle() < -135.0*PI/180.0);
+        let motion = trajectory.motion();
+        let p = motion.compute_position(
+            &(t0 + time_point::Duration::from_secs_f64(0.5))
+        ).expect("Failed to calculate position");
+        assert_relative_eq!(p.translation.vector[0], 0.0);
+        assert_relative_eq!(p.translation.vector[1], 0.5);
+        assert_relative_eq!(p.rotation.angle(), (-45f64/2.0).to_radians());
 
-        // let z0 = nalgebra::geometry::UnitComplex::<f64>::from_complex(
-        //     Complex64::new(-1.0, 0.0)
-        // );
-        // let z1 = nalgebra::geometry::UnitComplex::<f64>::from_complex(
-        //     Complex64::new(-1.0, 0.0)
-        // );
+        let v = motion.compute_velocity(
+            &(t0 + time_point::Duration::from_secs_f64(0.6788612))
+        ).expect("Failed to calculate velocity");
+        assert_relative_eq!(v.translational[0], 0.0);
+        assert_relative_eq!(v.translational[1], 1.0);
+        assert_relative_eq!(v.rotational, -45f64.to_radians());
 
-        let z0 = nalgebra::geometry::UnitComplex::<f64>::new(0.0*PI/180.0);
-        let z1 = nalgebra::geometry::UnitComplex::<f64>::new(180.0*PI/180.0);
+        let p = motion.compute_position(
+            &(t0 + time_point::Duration::from_secs(3))
+        ).expect("Failed to calculate position");
+        assert_relative_eq!(p.translation.vector[0], 1.0);
+        assert_relative_eq!(p.translation.vector[1], 1.0);
+        assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
 
-        let result = z0.slerp(&z1, 0.5);
-        println!("Slerped angle: {}", result.angle()*180.0/PI);
+        let v = motion.compute_velocity(
+            &(t0 + time_point::Duration::from_secs(3))
+        ).expect("Failed to compute velocity");
+        assert_relative_eq!(v.translational[0], 0.0);
+        assert_relative_eq!(v.translational[1], 1.0);
+        assert_relative_eq!(v.rotational, 90f64.to_radians());
+
+        let p = motion.compute_position(&t0).expect("Failed to compute velocity");
+        assert_relative_eq!(p.translation.vector[0], 0.0);
+        assert_relative_eq!(p.translation.vector[1], 0.0);
+        assert_relative_eq!(p.rotation.angle(), 0.0);
+
+        let v = motion.compute_velocity(&t0).expect("Failed to calculate velocity");
+        assert_relative_eq!(v.translational[0], 0.0);
+        assert_relative_eq!(v.translational[1], 1.0);
+        assert_relative_eq!(v.rotational, -45f64.to_radians());
+
+        let err = motion.compute_position(&(t0 - time_point::Duration::new(1)));
+        assert_eq!(err, Err(InterpError::OutOfBounds));
+
+        let err = motion.compute_velocity(&(t0 - time_point::Duration::new(1)));
+        assert_eq!(err, Err(InterpError::OutOfBounds));
     }
 }

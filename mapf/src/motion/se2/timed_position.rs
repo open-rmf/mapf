@@ -18,24 +18,27 @@
 use nalgebra::geometry::Isometry2;
 use nalgebra::{Vector2, Vector3};
 use time_point::TimePoint;
-use simba::simd::SimdRealField;
 use crate::motion::{timed, Interpolation, InterpError};
 
-pub trait RealField: Copy + Clone + SimdRealField + nalgebra::RealField + From<f64> { }
-impl<T: Copy + Clone + SimdRealField + nalgebra::RealField + From<f64>> RealField for T { }
 
-#[derive(Clone, Debug)]
-pub struct Waypoint<Precision: RealField> {
+#[derive(Clone, Copy, Debug)]
+pub struct Waypoint {
     pub time: TimePoint,
-    pub position: Isometry2<Precision>,
+    pub position: Isometry2<f64>,
 }
 
-pub struct Motion<Precision: RealField> {
-    initial_wp: Waypoint<Precision>,
-    final_wp: Waypoint<Precision>,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Velocity {
+    pub translational: Vector2<f64>,
+    pub rotational: f64,
 }
 
-impl<P: RealField> timed::Timed for Waypoint<P> {
+pub struct Motion {
+    initial_wp: Waypoint,
+    final_wp: Waypoint,
+}
+
+impl timed::Timed for Waypoint {
     fn time(&self) -> &TimePoint {
         return &self.time;
     }
@@ -44,8 +47,8 @@ impl<P: RealField> timed::Timed for Waypoint<P> {
     }
 }
 
-impl<P: RealField> Waypoint<P> {
-    fn new(time: TimePoint, x: P, y: P, yaw: P) -> Self {
+impl Waypoint {
+    pub fn new(time: TimePoint, x: f64, y: f64, yaw: f64) -> Self {
         return Waypoint{
             time,
             position: Isometry2::new(
@@ -56,8 +59,8 @@ impl<P: RealField> Waypoint<P> {
     }
 }
 
-impl<P: RealField> crate::motion::Motion<Isometry2<P>, Vector3<P>> for Motion<P> {
-    fn compute_position(&self, time: &TimePoint) -> Result<Isometry2<P>, InterpError> {
+impl crate::motion::Motion<Isometry2<f64>, Velocity> for Motion {
+    fn compute_position(&self, time: &TimePoint) -> Result<Isometry2<f64>, InterpError> {
         if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
             return Err(InterpError::OutOfBounds);
         }
@@ -66,12 +69,12 @@ impl<P: RealField> crate::motion::Motion<Isometry2<P>, Vector3<P>> for Motion<P>
             return Err(InterpError::OutOfBounds);
         }
 
-        let delta_t: P = (*time - self.initial_wp.time).as_secs_f64().into();
-        let t_range: P = (self.final_wp.time - self.initial_wp.time).as_secs_f64().into();
+        let delta_t = (*time - self.initial_wp.time).as_secs_f64();
+        let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
         return Ok(self.initial_wp.position.lerp_slerp(&self.final_wp.position, delta_t/t_range));
     }
 
-    fn compute_velocity(&self, time: &TimePoint) -> Result<Vector3<P>, InterpError> {
+    fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError> {
         if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
             return Err(InterpError::OutOfBounds);
         }
@@ -82,7 +85,7 @@ impl<P: RealField> crate::motion::Motion<Isometry2<P>, Vector3<P>> for Motion<P>
 
         // TODO(MXG): Since velocity is taken to be constant across the whole
         // range, this could be precomputed once and saved inside the Motion object.
-        let t_range: P = (self.final_wp.time - self.initial_wp.time).as_secs_f64().into();
+        let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
         let p0 = &self.initial_wp.position.translation.vector;
         let p1 = &self.final_wp.position.translation.vector;
         let linear_v = (p1 - p0)/t_range;
@@ -90,12 +93,17 @@ impl<P: RealField> crate::motion::Motion<Isometry2<P>, Vector3<P>> for Motion<P>
         let r0 = &self.initial_wp.position.rotation;
         let r1 = &self.final_wp.position.rotation;
         let angular_v = (r1/r0).angle()/t_range;
-        return Ok(Vector3::<P>::new(linear_v[0], linear_v[1], angular_v));
+        return Ok(
+            Velocity{
+                translational: linear_v,
+                rotational: angular_v,
+            }
+        );
     }
 }
 
-impl<P: RealField> Interpolation<Isometry2<P>, Vector3<P>> for Waypoint<P> {
-    type Motion = Motion<P>;
+impl Interpolation<Isometry2<f64>, Velocity> for Waypoint {
+    type Motion = Motion;
 
     fn interpolate(&self, up_to: &Self) -> Self::Motion {
         return Self::Motion{
@@ -105,8 +113,10 @@ impl<P: RealField> Interpolation<Isometry2<P>, Vector3<P>> for Waypoint<P> {
     }
 }
 
-pub type WaypointF32 = Waypoint<f32>;
-pub type WaypointF64 = Waypoint<f64>;
+impl crate::motion::trajectory::Waypoint for Waypoint {
+    type Position = Isometry2<f64>;
+    type Velocity = Velocity;
+}
 
 #[cfg(test)]
 mod tests {
@@ -115,11 +125,11 @@ mod tests {
     use approx::assert_relative_eq;
 
     #[test]
-    fn test_interpolation() {
+    fn test_interpolation_f64() {
         let t0 = time_point::TimePoint::new(0);
         let t1 = t0 + time_point::Duration::from_secs_f64(2.0);
-        let wp0 = WaypointF64::new(t0, 1.0, 5.0, 10f64.to_radians());
-        let wp1 = WaypointF64::new(t1, 1.0, 10.0, -20f64.to_radians());
+        let wp0 = Waypoint::new(t0, 1.0, 5.0, 10f64.to_radians());
+        let wp1 = Waypoint::new(t1, 1.0, 10.0, -20f64.to_radians());
 
         let motion = wp0.interpolate(&wp1);
         let t = (t1 - t0)/2f64 + t0;
@@ -129,8 +139,8 @@ mod tests {
         assert_relative_eq!(p.rotation.angle(), -5f64.to_radians(), max_relative = 0.001);
 
         let v = motion.compute_velocity(&t).ok().unwrap();
-        assert_relative_eq!(v[0], 0f64, max_relative = 0.001);
-        assert_relative_eq!(v[1], 5.0/2.0, max_relative = 0.001);
-        assert_relative_eq!(v[2], -30f64.to_radians()/2.0, max_relative = 0.001);
+        assert_relative_eq!(v.translational[0], 0f64, max_relative = 0.001);
+        assert_relative_eq!(v.translational[1], 5.0/2.0, max_relative = 0.001);
+        assert_relative_eq!(v.rotational, -30f64.to_radians()/2.0, max_relative = 0.001);
     }
 }

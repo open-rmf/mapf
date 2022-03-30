@@ -16,3 +16,5 @@
 */
 
 pub mod timed_position;
+
+pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
