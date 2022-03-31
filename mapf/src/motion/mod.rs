@@ -24,6 +24,25 @@ pub use trajectory::Trajectory;
 
 use time_point::{TimePoint, Duration};
 
+/// The default translational threshold is 1mm
+pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
+
+/// The default rotational threshold is 1-degree.
+pub const DEFAULT_ROTATIONAL_THRESHOLD: f64 = 1.0f64 * std::f64::consts::PI / 180.0;
+
+pub trait Waypoint:
+    timed::Timed
+    + Interpolation<Self::Position, Self::Velocity>
+    + Clone
+    + std::fmt::Debug
+{
+    /// What type of spatial position does the waypoint have
+    type Position;
+
+    /// How does the waypoint represent the time derivative of its position
+    type Velocity;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InterpError {
     /// The requested time is outside the time range of the motion
@@ -47,5 +66,33 @@ pub trait Motion<Position, Velocity> {
 pub trait Interpolation<Position, Velocity> {
     type Motion: Motion<Position, Velocity>;
 
+    /// Interpolate the motion from this waypoint to another one.
     fn interpolate(&self, up_to: &Self) -> Self::Motion;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtrapError {
+    /// The requested extrapolation is impossible. This usually means that your
+    /// Movement parameters are flawed or there is something wrong with the
+    /// requested position.
+    Impossible,
+
+    /// There is no unique solution for how to extrapolate to the target.
+    Indeterminate
+}
+
+// TODO(MXG): Do we really need extrapolation and Movement to be directly coupled
+// to the type of Waypoint, or should we decouple them so that users can customize
+// the way movement and extrapolation are implemented?
+pub trait Extrapolation<W: Waypoint> {
+
+    /// Extrapolate a new waypoint from this one given a target waypoint and
+    /// a movement description.
+    ///
+    /// If the current waypoint is already at the target position, then an empty
+    /// Vec<W> will be returned.
+    fn extrapolate(&self,
+        from_waypoint: &W,
+        to_position: &W::Position,
+    ) -> Result<Vec<W>, ExtrapError>;
 }

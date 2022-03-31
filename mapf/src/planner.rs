@@ -22,7 +22,7 @@ use std::boxed::Box;
 use super::expander;
 use super::expander::Cost;
 use super::algorithm;
-use super::algorithm::{Result, Storage};
+use super::algorithm::{Status, Storage};
 use super::tracker;
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
@@ -244,14 +244,14 @@ where
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Result<Expander> {
+    pub fn solve(&mut self) -> Status<Expander> {
         loop {
             if self.need_to_interrupt() {
-                return Result::Incomplete;
+                return Status::Incomplete;
             }
 
             let result = self.step();
-            if let Result::Incomplete = result {
+            if let Status::Incomplete = result {
                 continue;
             }
 
@@ -259,7 +259,7 @@ where
         }
     }
 
-    pub fn step(&mut self) -> Result<Expander> {
+    pub fn step(&mut self) -> Status<Expander> {
         return self.algorithm.step(
             &mut self.storage, &self.expansion_options, &mut self.tracker
         );
@@ -482,12 +482,12 @@ mod tests {
             storage: &mut Self::Storage,
             options: &Expander::Options,
             tracker: &mut Tracker
-        ) -> Result<Expander> {
+        ) -> Status<Expander> {
             let top_opt = storage.queue.pop();
             if let Some(top) = top_opt {
                 if storage.goal.is_satisfied(&top) {
                     tracker.solution_found_from(&top);
-                    return Result::Solved(storage.expander.make_solution(&top, options));
+                    return Status::Solved(storage.expander.make_solution(&top, options));
                 }
 
                 for node in storage.expander.expand(&top, &storage.goal, options) {
@@ -495,13 +495,13 @@ mod tests {
                 }
 
                 if storage.queue.is_empty() {
-                    return Result::Impossible;
+                    return Status::Impossible;
                 }
 
-                return Result::Incomplete;
+                return Status::Incomplete;
 
             } else {
-                return Result::Impossible;
+                return Status::Impossible;
             }
         }
     }
@@ -514,8 +514,8 @@ mod tests {
         let start = 5;
         let goal = 10;
         let result = planner.plan(&start, CountingGoal{value: goal}).solve();
-        assert!(matches!(result, Result::Solved(_)));
-        if let Result::Solved(solution) = result {
+        assert!(matches!(result, Status::Solved(_)));
+        if let Status::Solved(solution) = result {
             assert!(solution.len() == (goal - start + 1) as usize);
             assert!(solution.first() == Some(&start));
             assert!(solution.last() == Some(&goal));
@@ -528,7 +528,7 @@ mod tests {
         let start = 10;
         let goal = 5;
         let result = planner.plan(&start, CountingGoal{value: goal}).solve();
-        assert!(matches!(result, Result::Impossible));
+        assert!(matches!(result, Status::Impossible));
     }
 
     #[test]
@@ -537,11 +537,11 @@ mod tests {
         let start = 5;
         let goal = 10;
         let mut progress = planner.plan(&start, CountingGoal{value: goal});
-        assert!(matches!(progress.step(), Result::Incomplete));
-        assert!(matches!(progress.step(), Result::Incomplete));
-        assert!(matches!(progress.step(), Result::Incomplete));
-        assert!(matches!(progress.step(), Result::Incomplete));
-        assert!(matches!(progress.step(), Result::Incomplete));
-        assert!(matches!(progress.step(), Result::Solved(_)));
+        assert!(matches!(progress.step(), Status::Incomplete));
+        assert!(matches!(progress.step(), Status::Incomplete));
+        assert!(matches!(progress.step(), Status::Incomplete));
+        assert!(matches!(progress.step(), Status::Incomplete));
+        assert!(matches!(progress.step(), Status::Incomplete));
+        assert!(matches!(progress.step(), Status::Solved(_)));
     }
 }

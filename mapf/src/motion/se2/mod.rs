@@ -15,6 +15,17 @@
  *
 */
 
+use nalgebra::geometry::Isometry2;
+use nalgebra::Vector2;
+
+pub type Position = Isometry2<f64>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Velocity {
+    pub translational: Vector2<f64>,
+    pub rotational: f64,
+}
+
 pub mod timed_position;
 
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;

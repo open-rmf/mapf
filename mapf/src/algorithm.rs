@@ -19,7 +19,8 @@ use super::expander;
 use super::tracker;
 use std::rc::Rc;
 
-pub enum Result<Expander: expander::Expander> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Status<Expander: expander::Expander> {
     Incomplete,
     Impossible,
     Solved(Expander::Solution)
@@ -46,5 +47,5 @@ pub trait Algorithm<Expander: expander::Expander>  {
         storage: &mut Self::Storage,
         options: &Expander::Options,
         tracker: &mut Tracker,
-    ) -> Result<Expander>;
+    ) -> Status<Expander>;
 }

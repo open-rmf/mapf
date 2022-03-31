@@ -15,22 +15,13 @@
  *
 */
 
-use super::{TimePoint, Duration, Motion, Interpolation, InterpError, timed::TimeCmp};
+use super::{TimePoint, Duration, Motion, Waypoint, InterpError, timed::TimeCmp};
 use sorted_vec::{SortedSet, FindOrInsert};
 use cached::{Cached, UnboundCache};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub trait Waypoint:
-    super::timed::Timed
-    + Interpolation<Self::Position, Self::Velocity>
-    + Clone
-    + std::fmt::Debug
-{
-    type Position;
-    type Velocity;
-}
-
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Find {
     /// The requested time is exactly on the waypoint at this index
     Exact(usize),
@@ -45,6 +36,7 @@ pub enum Find {
     AfterFinish,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RemovalError {
     /// The specified index or range is outside the index bounds of the
     /// trajectory.
@@ -55,6 +47,7 @@ pub enum RemovalError {
     Depleting,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MutateError {
     /// The requested index is out of the bounds of the trajectory.
     OutOfBounds,
@@ -65,7 +58,7 @@ pub enum MutateError {
     InvalidTimeChange,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trajectory<W>
 where W: Waypoint
 {
@@ -278,9 +271,6 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
         match self.trajectory.find(time) {
             Find::Exact(index) => {
-                // TODO(MXG): We could consider averaging the values appproaching
-                // from the left and right segments, but for now let's just use
-                // the segment that approaches this point (except for index 0).
                 if index == 0 {
                     return Ok(self.get_motion_segment(index + 1));
                 } else {

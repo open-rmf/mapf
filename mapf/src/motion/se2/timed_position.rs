@@ -16,21 +16,15 @@
 */
 
 use nalgebra::geometry::Isometry2;
-use nalgebra::{Vector2, Vector3};
+use nalgebra::Vector2;
 use time_point::TimePoint;
-use crate::motion::{timed, Interpolation, InterpError};
-
+use crate::motion::{timed, Interpolation, InterpError, Extrapolation, ExtrapError};
+use super::{Position, Velocity};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Waypoint {
     pub time: TimePoint,
-    pub position: Isometry2<f64>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Velocity {
-    pub translational: Vector2<f64>,
-    pub rotational: f64,
+    pub position: Position,
 }
 
 pub struct Motion {
@@ -59,8 +53,8 @@ impl Waypoint {
     }
 }
 
-impl crate::motion::Motion<Isometry2<f64>, Velocity> for Motion {
-    fn compute_position(&self, time: &TimePoint) -> Result<Isometry2<f64>, InterpError> {
+impl crate::motion::Motion<Position, Velocity> for Motion {
+    fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError> {
         if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
             return Err(InterpError::OutOfBounds);
         }
@@ -102,7 +96,7 @@ impl crate::motion::Motion<Isometry2<f64>, Velocity> for Motion {
     }
 }
 
-impl Interpolation<Isometry2<f64>, Velocity> for Waypoint {
+impl Interpolation<Position, Velocity> for Waypoint {
     type Motion = Motion;
 
     fn interpolate(&self, up_to: &Self) -> Self::Motion {
@@ -113,8 +107,162 @@ impl Interpolation<Isometry2<f64>, Velocity> for Waypoint {
     }
 }
 
-impl crate::motion::trajectory::Waypoint for Waypoint {
-    type Position = Isometry2<f64>;
+/// What kind of steering does the agent have
+pub enum Steering {
+    /// The agent uses a differential drive, meaning it needs to face the
+    /// direction that it is translating towards.
+    Differential,
+
+    /// The agent has holonomic motion, meaning it can translate and rotate
+    /// simultaneously and independently.
+    Holonomic
+}
+
+pub struct LineFollow {
+    /// What is the nominal translational speed that the agent will move with
+    translational_speed: f64,
+
+    /// What is the nominal rotaional speed that the agent will move with
+    rotational_speed: f64,
+
+    /// If the initial waypoint is within this translational threshold of the
+    /// target, no translation will be performed when extrapolating.
+    translational_threshold: f64,
+
+    /// If the initial waypoint is within this rotational threshold (in radians)
+    /// then rotation may be skipped while extrapolating.
+    rotational_threshold: f64,
+}
+
+impl LineFollow {
+
+    /// Make a new movement description. If one of the requested values is
+    /// invalid, then an error will be returned. Make sure both values are
+    /// greater than zero.
+    fn new(translational_speed: f64, rotational_speed: f64) -> Result<Self, ()> {
+
+        if translational_speed <= 0.0 {
+            return Err(());
+        }
+
+        if rotational_speed <= 0.0 {
+            return Err(());
+        }
+
+        return Ok(LineFollow {
+            translational_speed,
+            rotational_speed,
+            translational_threshold: crate::motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
+            rotational_threshold: crate::motion::DEFAULT_ROTATIONAL_THRESHOLD,
+        })
+    }
+
+    fn set_translational_speed(&mut self, value: f64) -> Result<(), ()> {
+        if value <= 0.0 {
+            return Err(());
+        }
+
+        self.translational_speed = value;
+        return Ok(());
+    }
+
+    fn set_rotational_speed(&mut self, value: f64) -> Result<(), ()> {
+        if value <= 0.0 {
+            return Err(());
+        }
+
+        self.rotational_speed = value;
+        return Ok(());
+    }
+
+    fn set_translational_threshold(&mut self, value: f64) -> Result<(), ()> {
+        if value <= 0.0 {
+            return Err(());
+        }
+
+        self.translational_threshold = value;
+        return Ok(());
+    }
+
+    fn set_rotational_threshold(&mut self, value: f64) -> Result<(), ()> {
+        if value <= 0.0 {
+            return Err(());
+        }
+
+        self.rotational_threshold = value;
+        return Ok(());
+    }
+
+    fn translational_speed(&self) -> f64 {
+        return self.translational_speed;
+    }
+
+    fn rotational_speed(&self) -> f64 {
+        return self.rotational_speed;
+    }
+
+    fn translational_threshold(&self) -> f64 {
+        return self.translational_threshold;
+    }
+
+    fn rotational_threshold(&self) -> f64 {
+        return self.rotational_threshold;
+    }
+}
+
+impl Extrapolation<Waypoint> for LineFollow {
+
+    fn extrapolate(&self,
+        from_waypoint: &Waypoint,
+        to_position: &Position
+    ) -> Result<Vec<Waypoint>, ExtrapError> {
+        // NOTE: We trust that all properties in self have values greater than
+        // zero because we enforce that for all inputs.
+        let mut output: Vec<Waypoint> = Vec::new();
+        let mut current_time = from_waypoint.time;
+        let mut current_yaw = from_waypoint.position.rotation;
+
+        let p0 = &from_waypoint.position.translation.vector;
+        let p1 = &to_position.translation.vector;
+        let delta_p = p1 - p0;
+        let distance = delta_p.norm();
+        if distance > self.translational_threshold {
+            let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
+            let delta_yaw_abs = (approach_yaw / from_waypoint.position.rotation).angle().abs();
+            if delta_yaw_abs > self.rotational_threshold {
+                current_time += time_point::Duration::from_secs_f64(delta_yaw_abs/self.rotational_speed);
+                output.push(Waypoint {
+                    time: current_time,
+                    position: Position::from_parts(
+                        from_waypoint.position.translation,
+                        approach_yaw
+                    )
+                });
+            }
+
+            current_yaw = approach_yaw;
+            current_time += time_point::Duration::from_secs_f64(distance/self.translational_speed);
+            output.push(Waypoint{
+                time: current_time,
+                position: Position::new(*p1, approach_yaw.angle())
+            });
+        }
+
+        let delta_yaw_abs = (to_position.rotation / current_yaw).angle().abs();
+        if delta_yaw_abs > self.rotational_threshold {
+            current_time += time_point::Duration::from_secs_f64(delta_yaw_abs/self.rotational_speed);
+            output.push(Waypoint{
+                time: current_time,
+                position: *to_position
+            });
+        }
+
+        return Ok(output);
+    }
+}
+
+impl crate::motion::Waypoint for Waypoint {
+    type Position = Position;
     type Velocity = Velocity;
 }
 
@@ -142,5 +290,40 @@ mod tests {
         assert_relative_eq!(v.translational[0], 0f64, max_relative = 0.001);
         assert_relative_eq!(v.translational[1], 5.0/2.0, max_relative = 0.001);
         assert_relative_eq!(v.rotational, -30f64.to_radians()/2.0, max_relative = 0.001);
+    }
+
+    #[test]
+    fn test_extrapolation_f64() {
+        let t0 = time_point::TimePoint::from_secs_f64(3.0);
+        let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
+        let movement = LineFollow::new(2.0, 3.0).expect("Failed to make LineFollow");
+        let p_target = Position::new(Vector2::new(1.0, 3.0), 60f64.to_radians());
+        let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
+        assert_eq!(waypoints.len(), 3);
+        assert_relative_eq!(
+            waypoints.last().unwrap().time.as_secs_f64(),
+            (t0 + time_point::Duration::from_secs_f64(
+                ((90f64 - (-40f64)).abs() + (60f64 - 90f64).abs()).to_radians() / movement.rotational_speed()
+                + 6f64 / movement.translational_speed
+            )).as_secs_f64()
+        );
+
+        assert_relative_eq!(
+            waypoints.last().unwrap().position.translation.vector[0],
+            p_target.translation.vector[0]
+        );
+        assert_relative_eq!(
+            waypoints.last().unwrap().position.translation.vector[1],
+            p_target.translation.vector[1]
+        );
+        assert_relative_eq!(
+            waypoints.last().unwrap().position.rotation.angle(),
+            p_target.rotation.angle()
+        );
+
+        let mut trajectory = crate::motion::se2::LinearTrajectory::from_iter(waypoints.into_iter())
+            .expect("Failed to create trajectory");
+        trajectory.insert(wp0);
+        assert_eq!(trajectory.len(), 4);
     }
 }
