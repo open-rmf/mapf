@@ -84,7 +84,7 @@ pub enum ExtrapError {
 // TODO(MXG): Do we really need extrapolation and Movement to be directly coupled
 // to the type of Waypoint, or should we decouple them so that users can customize
 // the way movement and extrapolation are implemented?
-pub trait Extrapolation<W: Waypoint> {
+pub trait Extrapolation<W: Waypoint, Target> {
 
     /// Extrapolate a new waypoint from this one given a target waypoint and
     /// a movement description.
@@ -93,6 +93,6 @@ pub trait Extrapolation<W: Waypoint> {
     /// Vec<W> will be returned.
     fn extrapolate(&self,
         from_waypoint: &W,
-        to_position: &W::Position,
+        to_target: &Target,
     ) -> Result<Vec<W>, ExtrapError>;
 }

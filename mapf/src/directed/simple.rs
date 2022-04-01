@@ -15,20 +15,9 @@
  *
 */
 
-pub mod planner;
-pub use planner::{Planner, Progress};
+use std::vec::Vec;
 
-pub mod expander;
-pub use expander::Expander;
-
-pub mod node;
-pub use node::{Node, Cost};
-
-pub mod algorithm;
-pub use algorithm::Algorithm;
-
-pub mod tracker;
-pub use tracker::Tracker;
-
-pub mod motion;
-pub mod directed;
+pub struct Graph<Vertex> {
+    pub vertices: Vec<Vertex>,
+    pub edges: Vec<Vec<usize>>,
+}

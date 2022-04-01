@@ -21,11 +21,15 @@ use std::collections::hash_map::Entry;
 use std::ops::Add;
 use std::cmp::Ord;
 
+/// A trait that describes what is needed to define a cost.
+pub trait Cost: Ord + Add + Sized { }
+impl<T: Ord + Add + Sized> Cost for T { }
+
 /// The generic trait for a Node. This contains the minimal generalized
 /// information that most algorithms will need from a search node in order to
 /// solve a search problem.
 pub trait Node : Sized {
-    type Cost: Ord + Add;
+    type Cost: Cost;
     type ClosedSet: ClosedSet<Self>;
 
     fn cost(&self) -> Self::Cost;

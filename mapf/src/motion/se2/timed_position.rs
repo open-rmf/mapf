@@ -107,7 +107,9 @@ impl Interpolation<Position, Velocity> for Waypoint {
     }
 }
 
+
 /// What kind of steering does the agent have
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Steering {
     /// The agent uses a differential drive, meaning it needs to face the
     /// direction that it is translating towards.
@@ -118,7 +120,8 @@ pub enum Steering {
     Holonomic
 }
 
-pub struct LineFollow {
+#[derive(Clone, Copy, PartialEq)]
+pub struct DifferentialDriveLineFollow {
     /// What is the nominal translational speed that the agent will move with
     translational_speed: f64,
 
@@ -134,12 +137,12 @@ pub struct LineFollow {
     rotational_threshold: f64,
 }
 
-impl LineFollow {
+impl DifferentialDriveLineFollow {
 
     /// Make a new movement description. If one of the requested values is
     /// invalid, then an error will be returned. Make sure both values are
     /// greater than zero.
-    fn new(translational_speed: f64, rotational_speed: f64) -> Result<Self, ()> {
+    pub fn new(translational_speed: f64, rotational_speed: f64) -> Result<Self, ()> {
 
         if translational_speed <= 0.0 {
             return Err(());
@@ -149,7 +152,7 @@ impl LineFollow {
             return Err(());
         }
 
-        return Ok(LineFollow {
+        return Ok(DifferentialDriveLineFollow {
             translational_speed,
             rotational_speed,
             translational_threshold: crate::motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
@@ -157,7 +160,7 @@ impl LineFollow {
         })
     }
 
-    fn set_translational_speed(&mut self, value: f64) -> Result<(), ()> {
+    pub fn set_translational_speed(&mut self, value: f64) -> Result<(), ()> {
         if value <= 0.0 {
             return Err(());
         }
@@ -166,7 +169,7 @@ impl LineFollow {
         return Ok(());
     }
 
-    fn set_rotational_speed(&mut self, value: f64) -> Result<(), ()> {
+    pub fn set_rotational_speed(&mut self, value: f64) -> Result<(), ()> {
         if value <= 0.0 {
             return Err(());
         }
@@ -175,7 +178,7 @@ impl LineFollow {
         return Ok(());
     }
 
-    fn set_translational_threshold(&mut self, value: f64) -> Result<(), ()> {
+    pub fn set_translational_threshold(&mut self, value: f64) -> Result<(), ()> {
         if value <= 0.0 {
             return Err(());
         }
@@ -184,7 +187,7 @@ impl LineFollow {
         return Ok(());
     }
 
-    fn set_rotational_threshold(&mut self, value: f64) -> Result<(), ()> {
+    pub fn set_rotational_threshold(&mut self, value: f64) -> Result<(), ()> {
         if value <= 0.0 {
             return Err(());
         }
@@ -193,38 +196,47 @@ impl LineFollow {
         return Ok(());
     }
 
-    fn translational_speed(&self) -> f64 {
+    pub fn translational_speed(&self) -> f64 {
         return self.translational_speed;
     }
 
-    fn rotational_speed(&self) -> f64 {
+    pub fn rotational_speed(&self) -> f64 {
         return self.rotational_speed;
     }
 
-    fn translational_threshold(&self) -> f64 {
+    pub fn translational_threshold(&self) -> f64 {
         return self.translational_threshold;
     }
 
-    fn rotational_threshold(&self) -> f64 {
+    pub fn rotational_threshold(&self) -> f64 {
         return self.rotational_threshold;
     }
 }
 
-impl Extrapolation<Waypoint> for LineFollow {
+struct ReachedTarget {
+    waypoints: Vec<Waypoint>,
+    time: TimePoint,
+    yaw: nalgebra::UnitComplex<f64>,
+}
 
-    fn extrapolate(&self,
+impl DifferentialDriveLineFollow {
+
+    /// Helper function for the implementations of extrapolate(). Not meant for
+    /// use by other functions
+    fn move_towards_target(
+        &self,
         from_waypoint: &Waypoint,
-        to_position: &Position
-    ) -> Result<Vec<Waypoint>, ExtrapError> {
-        // NOTE: We trust that all properties in self have values greater than
-        // zero because we enforce that for all inputs.
+        to_target: &Vector2<f64>,
+    ) -> Result<ReachedTarget, ExtrapError> {
+        // NOTE: We trust that all properties in self have values greater
+        // than zero because we enforce that for all inputs.
         let mut output: Vec<Waypoint> = Vec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
 
         let p0 = &from_waypoint.position.translation.vector;
-        let p1 = &to_position.translation.vector;
-        let delta_p = p1 - p0;
+        let p1 = to_target;
+        let delta_p = *p1 - *p0;
         let distance = delta_p.norm();
         if distance > self.translational_threshold {
             let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
@@ -248,16 +260,52 @@ impl Extrapolation<Waypoint> for LineFollow {
             });
         }
 
-        let delta_yaw_abs = (to_position.rotation / current_yaw).angle().abs();
+        return Ok(ReachedTarget{
+            waypoints: output,
+            time: current_time,
+            yaw: current_yaw
+        })
+    }
+}
+
+impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
+
+    fn extrapolate(
+        &self,
+        from_waypoint: &Waypoint,
+        to_position: &Position
+    ) -> Result<Vec<Waypoint>, ExtrapError> {
+        let mut arrival = self.move_towards_target(
+            from_waypoint, &to_position.translation.vector
+        )?;
+
+        let delta_yaw_abs = (to_position.rotation / arrival.yaw).angle().abs();
         if delta_yaw_abs > self.rotational_threshold {
-            current_time += time_point::Duration::from_secs_f64(delta_yaw_abs/self.rotational_speed);
-            output.push(Waypoint{
-                time: current_time,
+            // Rotate towards the target orientation if we're not already facing
+            // it.
+            arrival.time += time_point::Duration::from_secs_f64(
+                delta_yaw_abs/self.rotational_speed
+            );
+            arrival.waypoints.push(Waypoint{
+                time: arrival.time,
                 position: *to_position
             });
         }
 
-        return Ok(output);
+        return Ok(arrival.waypoints);
+    }
+}
+
+impl Extrapolation<Waypoint, Vector2<f64>> for DifferentialDriveLineFollow {
+
+    fn extrapolate(
+        &self,
+        from_waypoint: &Waypoint,
+        to_target: &Vector2<f64>,
+    ) -> Result<Vec<Waypoint>, ExtrapError> {
+        return self.move_towards_target(
+            from_waypoint, to_target
+        ).map(|arrival| arrival.waypoints );
     }
 }
 
@@ -296,7 +344,7 @@ mod tests {
     fn test_extrapolation_f64() {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
         let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
-        let movement = LineFollow::new(2.0, 3.0).expect("Failed to make LineFollow");
+        let movement = DifferentialDriveLineFollow::new(2.0, 3.0).expect("Failed to make LineFollow");
         let p_target = Position::new(Vector2::new(1.0, 3.0), 60f64.to_radians());
         let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
         assert_eq!(waypoints.len(), 3);
@@ -323,7 +371,7 @@ mod tests {
 
         let mut trajectory = crate::motion::se2::LinearTrajectory::from_iter(waypoints.into_iter())
             .expect("Failed to create trajectory");
-        trajectory.insert(wp0);
+        trajectory.insert(wp0).expect("Waypoint insertion failed");
         assert_eq!(trajectory.len(), 4);
     }
 }
