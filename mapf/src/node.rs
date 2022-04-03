@@ -20,10 +20,11 @@ use std::rc::Rc;
 use std::collections::hash_map::Entry;
 use std::ops::Add;
 use std::cmp::Ord;
+use num::traits::Zero;
 
 /// A trait that describes what is needed to define a cost.
-pub trait Cost: Ord + Add + Sized { }
-impl<T: Ord + Add + Sized> Cost for T { }
+pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero { }
+impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero> Cost for T { }
 
 /// The generic trait for a Node. This contains the minimal generalized
 /// information that most algorithms will need from a search node in order to
@@ -45,8 +46,10 @@ pub trait Informed: Node {
     /// Get the estimate of the total cost from the goal. This should always be
     /// equal to cost() + remaining_cost_estimate(), but we make it a separate
     /// function so that implementers can choose to micro-optimize by adding and
-    /// saving the result.
-    fn total_cost_estimate(&self) -> Self::Cost;
+    /// saving the result inside of the node itself.
+    fn total_cost_estimate(&self) -> Self::Cost {
+        self.cost() + self.remaining_cost_estimate()
+    }
 }
 
 /// The result of attempting to add a node to the Closed Set.
@@ -79,28 +82,46 @@ pub trait ClosedSet<NodeType: Node> {
     fn status(&self, node: &NodeType) -> ClosedStatus<NodeType>;
 }
 
-pub struct HashClosedSet<NodeType> where
-    NodeType: Hash {
+/// An alternative to Hash for objects that can sometimes be hashed but other
+/// times cannot.
+pub trait HashOption {
+    /// Attempt to hash the object. Returns false if the object was not hashable.
+    #[must_use]
+    fn hash_opt<H: Hasher>(&self, state: &mut H) -> bool;
+}
+
+impl<T: Hash> HashOption for T {
+    fn hash_opt<H: Hasher>(&self, state: &mut H) -> bool {
+        self.hash(state);
+        return true;
+    }
+}
+
+pub struct HashOptionClosedSet<NodeType: HashOption> {
     closed_set: std::collections::HashMap<u64, Rc<NodeType>>
 }
 
-impl<NodeType: Hash> Default for HashClosedSet<NodeType> {
+impl<NodeType: HashOption> Default for HashOptionClosedSet<NodeType> {
     fn default() -> Self {
-        return HashClosedSet {
+        return HashOptionClosedSet {
             closed_set: std::collections::HashMap::<u64, Rc<NodeType>>::default()
         }
     }
 }
 
-impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
-    NodeType: Node + Hash {
-
+impl<NodeType> ClosedSet<NodeType> for HashOptionClosedSet<NodeType>
+where
+    NodeType: Node + HashOption
+{
     fn close(&mut self, node: &Rc<NodeType>) -> CloseResult<NodeType> {
         // It would be nice to use a HashSet instead of a HashMap, but the
         // HashSet API does not have an equivalent to the HashMap's Entry API,
         // which makes this function far more efficient.
         let mut hasher = self.closed_set.hasher().build_hasher();
-        node.hash(&mut hasher);
+        if !node.hash_opt(&mut hasher) {
+            return CloseResult::Closed;
+        }
+
         let key = hasher.finish();
         let entry = self.closed_set.entry(key);
         match entry {
@@ -121,7 +142,9 @@ impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
 
     fn status(&self, node: &NodeType) -> ClosedStatus<NodeType> {
         let mut hasher = self.closed_set.hasher().build_hasher();
-        node.hash(&mut hasher);
+        if !node.hash_opt(&mut hasher) {
+            return ClosedStatus::Open;
+        }
         let key = hasher.finish();
         let entry = self.closed_set.get(&key);
         match entry {
@@ -134,6 +157,8 @@ impl<NodeType> ClosedSet<NodeType> for HashClosedSet<NodeType> where
         }
     }
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -154,7 +179,7 @@ mod tests {
     }
 
     impl Node for TestNode {
-        type ClosedSet = HashClosedSet<Self>;
+        type ClosedSet = HashOptionClosedSet<Self>;
         type Cost = u64;
 
         fn cost(&self) -> u64 {
@@ -177,7 +202,7 @@ mod tests {
     #[test]
     fn hashable_node_can_enter_closed_set() {
 
-        let mut closed_set = HashClosedSet::<TestNode>::default();
+        let mut closed_set = HashOptionClosedSet::<TestNode>::default();
 
         let node_1 = Rc::<TestNode>::new(
             TestNode{

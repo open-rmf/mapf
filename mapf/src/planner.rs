@@ -318,7 +318,7 @@ mod tests {
     }
 
     impl node::Node for CountingNode {
-        type ClosedSet = node::HashClosedSet<Self>;
+        type ClosedSet = node::HashOptionClosedSet<Self>;
         type Cost = u64;
 
         fn cost(&self) -> u64 {

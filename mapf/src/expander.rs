@@ -22,7 +22,7 @@ pub trait Goal<Node: node::Node> {
     fn is_satisfied(&self, node: &Node) -> bool;
 }
 
-pub trait Expander {
+pub trait Expander<'ex> {
 
     /// The type of Node supported by this Expander
     type Node: node::Node;
@@ -50,7 +50,7 @@ pub trait Expander {
     fn start(&self, start: &Self::Start, goal: &Self::Goal) -> Self::Expansion;
 
     /// Expand the given node
-    fn expand(&self, parent: &Rc<Self::Node>, goal: &Self::Goal, options: &Self::Options) -> Self::Expansion;
+    fn expand(&'ex self, parent: &Rc<Self::Node>, goal: &Self::Goal, options: &Self::Options) -> Self::Expansion;
 
     /// Make a Solution for the given solution node
     fn make_solution(&self, solution_node: &Rc<Self::Node>, options: &Self::Options) -> Self::Solution;
@@ -58,7 +58,7 @@ pub trait Expander {
 
 /// The Reversible trait can be implemented by Expanders that support expanding
 /// in reverse from a goal. Bidirectional algorithms can take advantage of this.
-pub trait Reversible<Reverse: Expander>: Expander {
+pub trait Reversible<'a, Reverse: Expander<'a>>: Expander<'a> {
 
     /// Create a reverse expander for the algorithm to use.
     /// Note: Reverse::Start must be equivalent to the Forward Expander's Goal.
@@ -71,21 +71,3 @@ pub trait Reversible<Reverse: Expander>: Expander {
         reverse_solution_node: &Rc<Reverse::Node>
     ) -> Self::Solution;
 }
-
-/// This trait expresses an object that can be used a heuristic for an informed
-/// search, meaning it can provide an estimate for the remaining cost to reach
-/// the goal from a given node.
-pub trait Heuristic<Node: node::Node> {
-
-    /// Get an estimate for the remaining cost from the given node to the goal.
-    fn estimate(&self, node: &Node) -> Option<Node::Cost>;
-}
-
-pub trait Informed<Node: node::Informed> {
-    type Heuristic: Heuristic<Node>;
-
-    /// Get a heuristic that tries to pursue the given goal.
-    fn heuristic<Goal>(&self, goal: &Goal) -> Rc<Self::Heuristic>;
-}
-
-pub type Cost<ExpanderType> = <<ExpanderType as Expander>::Node as node::Node>::Cost;
