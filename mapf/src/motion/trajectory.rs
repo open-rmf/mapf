@@ -97,7 +97,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Drains elements out of the given iterator type and constructs a
     /// Trajectory with them. If the final number of elements that would be in
     /// the trajectory is less than 2, then this function returns an Err.
-    pub fn from_iter<I: Iterator<Item=W>>(iter: I) -> Result<Self, ()> {
+    pub fn from_iter<I: std::iter::Iterator<Item=W>>(iter: I) -> Result<Self, ()> {
         let mut result = Self{ waypoints: SortedSet::new() };
         for element in iter {
             result.waypoints.push(TimeCmp(element));
@@ -259,6 +259,28 @@ impl<'a, W: Waypoint> Trajectory<W> {
             trajectory: self,
             motion_cache: RefCell::new(UnboundCache::new())
         }
+    }
+
+    pub fn iter(&self) -> Iterator<'_, W> {
+        Iterator{ internal: self.waypoints.iter() }
+    }
+}
+
+pub struct Iterator<'a, W: Waypoint> {
+    internal: std::slice::Iter<'a, TimeCmp<W>>,
+}
+
+impl<'a, W: Waypoint> std::iter::Iterator for Iterator<'a, W> {
+    type Item = &'a W;
+
+    fn next(&mut self) -> Option<&'a W> {
+        return self.internal.next().map(|x| &x.0);
+    }
+}
+
+impl<'a, W: Waypoint> std::iter::DoubleEndedIterator for Iterator<'a, W> {
+    fn next_back(&mut self) -> Option<&'a W> {
+        return self.internal.next_back().map(|x| &x.0);
     }
 }
 

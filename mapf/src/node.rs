@@ -21,6 +21,7 @@ use std::collections::hash_map::Entry;
 use std::ops::Add;
 use std::cmp::Ord;
 use num::traits::Zero;
+use std::cmp::Ordering;
 
 /// A trait that describes what is needed to define a cost.
 pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero { }
@@ -73,7 +74,7 @@ pub enum ClosedStatus<NodeType: Node> {
 /// The generic trait of a Closed Set. "Closed Sets" are used to keep avoid
 /// unnecessary search effort. They keep track of the lowest cost node which has
 /// visited a certain location.
-pub trait ClosedSet<NodeType: Node> {
+pub trait ClosedSet<NodeType: Node>: Default {
 
     /// Tell the closed set to close this node.
     fn close(&mut self, node: &Rc<NodeType>) -> CloseResult<NodeType>;
@@ -158,6 +159,27 @@ where
     }
 }
 
+pub struct TotalCostEstimateCmp<N: Informed>(pub Rc<N>);
+
+impl<N: Informed> Ord for TotalCostEstimateCmp<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        return self.0.total_cost_estimate().cmp(&other.0.total_cost_estimate());
+    }
+}
+
+impl<N: Informed> PartialOrd for TotalCostEstimateCmp<N> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        return self.0.total_cost_estimate().partial_cmp(&other.0.total_cost_estimate());
+    }
+}
+
+impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
+    fn eq(&self, other: &Self) -> bool {
+        return self.0.total_cost_estimate().eq(&other.0.total_cost_estimate());
+    }
+}
+
+impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
 
 
 #[cfg(test)]

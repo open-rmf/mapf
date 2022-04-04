@@ -32,3 +32,5 @@ pub use tracker::Tracker;
 
 pub mod motion;
 pub mod directed;
+
+pub mod a_star;

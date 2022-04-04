@@ -22,7 +22,7 @@ pub trait Goal<Node: node::Node> {
     fn is_satisfied(&self, node: &Node) -> bool;
 }
 
-pub trait Expander<'ex> {
+pub trait Expander {
 
     /// The type of Node supported by this Expander
     type Node: node::Node;
@@ -47,10 +47,20 @@ pub trait Expander<'ex> {
     fn default_options(&self) -> Self::Options;
 
     /// Generate an initial set of nodes based on the given start conditions
-    fn start(&self, start: &Self::Start, goal: &Self::Goal) -> Self::Expansion;
+    fn start(
+        &self,
+        start: &Self::Start,
+        goal: &Self::Goal
+    // ) -> Self::Expansion;
+    ) -> Self::Expansion;
 
     /// Expand the given node
-    fn expand(&'ex self, parent: &Rc<Self::Node>, goal: &Self::Goal, options: &Self::Options) -> Self::Expansion;
+    fn expand(
+        &self,
+        parent: &Rc<Self::Node>,
+        goal: &Self::Goal,
+        options: &Self::Options
+    ) -> Self::Expansion;
 
     /// Make a Solution for the given solution node
     fn make_solution(&self, solution_node: &Rc<Self::Node>, options: &Self::Options) -> Self::Solution;
@@ -58,7 +68,7 @@ pub trait Expander<'ex> {
 
 /// The Reversible trait can be implemented by Expanders that support expanding
 /// in reverse from a goal. Bidirectional algorithms can take advantage of this.
-pub trait Reversible<'a, Reverse: Expander<'a>>: Expander<'a> {
+pub trait Reversible<Reverse: Expander>: Expander {
 
     /// Create a reverse expander for the algorithm to use.
     /// Note: Reverse::Start must be equivalent to the Forward Expander's Goal.
@@ -71,3 +81,5 @@ pub trait Reversible<'a, Reverse: Expander<'a>>: Expander<'a> {
         reverse_solution_node: &Rc<Reverse::Node>
     ) -> Self::Solution;
 }
+
+pub type Cost<E> = <<E as Expander>::Node as node::Node>::Cost;
