@@ -16,6 +16,7 @@
 */
 
 use std::rc::Rc;
+use std::cell::RefCell;
 use super::node;
 
 pub trait Goal<Node: node::Node> {

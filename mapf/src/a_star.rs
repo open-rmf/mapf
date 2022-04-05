@@ -51,7 +51,7 @@ where
 }
 
 #[derive(Default)]
-struct Algorithm;
+pub struct Algorithm;
 
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where

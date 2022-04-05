@@ -31,11 +31,9 @@ use crate::node::{Cost as NodeCost, HashOption, HashOptionClosedSet};
 use std::{
     hash::{Hash, Hasher},
     rc::Rc,
-    cell::RefCell,
 };
 use nalgebra::{UnitComplex as Rotation, Vector2};
 use time_point::TimePoint;
-use cached::{Cached, UnboundCache};
 use num::Zero;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -101,9 +99,9 @@ impl<Cost: NodeCost> crate::node::Informed for Node<Cost> {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Start {
-    vertex: usize,
-    orientation: Rotation<f64>,
-    offset_location: Option<Vector2<f64>>,
+    pub vertex: usize,
+    pub orientation: Rotation<f64>,
+    pub offset_location: Option<Vector2<f64>>,
 }
 
 impl Start {
@@ -130,8 +128,8 @@ impl Start {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct OrientationGoal {
-    target: Rotation<f64>,
-    threshold: f64,
+    pub target: Rotation<f64>,
+    pub threshold: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -157,8 +155,7 @@ impl<Cost: NodeCost> crate::expander::Goal<Node<Cost>> for Goal {
 }
 
 pub trait Heuristic<Cost: NodeCost> {
-    fn new(graph: Rc<Graph<nalgebra::Vector2<f64>>>, to_goal: usize) -> Self;
-    fn estimate_cost(&self, from_vertex: usize) -> Option<Cost>;
+    fn estimate_cost(&self, from_vertex: usize, to_goal: usize) -> Option<Cost>;
 }
 
 pub trait Policy {
@@ -171,11 +168,9 @@ type NodeType<P> = Node<<P as Policy>::Cost>;
 
 pub struct InternalExpander<P: Policy> {
     graph: Rc<Graph<nalgebra::Vector2<f64>>>,
-    extrapolation: DifferentialDriveLineFollow,
-    cost_calculator: P::CostCalculator,
-    // TOOD(MXG): Put the heuristic cache in some kind of mutex so that one
-    // expander can be nicely shared across threads.
-    heuristic_cache: RefCell<UnboundCache<usize, P::Heuristic>>,
+    extrapolation: Rc<DifferentialDriveLineFollow>,
+    cost_calculator: Rc<P::CostCalculator>,
+    heuristic: P::Heuristic,
 }
 
 pub struct Expander<P: Policy> {
@@ -191,15 +186,16 @@ pub struct StartExpansion<P: Policy> {
     start: Start,
     expanded: bool,
     expander: Rc<InternalExpander<P>>,
-    goal_vertex: usize,
+    goal: Goal,
 }
 
 pub struct NodeExpansion<P: Policy> {
     from_node: Rc<NodeType<P>>,
     expansion_index: usize,
     expanded_start: bool,
+    expanded_goal_orientation: bool,
     expander: Rc<InternalExpander<P>>,
-    goal_vertex: usize,
+    goal: Goal,
 }
 
 pub enum Expansion<P: Policy> {
@@ -211,25 +207,26 @@ pub enum Expansion<P: Policy> {
 }
 
 impl<P: Policy> Expansion<P> {
-    fn from_node(expander: &Expander<P>, from_node: Rc<NodeType<P>>, toward_goal: usize) -> Self {
+    fn from_node(expander: &Expander<P>, from_node: Rc<NodeType<P>>, toward_goal: &Goal) -> Self {
         return Expansion::Node(
             NodeExpansion{
                 from_node,
                 expansion_index: 0,
                 expanded_start: false,
+                expanded_goal_orientation: false,
                 expander: expander.internal.clone(),
-                goal_vertex: toward_goal,
+                goal: toward_goal.clone(),
             }
         );
     }
 
-    fn from_start(expander: &Expander<P>, from_start: &Start, toward_goal: usize) -> Self {
+    fn from_start(expander: &Expander<P>, from_start: &Start, toward_goal: &Goal) -> Self {
         return Expansion::Start(
             StartExpansion{
                 start: from_start.clone(),
                 expanded: false,
                 expander: expander.internal.clone(),
-                goal_vertex: toward_goal,
+                goal: toward_goal.clone(),
             }
         )
     }
@@ -246,11 +243,32 @@ impl<P: Policy> NodeExpansion<P> {
                 let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
                 waypoints.insert(0, self.from_node.state);
                 let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
-                let remaining_cost_estimate = self.expander.heuristic(to_vertex, self.goal_vertex)?;
+                let remaining_cost_estimate = self.expander.heuristic.estimate_cost(to_vertex, self.goal.vertex)?;
                 return Some(self.expander.make_node(state, to_vertex, remaining_cost_estimate, trajectory, &self.from_node));
             }
             // else: We should propogate these inner expansion errors somehow so
             // users can be aware of unexpected problems.
+        }
+
+        return None;
+    }
+
+    fn rotate_towards_target(&self) -> Option<Rc<NodeType<P>>> {
+        if let Some(orientation_goal) = self.goal.orientation {
+            let to_target = Position::from_parts(
+                self.from_node.state.position.translation,
+                orientation_goal.target
+            );
+            let extrapolation = self.expander.extrapolation.extrapolate(
+                &self.from_node.state, &to_target
+            );
+            if let Ok(mut waypoints) = extrapolation {
+                let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
+                waypoints.insert(0, self.from_node.state);
+                let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
+                let remaining_cost_estimate = P::Cost::zero();
+                return Some(self.expander.make_node(state, self.from_node.vertex, remaining_cost_estimate, trajectory, &self.from_node));
+            }
         }
 
         return None;
@@ -266,7 +284,7 @@ impl<P: Policy> NodeExpansion<P> {
                 let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
                 waypoints.insert(0, self.from_node.state);
                 let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
-                let remaining_cost_estimate = self.expander.heuristic(to_vertex, self.goal_vertex)?;
+                let remaining_cost_estimate = self.expander.heuristic.estimate_cost(to_vertex, self.goal.vertex)?;
                 return Some(self.expander.make_node(state, to_vertex, remaining_cost_estimate, trajectory, &self.from_node));
             }
         }
@@ -292,11 +310,34 @@ impl<P: Policy> Iterator for Expansion<P> {
                     }
                 }
 
-                if let Some(to_vertices) = expansion.expander.graph.edges.get(expansion.from_node.vertex) {
-                    if let Some(to_vertex) = to_vertices.get(expansion.expansion_index) {
-                        let next = expansion.expand_to(*to_vertex);
-                        expansion.expansion_index += 1;
-                        return next;
+                loop {
+                    if let Some(to_vertices) = expansion.expander.graph.edges.get(expansion.from_node.vertex) {
+                        if let Some(to_vertex) = to_vertices.get(expansion.expansion_index) {
+                            let next_opt = expansion.expand_to(*to_vertex);
+                            expansion.expansion_index += 1;
+                            if let Some(next) = next_opt {
+                                return Some(next);
+                            } else {
+                                // If it was not possible to expand to this
+                                // vertex for some reason, then try the next one.
+                                continue;
+                            }
+                        }
+                    }
+
+                    break;
+                }
+
+                if expansion.from_node.vertex == expansion.goal.vertex {
+                    if !expansion.expanded_goal_orientation {
+                        expansion.expanded_goal_orientation = true;
+                        if let Some(next) = expansion.rotate_towards_target() {
+                            // We should only return here if the expansion
+                            // succeeded. If it came back None then we should
+                            // fall through to any other expansion that might be
+                            // performable.
+                            return Some(next);
+                        }
                     }
                 }
             },
@@ -306,9 +347,8 @@ impl<P: Policy> Iterator for Expansion<P> {
                 }
                 expansion.expanded = true;
 
-                if let Some(remaining_cost_estimate) = expansion.expander.heuristic(
-                    expansion.start.vertex, expansion.goal_vertex
-                ) {
+                if let Some(remaining_cost_estimate) = expansion.expander.heuristic
+                    .estimate_cost(expansion.start.vertex, expansion.goal.vertex) {
                     let waypoint = expansion.start.to_waypoint(expansion.expander.graph.as_ref())?;
                     return Some(Rc::new(Node{
                         cost: P::Cost::zero(),
@@ -329,12 +369,6 @@ impl<P: Policy> Iterator for Expansion<P> {
 }
 
 impl<P: Policy> InternalExpander<P> {
-    fn heuristic(&self, from_vertex: usize, to_goal: usize) -> Option<P::Cost> {
-        return self.heuristic_cache.borrow_mut().cache_get_or_set_with(
-            to_goal, || { P::Heuristic::new(self.graph.clone(), to_goal) }
-        ).estimate_cost(from_vertex);
-    }
-
     fn make_node(
         &self,
         state: Waypoint,
@@ -378,11 +412,11 @@ impl<P: Policy> crate::Expander for Expander<P> {
     }
 
     fn start(&self, start: &Start, goal: &Self::Goal) -> Expansion<P> {
-        return Expansion::from_start(self, start, goal.vertex);
+        return Expansion::from_start(self, start, goal);
     }
 
     fn expand(&self, parent: &Rc<Self::Node>, goal: &Self::Goal, _: &Self::Options) -> Expansion<P> {
-        return Expansion::from_node(self, parent.clone(), goal.vertex);
+        return Expansion::from_node(self, parent.clone(), goal);
     }
 
     fn make_solution(&self, solution_node: &Rc<Self::Node>, _: &Self::Options) -> Self::Solution {
@@ -403,5 +437,150 @@ impl<P: Policy> crate::Expander for Expander<P> {
 
         waypoints.reverse();
         return Trajectory::from_iter(waypoints.into_iter()).ok();
+    }
+}
+
+impl<P: Policy> Expander<P> {
+    fn new(
+        graph: Rc<Graph<nalgebra::Vector2<f64>>>,
+        extrapolation: Rc<DifferentialDriveLineFollow>,
+        cost_calculator: Rc<P::CostCalculator>,
+        heuristic: P::Heuristic,
+    ) -> Self {
+        return Self{
+            internal: Rc::new(InternalExpander{
+                graph,
+                extrapolation,
+                cost_calculator,
+                heuristic
+            })
+        }
+    }
+}
+
+pub struct EuclieanHeuristic<P: Policy> {
+    pub graph: Rc<Graph<nalgebra::Vector2<f64>>>,
+    pub extrapolation: Rc<DifferentialDriveLineFollow>,
+    pub cost_calculator: Rc<P::CostCalculator>,
+}
+
+impl<P: Policy<Cost=i64>> Heuristic<P::Cost> for EuclieanHeuristic<P> {
+    fn estimate_cost(&self, from_vertex: usize, to_goal: usize) -> Option<P::Cost> {
+        let speed = self.extrapolation.translational_speed();
+        let p0 = self.graph.vertices.get(from_vertex)?;
+        let p1 = self.graph.vertices.get(to_goal)?;
+        let distance = (p1 - p0).norm();
+        return Some(time_point::Duration::from_secs_f64(distance/speed).nanos);
+    }
+}
+
+struct TimeCostCalculator;
+impl CostCalculator<Waypoint> for TimeCostCalculator {
+    type Cost = i64;
+    fn compute_cost(&self, trajectory: &Trajectory<Waypoint>) -> i64 {
+        return trajectory.duration().nanos;
+    }
+}
+
+struct SimplePolicy;
+
+impl Policy for SimplePolicy {
+    type Cost = i64;
+    type CostCalculator = TimeCostCalculator;
+    type Heuristic = EuclieanHeuristic<Self>;
+}
+
+type SimpleExpander = Expander<SimplePolicy>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::algorithm::Status;
+
+    fn make_test_graph() -> Graph<Vector2<f64>> {
+        /*
+         * 0-----1-----2-----3
+         *           /       |
+         *         /         |
+         *       4-----5     6
+         *             |
+         *             |
+         *             7-----8
+        */
+
+        let mut vertices = Vec::<Vector2<f64>>::new();
+        vertices.push(Vector2::new(0.0, 0.0)); // 0
+        vertices.push(Vector2::new(1.0, 0.0)); // 1
+        vertices.push(Vector2::new(2.0, 0.0)); // 2
+        vertices.push(Vector2::new(3.0, 0.0)); // 3
+        vertices.push(Vector2::new(1.0, -1.0)); // 4
+        vertices.push(Vector2::new(2.0, -1.0)); // 5
+        vertices.push(Vector2::new(3.0, -1.0)); // 6
+        vertices.push(Vector2::new(2.0, -2.0)); // 7
+        vertices.push(Vector2::new(3.0, -2.0)); // 8
+
+        let mut edges = Vec::<Vec::<usize>>::new();
+        edges.resize(9, Vec::new());
+        let mut add_bidir_edge = |v0: usize, v1: usize| {
+            edges.get_mut(v0).unwrap().push(v1);
+            edges.get_mut(v1).unwrap().push(v0);
+        };
+        add_bidir_edge(0, 1);
+        add_bidir_edge(1, 2);
+        add_bidir_edge(2, 3);
+        add_bidir_edge(2, 4);
+        add_bidir_edge(3, 6);
+        add_bidir_edge(4, 5);
+        add_bidir_edge(5, 7);
+        add_bidir_edge(7, 8);
+
+        return Graph{vertices, edges};
+    }
+
+    fn make_test_extrapolation() -> DifferentialDriveLineFollow {
+        return DifferentialDriveLineFollow::new(1.0f64, std::f64::consts::PI).unwrap();
+    }
+
+    #[test]
+    fn test_simple_expander() {
+
+        let graph = Rc::new(make_test_graph());
+        let extrapolation = Rc::new(make_test_extrapolation());
+        let cost_calculator = Rc::new(TimeCostCalculator);
+
+        let expander = Rc::new(SimpleExpander::new(
+            graph.clone(), extrapolation.clone(), cost_calculator.clone(),
+            EuclieanHeuristic{graph, extrapolation, cost_calculator}
+        ));
+
+        let planner = crate::Planner::<SimpleExpander, crate::a_star::Algorithm>::new(expander);
+        let mut progress = planner.plan(
+            &Start{
+                vertex: 0,
+                orientation: Rotation::new(0.0),
+                offset_location: None,
+            },
+            Goal{
+                vertex: 8,
+                // orientation: None
+                orientation: Some(OrientationGoal{
+                    target: Rotation::new(90f64.to_radians()),
+                    threshold: crate::motion::DEFAULT_ROTATIONAL_THRESHOLD
+                })
+            }
+        );
+
+        match progress.solve() {
+            Status::Solved(solution_opt) => {
+                let solution = solution_opt.unwrap();
+                println!("{:#?}", solution);
+            },
+            Status::Impossible => {
+                assert!(false);
+            },
+            Status::Incomplete => {
+                assert!(false);
+            }
+        }
     }
 }

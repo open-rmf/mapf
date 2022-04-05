@@ -180,6 +180,11 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return self.waypoints.get(index).map(|x| &x.0);
     }
 
+    /// Get the time duration of the trajectory.
+    pub fn duration(&self) -> Duration {
+        return *self.waypoints.last().unwrap().0.time() - *self.waypoints.first().unwrap().0.time();
+    }
+
     /// Make changes to the waypoint at a specified index. If a change is made
     /// to the waypoint's time that would cause its order within the vector to
     /// change, then its time value will be reverted back to the original and
