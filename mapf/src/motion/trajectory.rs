@@ -58,7 +58,7 @@ pub enum MutateError {
     InvalidTimeChange,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Trajectory<W>
 where W: Waypoint
 {
@@ -268,6 +268,17 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
     pub fn iter(&self) -> Iterator<'_, W> {
         Iterator{ internal: self.waypoints.iter() }
+    }
+}
+
+impl<W: Waypoint> std::fmt::Debug for Trajectory<W> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut builder = fmt.debug_list();
+        for wp in self.waypoints.iter() {
+            builder.entry(&wp.0);
+        }
+
+        return builder.finish();
     }
 }
 
