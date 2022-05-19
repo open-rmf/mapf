@@ -14,28 +14,16 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds)]
 
-pub mod planner;
-pub use planner::{Planner, Progress};
-
-pub mod expander;
-pub use expander::Expander;
-
-pub mod node;
-pub use node::{Node, Cost};
-
-pub mod algorithm;
-pub use algorithm::Algorithm;
-
-pub mod tracker;
-pub use tracker::Tracker;
-
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
-
-pub mod occupancy;
-
-mod util;
+pub(crate) fn triangular_for<Item>(
+    iterable: impl Iterator<Item=Item> + Clone,
+    mut f: impl FnMut(&Item, Item)
+) {
+    let mut outer_iter = iterable.into_iter();
+    while let Some(outer_value) = outer_iter.next() {
+        let mut inner_iter = outer_iter.clone();
+        while let Some(inner_value) = inner_iter.next() {
+            f(&outer_value, inner_value);
+        }
+    }
+}

@@ -11,8 +11,8 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
-# nalgebra = "0.30"
-nalgebra = { path = "../../nalgebra" }
+# nalgebra is waiting on a release of https://github.com/dimforge/nalgebra/pull/1094
+nalgebra = { git = "https://github.com/dimforge/nalgebra", branch = "dev" }
 time-point = "0.1"
 sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
 simba = "*"
@@ -20,3 +20,5 @@ num-complex = "*"
 cached = "0.34"
 approx = "*"
 num = "*"
+arrayvec = "*"
+bitfield = "*"

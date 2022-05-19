@@ -441,7 +441,7 @@ impl<P: Policy> crate::Expander for Expander<P> {
 }
 
 impl<P: Policy> Expander<P> {
-    fn new(
+    pub fn new(
         graph: Rc<Graph<nalgebra::Vector2<f64>>>,
         extrapolation: Rc<DifferentialDriveLineFollow>,
         cost_calculator: Rc<P::CostCalculator>,

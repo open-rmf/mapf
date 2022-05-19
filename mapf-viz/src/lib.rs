@@ -14,28 +14,21 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds)]
 
-pub mod planner;
-pub use planner::{Planner, Progress};
-
-pub mod expander;
-pub use expander::Expander;
-
-pub mod node;
-pub use node::{Node, Cost};
-
-pub mod algorithm;
-pub use algorithm::Algorithm;
-
-pub mod tracker;
-pub use tracker::Tracker;
-
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
+pub mod spatial_canvas;
+pub use spatial_canvas::SpatialCanvasProgram;
 
 pub mod occupancy;
+pub use occupancy::{OccupancyVisual, SparseGridOccupancyVisual};
 
-mod util;
+pub mod grid;
+pub use grid::InfiniteGrid;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        let result = 2 + 2;
+        assert_eq!(result, 4);
+    }
+}
