@@ -24,6 +24,9 @@ pub use occupancy::{OccupancyVisual, SparseGridOccupancyVisual};
 pub mod grid;
 pub use grid::InfiniteGrid;
 
+pub mod toggle;
+pub use toggle::{Toggle, Toggler};
+
 #[cfg(test)]
 mod tests {
     #[test]

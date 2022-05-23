@@ -21,37 +21,63 @@ use iced::{
     canvas::{Path, Stroke, Frame, Cursor, event::{self, Event}},
     keyboard, mouse,
 };
-use super::spatial_canvas::{self, InclusionZone, SpatialCanvasProgram, SpatialCache, Toggle};
-use mapf::occupancy::{Grid, Visibility, SparseGrid, Cell};
+use super::{
+    spatial_canvas::{self, InclusionZone, SpatialCanvasProgram, SpatialCache},
+    toggle::{Toggle, Toggler, FillToggler, DragToggler},
+};
+use mapf::occupancy::{Grid, Visibility, SparseGrid, Cell, Point};
+use std::collections::HashMap;
 
-#[derive(Derivative, Clone)]
+#[derive(Derivative)]
 #[derivative(Debug)]
 pub struct OccupancyVisual<Message, G: Grid> {
     #[derivative(Debug="ignore")]
     occupancy: Visibility<G>,
-    pressed: bool,
-    change: Toggle,
+
     // NOTE: After changing one of the public fields below, you must clear the
     // cache of the SpatialCanvas that this program belongs to before the change
     // will be rendered.
     pub occupancy_color: iced::Color,
-    pub visibility_color: iced::Color,
+    pub default_visibility_color: iced::Color,
+    pub special_visibility_color: HashMap<Cell, iced::Color>,
     pub show_visibility_graph: bool,
     pub show_details: bool,
+
+    #[derivative(Debug="ignore")]
+    pub cell_toggler: Option<Box<dyn Toggler>>,
+
+    #[derivative(Debug="ignore")]
+    pub corner_select_toggler: Option<Box<dyn Toggler>>,
+
+    #[derivative(Debug="ignore")]
+    pub on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
+
     _msg: std::marker::PhantomData<Message>,
 }
 
 impl<Message, G: Grid> OccupancyVisual<Message, G> {
 
-    pub fn new(grid: G, robot_radius: f32) -> Self {
+    pub fn new(
+        grid: G,
+        robot_radius: f32,
+        on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
+    ) -> Self {
         Self{
             occupancy: Visibility::new(grid, robot_radius as f64),
-            pressed: false,
-            change: Toggle::On,
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
-            visibility_color: iced::Color::from_rgb8(230, 166, 33),
+            default_visibility_color: iced::Color::from_rgb8(230, 166, 33),
+            special_visibility_color: Default::default(),
             show_visibility_graph: true,
             show_details: false,
+            cell_toggler: Some(Box::new(FillToggler::new(
+                DragToggler::new(Some(mouse::Button::Left), None),
+                DragToggler::new(None, Some((keyboard::Modifiers::SHIFT, mouse::Button::Left))),
+            ))),
+            corner_select_toggler: Some(Box::new(FillToggler::new(
+                DragToggler::new(Some(mouse::Button::Right), None),
+                DragToggler::new(None, Some((keyboard::Modifiers::SHIFT, mouse::Button::Right))),
+            ))),
+            on_corner_select,
             _msg: Default::default(),
         }
     }
@@ -72,19 +98,51 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         &self.occupancy.grid()
     }
 
+    /// The cache of the spatial canvas needs to be cleared after changing this
+    /// value or else the change will not show.
+    pub fn show_details(&mut self, show: bool) {
+        self.show_details = show;
+    }
+
     fn toggle(&mut self, p: iced::Point) -> bool {
-        let cell = Cell::from_point([p.x as f64, p.y as f64].into(), self.occupancy.grid().cell_size());
-        match self.change {
-            Toggle::On => {
-                return self.occupancy.change_cells(&[(cell, true)].into());
-            },
-            Toggle::Off => {
-                return self.occupancy.change_cells(&[(cell, false)].into());
-            },
-            Toggle::NoChange => {
-                return false;
+        if let Some(cell_toggler) = &self.cell_toggler {
+            let cell = Cell::from_point([p.x as f64, p.y as f64].into(), self.occupancy.grid().cell_size());
+            match cell_toggler.state() {
+                Toggle::On => {
+                    return self.occupancy.change_cells(&[(cell, true)].into());
+                },
+                Toggle::Off => {
+                    return self.occupancy.change_cells(&[(cell, false)].into());
+                },
+                Toggle::NoChange => {
+                    return false;
+                }
             }
         }
+
+        return false;
+    }
+
+    fn find_closest(&self, p: iced::Point) -> Option<Cell> {
+        let mut closest: Option<(Cell, f64)> = None;
+        let r = self.occupancy.agent_radius();
+        let p = Point::new(p.x as f64, p.y as f64);
+
+        for (cell, _) in self.occupancy.iter_points() {
+            let p_cell = cell.to_center_point(self.grid().cell_size());
+            let dist = (p_cell - p).norm();
+            if dist <= r {
+                if let Some((_, old_dist)) = closest {
+                    if dist < old_dist {
+                        closest = Some((*cell, dist));
+                    }
+                } else {
+                    closest = Some((*cell, dist));
+                }
+            }
+        }
+
+        return closest.map(|x| x.0);
     }
 }
 
@@ -94,46 +152,43 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         event: Event,
         cursor: Cursor,
     ) -> (SpatialCache, event::Status, Option<Message>) {
-        if let Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) = event {
-            if modifiers.shift() {
-                self.change = Toggle::Off;
-            } else if modifiers.is_empty() {
-                self.change = Toggle::On;
-            } else {
-                self.change = Toggle::NoChange;
-            }
 
-            if modifiers.alt() {
-                self.show_details = true;
-                return (SpatialCache::Refresh, event::Status::Ignored, None);
-            } else {
-                self.show_details = false;
-                return (SpatialCache::Refresh, event::Status::Ignored, None);
-            }
+        if let Some(cell_toggler) = &mut self.cell_toggler {
+            cell_toggler.toggle(event);
         }
 
         if let Some(p) = cursor.position() {
-            if let Event::Mouse(mouse::Event::ButtonPressed(button)) = event {
-                if mouse::Button::Left == button {
-                    self.pressed = true;
-                    if self.toggle(p) {
-                        return (SpatialCache::Refresh, event::Status::Captured, None);
-                    }
-                }
+            if self.toggle(p) {
+                return (SpatialCache::Refresh, event::Status::Captured, None);
             }
 
-            if let Event::Mouse(mouse::Event::CursorMoved{..}) = event {
-                if self.pressed {
-                    if self.toggle(p) {
-                        return (SpatialCache::Refresh, event::Status::Ignored, None);
+            if let Some(corner_select_toggler) = &mut self.corner_select_toggler {
+                if let Some(on_corner_select) = &self.on_corner_select {
+                    corner_select_toggler.toggle(event);
+                    match corner_select_toggler.state() {
+                        Toggle::On => {
+                            if let Some(cell) = self.find_closest(p) {
+                                return (
+                                    SpatialCache::Unchanged,
+                                    event::Status::Captured,
+                                    Some(on_corner_select(cell, true))
+                                );
+                            }
+                        },
+                        Toggle::Off => {
+                            if let Some(cell) = self.find_closest(p) {
+                                return (
+                                    SpatialCache::Unchanged,
+                                    event::Status::Captured,
+                                    Some(on_corner_select(cell, false))
+                                );
+                            }
+                        },
+                        Toggle::NoChange => {
+                            // Do nothing
+                        }
                     }
                 }
-            }
-        }
-
-        if let Event::Mouse(mouse::Event::ButtonReleased(button)) = event {
-            if mouse::Button::Left == button {
-                self.pressed = false;
             }
         }
 
@@ -160,9 +215,12 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         if self.show_visibility_graph {
             for (cell, _) in self.occupancy.iter_points() {
                 let p = cell.to_center_point(cell_size);
+                let color = self.special_visibility_color.get(cell)
+                    .unwrap_or(&self.default_visibility_color);
+
                 frame.fill(
                     &Path::circle([p.x as f32, p.y as f32].into(), robot_radius),
-                    self.visibility_color,
+                    *color,
                 );
             }
 
@@ -175,7 +233,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
                         [p_j.x as f32, p_j.y as f32].into(),
                     ),
                     Stroke{
-                        color: self.visibility_color,
+                        color: self.default_visibility_color,
                         width: 5_f32,
                         ..Default::default()
                     }

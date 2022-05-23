@@ -19,7 +19,7 @@ use std::collections::{hash_set, HashSet, hash_map, HashMap, BTreeSet, btree_map
 use super::{Point, Vector, Cell, Corner, CornerStatus, ConfirmedChanges, ChangedCorners, Grid};
 use super::util::{SearchF64, LineSegment};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SparseGrid {
     cell_size: f64,
     occupied: HashSet<Cell>,

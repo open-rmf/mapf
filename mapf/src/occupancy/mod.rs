@@ -205,7 +205,7 @@ impl IntoIterator for &CornerStatus {
 type ConfirmedChanges = Vec<(Cell, bool)>;
 type ChangedCorners = Vec<(Cell, CornerStatus)>;
 
-pub trait Grid {
+pub trait Grid: std::fmt::Debug {
     type OccupiedIterator<'a>: Iterator<Item=&'a Cell> + std::fmt::Debug
     where
         Cell: 'a,
@@ -255,8 +255,8 @@ pub trait Grid {
 
 type BlockedBy = Option<Cell>;
 
-#[derive(Clone)]
-pub struct Visibility<G> {
+#[derive(Debug, Clone)]
+pub struct Visibility<G: Grid> {
     grid: G,
     agent_radius: f64,
     cell_shift: i64,
@@ -371,6 +371,10 @@ impl<G: Grid> Visibility<G> {
         );
     }
 
+    pub fn unstable<'a>(&'a self) -> UnstableVisibilityAPI<'a, G> {
+        return UnstableVisibilityAPI{parent: self};
+    }
+
     fn update_corners<'b>(
         grid: &G,
         confirmed_changes: &ConfirmedChanges,
@@ -400,9 +404,7 @@ impl<G: Grid> Visibility<G> {
                             );
 
                             entry.insert((blocked_by, Default::default())).1.set(corner, true);
-                            if blocked_by.is_none() {
-                                new_points.push(cell);
-                            }
+                            new_points.push(cell);
                         },
                         hash_map::Entry::Occupied(mut entry) => {
                             entry.get_mut().1.set(corner, true);
@@ -524,7 +526,7 @@ impl<G: Grid> Visibility<G> {
                     hash_map::Entry::Occupied(mut entry) => {
                         entry.insert(blocked_by);
                     },
-                    hash_map::Entry::Vacant(mut entry) => {
+                    hash_map::Entry::Vacant(entry) => {
                         entry.insert(blocked_by);
                     }
                 }
@@ -592,6 +594,20 @@ impl<G: Grid> Visibility<G> {
 
     fn calculate_cell_shift(agent_radius: f64, cell_size: f64) -> i64 {
         (agent_radius/cell_size + 0.5).ceil() as i64
+    }
+}
+
+pub struct UnstableVisibilityAPI<'a, G: Grid> {
+    parent: &'a Visibility<G>,
+}
+
+impl<'a, G: Grid> UnstableVisibilityAPI<'a, G> {
+    pub fn points(&self) -> &'a HashMap<Cell, (BlockedBy, CornerStatus)> {
+        return &self.parent.points;
+    }
+
+    pub fn edges(&self) -> &'a HashMap<Cell, HashMap<Cell, BlockedBy>> {
+        return &self.parent.edges;
     }
 }
 

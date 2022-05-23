@@ -22,6 +22,7 @@ use iced::{
     mouse, keyboard,
 };
 use lyon::math::{Point, Vector, Transform};
+use super::{Toggle, Toggler, toggle::DragToggler};
 
 pub struct SpatialHUD<'a> {
     base_frame: &'a mut Frame,
@@ -115,88 +116,6 @@ impl InclusionZone {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Toggle {
-    On,
-    Off,
-    NoChange
-}
-
-pub trait Toggler {
-    fn toggle(&mut self, event: Event) -> Toggle;
-}
-
-struct DefaultToggler {
-    main_button: Option<mouse::Button>,
-    alt_button: Option<(keyboard::Modifiers, mouse::Button)>,
-    alt_modifiers_active: bool,
-}
-
-impl DefaultToggler {
-    fn button_matches(&self, button: mouse::Button) -> bool {
-        if let Some(main_button) = self.main_button {
-            if button == main_button {
-                return true;
-            }
-        }
-
-        if self.alt_modifiers_active {
-            if let Some((_, alt_button)) = self.alt_button {
-                if button == alt_button {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-}
-
-impl Default for DefaultToggler {
-    fn default() -> Self {
-        Self{
-            main_button: Some(mouse::Button::Middle),
-            alt_button: Some((keyboard::Modifiers::CTRL, mouse::Button::Left)),
-            alt_modifiers_active: false,
-        }
-    }
-}
-
-impl Toggler for DefaultToggler {
-    fn toggle(&mut self, event: Event) -> Toggle {
-        match event {
-            Event::Mouse(event) => {
-                if let mouse::Event::ButtonPressed(button) = event {
-                    if self.button_matches(button) {
-                        return Toggle::On;
-                    }
-                }
-
-                if let mouse::Event::ButtonReleased(button) = event {
-                    if self.button_matches(button) {
-                        return Toggle::Off;
-                    }
-                }
-            },
-            Event::Keyboard(event) => {
-                if let Some((alt_modifiers, _)) = self.alt_button {
-                    if let keyboard::Event::ModifiersChanged(modifiers) = event {
-                        let alt_modifiers_active_now = modifiers.contains(alt_modifiers);
-                        if alt_modifiers_active_now != self.alt_modifiers_active {
-                            self.alt_modifiers_active = alt_modifiers_active_now;
-                            if !self.alt_modifiers_active {
-                                return Toggle::Off;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return Toggle::NoChange;
-    }
-}
-
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct SpatialCanvas<Message, Program: SpatialCanvasProgram<Message>> {
@@ -219,7 +138,10 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
             program,
             cache: Cache::new(),
             zoom: 1.0,
-            pan_toggler: Some(Box::new(DefaultToggler::default())),
+            pan_toggler: Some(Box::new(DragToggler::new(
+                Some(mouse::Button::Middle),
+                Some((keyboard::Modifiers::CTRL, mouse::Button::Left)),
+            ))),
             scroll_to_zoom: true,
             offset: Vector::new(0.0, 0.0),
             bounds: None,
