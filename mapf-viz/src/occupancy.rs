@@ -52,6 +52,9 @@ pub struct OccupancyVisual<Message, G: Grid> {
     #[derivative(Debug="ignore")]
     pub on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
 
+    #[derivative(Debug="ignore")]
+    pub on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
+
     _msg: std::marker::PhantomData<Message>,
 }
 
@@ -61,6 +64,7 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         grid: G,
         robot_radius: f32,
         on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
+        on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
     ) -> Self {
         Self{
             occupancy: Visibility::new(grid, robot_radius as f64),
@@ -78,6 +82,7 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
                 DragToggler::new(None, Some((keyboard::Modifiers::SHIFT, mouse::Button::Right))),
             ))),
             on_corner_select,
+            on_occupancy_change,
             _msg: Default::default(),
         }
     }
@@ -159,7 +164,11 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
 
         if let Some(p) = cursor.position() {
             if self.toggle(p) {
-                return (SpatialCache::Refresh, event::Status::Captured, None);
+                return (
+                    SpatialCache::Refresh,
+                    event::Status::Captured,
+                    self.on_occupancy_change.as_ref().map(|x| x())
+                );
             }
 
             if let Some(corner_select_toggler) = &mut self.corner_select_toggler {

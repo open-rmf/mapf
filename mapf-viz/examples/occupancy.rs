@@ -263,7 +263,6 @@ impl Application for App {
         content = content
             .push(file_row)
             .push(instruction_row);
-            // .push(self.canvas.view());
 
         if self.debug_text.is_empty() {
             content = content.push(self.canvas.view());
