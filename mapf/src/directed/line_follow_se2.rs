@@ -474,7 +474,7 @@ impl<P: Policy<Cost=i64>> Heuristic<P::Cost> for EuclieanHeuristic<P> {
     }
 }
 
-struct TimeCostCalculator;
+pub struct TimeCostCalculator;
 impl CostCalculator<Waypoint> for TimeCostCalculator {
     type Cost = i64;
     fn compute_cost(&self, trajectory: &Trajectory<Waypoint>) -> i64 {
@@ -482,7 +482,7 @@ impl CostCalculator<Waypoint> for TimeCostCalculator {
     }
 }
 
-struct SimplePolicy;
+pub struct SimplePolicy;
 
 impl Policy for SimplePolicy {
     type Cost = i64;
@@ -490,7 +490,7 @@ impl Policy for SimplePolicy {
     type Heuristic = EuclieanHeuristic<Self>;
 }
 
-type SimpleExpander = Expander<SimplePolicy>;
+pub type SimpleExpander = Expander<SimplePolicy>;
 
 #[cfg(test)]
 mod tests {

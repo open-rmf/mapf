@@ -29,9 +29,10 @@ use iced_native;
 use nalgebra::Vector2;
 use mapf::{
     Planner,
+    a_star,
     motion::{
         Trajectory,
-        se2::timed_position::Waypoint,
+        se2::timed_position::{Waypoint, DifferentialDriveLineFollow},
     },
     directed::{line_follow_se2, simple},
     occupancy::{Grid, SparseGrid, Cell, CornerStatus, Point, Vector}
@@ -43,7 +44,7 @@ use mapf_viz::{
 };
 use mapf_viz::spatial_layers;
 use std::collections::{HashSet, HashMap};
-use arrayvec::ArrayVec;
+use std::rc::Rc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
 
@@ -485,27 +486,54 @@ impl App {
                 let mut lookup = HashMap::new();
                 vertices.push(start_cell.to_center_point(cell_size));
                 vertices.push(goal_cell.to_center_point(cell_size));
+                let mut get_vertex_index =
+                    |cell: &Cell| {
+                        *lookup.entry(*cell).or_insert_with(
+                            || {
+                                let index = vertices.len();
+                                vertices.push(cell.to_center_point(cell_size));
+                                index
+                            }
+                        )
+                    };
+
+                let mut create_edge =
+                    |i: usize, j: usize| {
+                        let min_size = i.max(j) + 1;
+                        if edges.len() < min_size {
+                            edges.resize(min_size, Vec::new());
+                        }
+
+                        edges.get_mut(i).unwrap().push(j);
+                        edges.get_mut(j).unwrap().push(i);
+                    };
+
+                let start_vis = &endpoints.start_visibility;
+                let goal_vis = &endpoints.goal_visibility;
+                for (i, v_cell) in [
+                    (0_usize, start_vis),
+                    (1_usize, goal_vis),
+                ] {
+                    for cell_j in v_cell {
+                        let j = get_vertex_index(cell_j);
+                        create_edge(i, j);
+                    }
+                }
 
                 for (cell_i, cell_j) in visibility.iter_edges() {
-                    let indices: ArrayVec<[usize; 2]> = [cell_i, cell_j]
-                        .iter().map(
-                            |cell| {
-                                lookup.entry(**cell).or_insert_with(
-                                    || {
-                                        let index = vertices.len();
-                                        vertices.push(cell.to_center_point(cell_size));
-                                        index
-                                });
-                            }).collect();
-
-                    let min_size = i.max(j) + 1;
-                    if edges.len() < min_size {
-                        edges.resize(min_size, Vec::new());
-                    }
-
-                    edges.get_mut(i).unwrap().push(j);
-                    edges.get_mut(j).unwrap().push(i);
+                    let [i, j] = [get_vertex_index(cell_i), get_vertex_index(cell_j)];
+                    create_edge(i, j);
                 }
+
+                let graph = Rc::new(simple::Graph{vertices, edges});
+                let extrapolation = Rc::new(DifferentialDriveLineFollow::new(1.0, 1.0).expect("Bad speeds"));
+                let cost_calculator = Rc::new(line_follow_se2::TimeCostCalculator);
+                let expander = Rc::new(line_follow_se2::SimpleExpander::new(
+                    graph.clone(), extrapolation.clone(), cost_calculator.clone(),
+                    line_follow_se2::EuclideanHeuristic{graph, extrapolation, cost_calculator}
+                ));
+
+                let planner = Planner::<line_follow_se2::SimpleExander, a_star::Algorithm>::new(expander);
             }
         }
     }
