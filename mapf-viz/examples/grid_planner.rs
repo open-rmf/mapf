@@ -14,6 +14,7 @@
  * limitations under the License.
  *
 */
+#![feature(array_windows)]
 
 use iced::{
     Application, Alignment, Element, Length, Command, Column, Row, Text, Container,
@@ -25,7 +26,16 @@ use iced::{
     executor, keyboard, mouse,
 };
 use iced_native;
-use mapf::occupancy::{Grid, SparseGrid, Cell, CornerStatus, Point, Vector};
+use nalgebra::Vector2;
+use mapf::{
+    Planner,
+    motion::{
+        Trajectory,
+        se2::timed_position::Waypoint,
+    },
+    directed::{line_follow_se2, simple},
+    occupancy::{Grid, SparseGrid, Cell, CornerStatus, Point, Vector}
+};
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
     spatial_canvas::{SpatialCanvas, SpatialCanvasProgram, SpatialCache, InclusionZone},
@@ -33,6 +43,7 @@ use mapf_viz::{
 };
 use mapf_viz::spatial_layers;
 use std::collections::{HashSet, HashMap};
+use arrayvec::ArrayVec;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
 
@@ -155,23 +166,13 @@ impl<Message> EndpointSelector<Message> {
         valid: bool,
         visibility: &Visibility,
     ) -> Vec<Cell> {
-        let mut visible = Vec::new();
-        if !valid {
-            return visible;
-        }
-
-        if let Some(cell) = cell_opt {
-            let width = 2.0*self.agent_radius;
-            let p = cell.to_center_point(self.cell_size);
-            for (v_cell, _) in visibility.iter_points() {
-                let p_v = v_cell.to_center_point(self.cell_size);
-                if visibility.grid().is_sweep_occupied(p, p_v, width).is_none() {
-                    visible.push(*v_cell);
-                }
+        if valid {
+            if let Some(cell) = cell_opt {
+                return visibility.calculate_visibility(cell).map(|c| *c).collect();
             }
         }
 
-        return visible;
+        return Vec::new();
     }
 }
 
@@ -304,7 +305,57 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
     }
 }
 
-spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector);
+#[derive(Debug, Clone)]
+struct SolutionVisual<Message> {
+    pub path_color: iced::Color,
+    pub solution: Option<Trajectory<Waypoint>>,
+    _msg: std::marker::PhantomData<Message>,
+}
+
+impl SolutionVisual<Message> {
+    fn new(path_color: iced::Color) -> Self {
+        Self{
+            path_color,
+            solution: None,
+            _msg: Default::default(),
+        }
+    }
+}
+
+impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
+    fn draw_in_space(
+        &self,
+        frame: &mut canvas::Frame,
+        _spatial_bounds: iced::Rectangle,
+        _spatial_cursor: canvas::Cursor
+    ) {
+        if let Some(trajectory) = &self.solution {
+            for [wp0, wp1] in trajectory.array_windows() {
+                let p0 = wp0.position.translation;
+                let p1 = wp1.position.translation;
+                frame.stroke(
+                    &Path::line(
+                        [p0.x as f32, p0.y as f32].into(),
+                        [p1.x as f32, p1.y as f32].into(),
+                    ),
+                    Stroke{
+                        color: self.path_color,
+                        width: 4_f32,
+                        ..Default::default()
+                    }
+                );
+            }
+        }
+    }
+
+    fn estimate_bounds(&self) -> InclusionZone {
+        // This layer should always be contained within the other layers,
+        // so we don't need to provide any bounds for this.
+        return InclusionZone::Empty;
+    }
+}
+
+spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
 struct App {
     robot_size_slider: slider::State,
@@ -365,6 +416,10 @@ impl App {
         }
     }
 
+    fn default_solution_color() -> iced::Color {
+        iced::Color::from_rgb(1.0, 1.0, 1.0)
+    }
+
     fn visibility(&self) -> &Visibility {
         self.canvas.program.layers.1.visibility()
     }
@@ -412,6 +467,48 @@ impl App {
     fn recalculate_visibility(&mut self) {
         self.canvas.program.layers.2.calculate_visibility(self.canvas.program.layers.1.visibility());
     }
+
+    fn generate_plan(&mut self) {
+        self.canvas.program.layers.3.solution = None;
+        let endpoints = &self.canvas.program.layers.2;
+        let visibility = self.canvas.program.layers.1.visibility();
+        let cell_size = endpoints.cell_size;
+        if let (Some(start_cell), Some(goal_cell)) = (endpoints.start_cell, endpoints.goal_cell) {
+            if start_cell == goal_cell {
+                // No plan is needed
+                return;
+            }
+
+            if endpoints.start_valid && endpoints.goal_valid {
+                let mut vertices = Vec::new();
+                let mut edges: Vec<Vec<usize>> = Vec::new();
+                let mut lookup = HashMap::new();
+                vertices.push(start_cell.to_center_point(cell_size));
+                vertices.push(goal_cell.to_center_point(cell_size));
+
+                for (cell_i, cell_j) in visibility.iter_edges() {
+                    let indices: ArrayVec<[usize; 2]> = [cell_i, cell_j]
+                        .iter().map(
+                            |cell| {
+                                lookup.entry(**cell).or_insert_with(
+                                    || {
+                                        let index = vertices.len();
+                                        vertices.push(cell.to_center_point(cell_size));
+                                        index
+                                });
+                            }).collect();
+
+                    let min_size = i.max(j) + 1;
+                    if edges.len() < min_size {
+                        edges.resize(min_size, Vec::new());
+                    }
+
+                    edges.get_mut(i).unwrap().push(j);
+                    edges.get_mut(j).unwrap().push(i);
+                }
+            }
+        }
+    }
 }
 
 impl Application for App {
@@ -439,7 +536,8 @@ impl Application for App {
                         Self::default_invalid_color(),
                         Self::default_endpoint_color(Endpoint::Start),
                         Self::default_endpoint_color(Endpoint::Goal),
-                    )
+                    ),
+                    SolutionVisual::new(Self::default_solution_color()),
                 )
             }
         );
@@ -535,12 +633,7 @@ impl Application for App {
                         // Do nothing
                     },
                     EndpointSelection::Finalize(_) => {
-                        let endpoints = self.endpoint_selector();
-                        if endpoints.start_cell.is_some() && endpoints.goal_cell.is_some() {
-                            if endpoints.start_valid && endpoints.goal_valid {
-                                println!("Ready to plan!");
-                            }
-                        }
+                        self.generate_plan();
                     }
                 }
             },

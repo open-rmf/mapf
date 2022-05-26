@@ -101,6 +101,7 @@ impl Application for App {
                         SparseGrid::new(cell_size as f64),
                         robot_radius,
                         Some(Box::new(Message::CornerSelected)),
+                        None,
                     ),
                 )
             }

@@ -425,7 +425,7 @@ impl<P: Policy> crate::Expander for Expander<P> {
         loop {
             if let Some(next_waypoints) = &node.motion_from_parent {
                 for wp in next_waypoints.iter().rev() {
-                    waypoints.push(wp.clone());
+                    waypoints.push(*wp.clone());
                 }
             }
 

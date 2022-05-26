@@ -22,7 +22,8 @@ pub trait Timed {
     fn set_time(&mut self, new_time: TimePoint);
 }
 
-#[derive(Clone, Debug)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
 pub struct TimeCmp<W: Timed>(pub W);
 
 impl<W: Timed> std::cmp::PartialEq<TimePoint> for TimeCmp<W> {
@@ -68,5 +69,12 @@ impl<W: Timed> std::cmp::Ord for TimeCmp<W> {
         return self.0.time().nanos_since_zero.cmp(
             &other.0.time().nanos_since_zero
         );
+    }
+}
+
+impl<W: Timed> std::ops::Deref for TimeCmp<W> {
+    type Target = W;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

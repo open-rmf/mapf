@@ -317,8 +317,11 @@ impl<G: Grid> Visibility<G> {
         );
     }
 
-    pub fn iter_points(&self) -> VisibilityPointIter<'_> {
-        VisibilityPointIter{iter: self.points.iter()}
+    pub fn iter_points(&self) -> impl Iterator<Item=(&Cell, &CornerStatus)> {
+        self.points.iter()
+            .filter(|(_, (blocked_by, _))| { blocked_by.is_none() })
+            .map(|(cell, (_, corner_status))| { (cell, corner_status) }
+        )
     }
 
     pub fn debug_points(&self) -> &HashMap<Cell, (BlockedBy, CornerStatus)> {
@@ -336,6 +339,21 @@ impl<G: Grid> Visibility<G> {
 
     pub fn debug_edges(&self) -> &HashMap<Cell, HashMap<Cell, BlockedBy>> {
         return &self.edges;
+    }
+
+    pub fn calculate_visibility(&self, cell: Cell) -> impl Iterator<Item=&Cell> {
+        self.iter_points().filter(
+            move |(v_cell, corner_status)| {
+                if !cell.in_visible_quadrant_of(*v_cell, **corner_status) {
+                    return false;
+                }
+
+                let cell_size = self.grid.cell_size();
+                let p0 = cell.to_center_point(cell_size);
+                let p1 = v_cell.to_center_point(cell_size);
+                return self.grid.is_sweep_occupied(p0, p1, 2.0*self.agent_radius).is_none();
+            }
+        ).map(|(v_cell, _)| { v_cell })
     }
 
     /// Get a reference to the underlying occupancy grid.
@@ -678,28 +696,6 @@ impl<'a, G: Grid> Iterator for VisibilityEdgeIter<'a, G> {
         }
 
         return None;
-    }
-}
-
-pub struct VisibilityPointIter<'a> {
-    iter: hash_map::Iter<'a, Cell, (BlockedBy, CornerStatus)>,
-}
-
-impl<'a> Iterator for VisibilityPointIter<'a> {
-    type Item = (&'a Cell, &'a CornerStatus);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some((cell, (blocked_by, status))) = self.iter.next() {
-                if blocked_by.is_some() {
-                    continue;
-                }
-
-                return Some((cell, status));
-            }
-
-            return None;
-        }
     }
 }
 

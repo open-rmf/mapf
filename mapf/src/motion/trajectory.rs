@@ -59,9 +59,7 @@ pub enum MutateError {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct Trajectory<W>
-where W: Waypoint
-{
+pub struct Trajectory<W: Waypoint> {
     waypoints: SortedSet<TimeCmp<W>>,
 }
 
@@ -266,8 +264,15 @@ impl<'a, W: Waypoint> Trajectory<W> {
         }
     }
 
-    pub fn iter(&self) -> Iterator<'_, W> {
-        Iterator{ internal: self.waypoints.iter() }
+    /// Iterate through this trajectory.
+    ///
+    /// Note: We return a slice whose item is wrapped in the TimeCmp newtype.
+    /// This makes getting the actual waypoint out of the iterator slightly less
+    /// convenient because you will need to dereference it, but it allows us to
+    /// provide all the functionality of a slice without any custom
+    /// implementations and without any unsafe blocks.
+    pub fn iter(&self) -> std::slice::Iter<'_, TimeCmp<W>> {
+        self.waypoints.iter()
     }
 }
 
@@ -282,21 +287,11 @@ impl<W: Waypoint> std::fmt::Debug for Trajectory<W> {
     }
 }
 
-pub struct Iterator<'a, W: Waypoint> {
-    internal: std::slice::Iter<'a, TimeCmp<W>>,
-}
+impl<W: Waypoint> std::ops::Deref for Trajectory<W> {
+    type Target = [TimeCmp<W>];
 
-impl<'a, W: Waypoint> std::iter::Iterator for Iterator<'a, W> {
-    type Item = &'a W;
-
-    fn next(&mut self) -> Option<&'a W> {
-        return self.internal.next().map(|x| &x.0);
-    }
-}
-
-impl<'a, W: Waypoint> std::iter::DoubleEndedIterator for Iterator<'a, W> {
-    fn next_back(&mut self) -> Option<&'a W> {
-        return self.internal.next_back().map(|x| &x.0);
+    fn deref(&self) -> &Self::Target {
+        &self.waypoints
     }
 }
 
