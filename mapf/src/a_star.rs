@@ -24,6 +24,7 @@ use super::node;
 use super::node::{TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
 use std::rc::Rc;
+use std::cmp::Reverse;
 
 pub struct Storage<N, E>
 where
@@ -31,9 +32,15 @@ where
     E: expander::Expander<Node=N>
 {
     closed_set: <N as node::Node>::ClosedSet,
-    queue: BinaryHeap<node::TotalCostEstimateCmp<N>>,
+    queue: BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>>,
     expander: Rc<E>,
     goal: E::Goal,
+}
+
+impl<N: node::Informed, E: expander::Expander<Node=N>> Storage<N, E> {
+    pub fn queue(&self) -> &BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>> {
+        &self.queue
+    }
 }
 
 impl<N, E> algorithm::Storage<E> for Storage<N, E>
@@ -46,7 +53,7 @@ where
     }
 
     fn top_cost_estimate(&self) -> Option<expander::Cost<E>> {
-        self.queue.peek().map(|x| x.0.total_cost_estimate())
+        self.queue.peek().map(|x| x.0.0.total_cost_estimate())
     }
 }
 
@@ -70,7 +77,7 @@ where
 
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, &goal) {
-            queue.push(NodeCmp(node));
+            queue.push(Reverse(NodeCmp(node)));
         }
 
         return Storage{
@@ -88,17 +95,18 @@ where
         tracker: &mut T
     ) -> Status<E> {
 
-        if let Some(top) = storage.queue.pop().map(|x| x.0) {
+        if let Some(top) = storage.queue.pop().map(|x| x.0.0) {
             if storage.goal.is_satisfied(&top) {
                 tracker.solution_found_from(&top);
                 return Status::Solved(storage.expander.make_solution(&top, options));
             }
 
             if let CloseResult::Closed = storage.closed_set.close(&top) {
+                tracker.expanded_from(&top);
                 for next in storage.expander.expand(&top, &storage.goal, options) {
                     if let ClosedStatus::Open = storage.closed_set.status(next.as_ref()) {
                         tracker.expanded_to(&next);
-                        storage.queue.push(NodeCmp(next));
+                        storage.queue.push(Reverse(NodeCmp(next)));
                     }
                 }
             }

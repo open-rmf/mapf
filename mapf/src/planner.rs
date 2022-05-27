@@ -293,6 +293,10 @@ where
 
         return false;
     }
+
+    pub fn storage(&self) -> &<Algorithm as algorithm::Algorithm<Expander>>::Storage {
+        &self.storage
+    }
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@
 */
 
 pub trait Tracker<Node>: Default {
+    fn expanded_from(&mut self, node: &Node);
     fn expanded_to(&mut self, node: &Node);
     fn solution_found_from(&mut self, node: &Node);
 }
@@ -25,6 +26,7 @@ pub trait Tracker<Node>: Default {
 pub struct NoDebug;
 
 impl<Node> Tracker<Node> for NoDebug {
+    fn expanded_from(&mut self, _: &Node) { }
     fn expanded_to(&mut self, _: &Node) { }
     fn solution_found_from(&mut self, _: &Node) { }
 }

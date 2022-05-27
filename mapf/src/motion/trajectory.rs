@@ -180,7 +180,17 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
     /// Get the time duration of the trajectory.
     pub fn duration(&self) -> Duration {
-        return *self.waypoints.last().unwrap().0.time() - *self.waypoints.first().unwrap().0.time();
+        return self.finish_time() - self.initial_time();
+    }
+
+    /// Get the time that the trajectory starts.
+    pub fn initial_time(&self) -> TimePoint {
+        return *self.waypoints.first().unwrap().0.time();
+    }
+
+    /// Get the time that the trajectory finishes.
+    pub fn finish_time(&self) -> TimePoint {
+        return *self.waypoints.last().unwrap().0.time();
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made

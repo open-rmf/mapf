@@ -159,6 +159,7 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TotalCostEstimateCmp<N: Informed>(pub Rc<N>);
 
 impl<N: Informed> Ord for TotalCostEstimateCmp<N> {

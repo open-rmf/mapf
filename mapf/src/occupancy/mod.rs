@@ -509,52 +509,59 @@ impl<G: Grid> Visibility<G> {
         }
 
         for cell in new_points {
-            let (_, status) = points.get(&cell).expect("Missing newly inserted cell");
-            let mut new_connections = Vec::new();
-            let cell_connections = edges.entry(cell).or_default();
-            for (other, (_, other_status)) in &*points {
-                if cell == *other {
-                    continue;
-                }
-
-                let connection_entry = cell_connections.entry(*other);
-                if let hash_map::Entry::Occupied(_) = connection_entry {
-                    // If this connection is already active then we don't need
-                    // to do anything here.
-                    continue;
-                }
-
-                if !cell.in_visible_quadrant_of(other, *other_status) {
-                    continue;
-                }
-
-                if !other.in_visible_quadrant_of(&cell, *status) {
-                    continue;
-                }
-
-                let blocked_by = grid.is_sweep_occupied(
-                    cell.to_center_point(grid.cell_size()),
-                    other.to_center_point(grid.cell_size()),
-                    2.0*agent_radius,
-                );
-
-                // When .insert_entry becomes stable we can change this match block to
-                // connection_entry.insert_entry(blocked_by);
-                match connection_entry {
-                    hash_map::Entry::Occupied(mut entry) => {
-                        entry.insert(blocked_by);
-                    },
-                    hash_map::Entry::Vacant(entry) => {
-                        entry.insert(blocked_by);
+            // Note: It is possible for an entry in new_points to no longer be
+            // in the points map because this may happen:
+            // 1. One cell change causes a point to have new corner possibilities,
+            //    therefore the point gets added to new_points.
+            // 2. A later cell change in confirmed_changes causes the corner to
+            //    be removed entirely.
+            if let Some((_, status)) = points.get(&cell) {
+                let mut new_connections = Vec::new();
+                let cell_connections = edges.entry(cell).or_default();
+                for (other, (_, other_status)) in &*points {
+                    if cell == *other {
+                        continue;
                     }
-                }
-                new_connections.push((*other, blocked_by));
-                changed = true;
-            }
 
-            for (other_cell, blocked_by) in new_connections {
-                edges.entry(other_cell)
-                    .or_default().insert(cell, blocked_by);
+                    let connection_entry = cell_connections.entry(*other);
+                    if let hash_map::Entry::Occupied(_) = connection_entry {
+                        // If this connection is already active then we don't need
+                        // to do anything here.
+                        continue;
+                    }
+
+                    if !cell.in_visible_quadrant_of(other, *other_status) {
+                        continue;
+                    }
+
+                    if !other.in_visible_quadrant_of(&cell, *status) {
+                        continue;
+                    }
+
+                    let blocked_by = grid.is_sweep_occupied(
+                        cell.to_center_point(grid.cell_size()),
+                        other.to_center_point(grid.cell_size()),
+                        2.0*agent_radius,
+                    );
+
+                    // When .insert_entry becomes stable we can change this match block to
+                    // connection_entry.insert_entry(blocked_by);
+                    match connection_entry {
+                        hash_map::Entry::Occupied(mut entry) => {
+                            entry.insert(blocked_by);
+                        },
+                        hash_map::Entry::Vacant(entry) => {
+                            entry.insert(blocked_by);
+                        }
+                    }
+                    new_connections.push((*other, blocked_by));
+                    changed = true;
+                }
+
+                for (other_cell, blocked_by) in new_connections {
+                    edges.entry(other_cell)
+                        .or_default().insert(cell, blocked_by);
+                }
             }
         }
 

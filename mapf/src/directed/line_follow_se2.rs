@@ -20,7 +20,7 @@ use crate::motion::{
     Extrapolation,
     trajectory::{Trajectory, CostCalculator},
     se2::{
-        Position,
+        Position, Point, Rotation,
         timed_position::{
             DifferentialDriveLineFollow,
             Waypoint
@@ -32,7 +32,6 @@ use std::{
     hash::{Hash, Hasher},
     rc::Rc,
 };
-use nalgebra::{UnitComplex as Rotation, Vector2};
 use time_point::TimePoint;
 use num::Zero;
 
@@ -100,25 +99,25 @@ impl<Cost: NodeCost> crate::node::Informed for Node<Cost> {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Start {
     pub vertex: usize,
-    pub orientation: Rotation<f64>,
-    pub offset_location: Option<Vector2<f64>>,
+    pub orientation: Rotation,
+    pub offset_location: Option<Point>,
 }
 
 impl Start {
     /// Convert the start value into a waypoint. If the start value has an
     /// invalid vertex, this will return None.
-    fn to_waypoint(&self, graph: &Graph<Vector2<f64>>) -> Option<Waypoint> {
+    fn to_waypoint(&self, graph: &Graph<Point>) -> Option<Waypoint> {
         if let Some(location) = self.offset_location {
             return Some(Waypoint{
                 time: TimePoint::zero(),
-                position: Position::new(location, self.orientation.angle()),
+                position: Position::new(location.coords, self.orientation.angle()),
             });
         }
 
         if let Some(location) = graph.vertices.get(self.vertex) {
             return Some(Waypoint{
                 time: TimePoint::zero(),
-                position: Position::new(*location, self.orientation.angle()),
+                position: Position::new(location.coords, self.orientation.angle()),
             });
         }
 
@@ -128,14 +127,14 @@ impl Start {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct OrientationGoal {
-    pub target: Rotation<f64>,
+    pub target: Rotation,
     pub threshold: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Goal {
-    vertex: usize,
-    orientation: Option<OrientationGoal>,
+    pub vertex: usize,
+    pub orientation: Option<OrientationGoal>,
 }
 
 impl<Cost: NodeCost> crate::expander::Goal<Node<Cost>> for Goal {
@@ -167,7 +166,7 @@ pub trait Policy {
 type NodeType<P> = Node<<P as Policy>::Cost>;
 
 pub struct InternalExpander<P: Policy> {
-    graph: Rc<Graph<nalgebra::Vector2<f64>>>,
+    graph: Rc<Graph<Point>>,
     extrapolation: Rc<DifferentialDriveLineFollow>,
     cost_calculator: Rc<P::CostCalculator>,
     heuristic: P::Heuristic,
@@ -442,7 +441,7 @@ impl<P: Policy> crate::Expander for Expander<P> {
 
 impl<P: Policy> Expander<P> {
     pub fn new(
-        graph: Rc<Graph<nalgebra::Vector2<f64>>>,
+        graph: Rc<Graph<Point>>,
         extrapolation: Rc<DifferentialDriveLineFollow>,
         cost_calculator: Rc<P::CostCalculator>,
         heuristic: P::Heuristic,
@@ -458,13 +457,13 @@ impl<P: Policy> Expander<P> {
     }
 }
 
-pub struct EuclieanHeuristic<P: Policy> {
-    pub graph: Rc<Graph<nalgebra::Vector2<f64>>>,
+pub struct EuclideanHeuristic<P: Policy> {
+    pub graph: Rc<Graph<Point>>,
     pub extrapolation: Rc<DifferentialDriveLineFollow>,
     pub cost_calculator: Rc<P::CostCalculator>,
 }
 
-impl<P: Policy<Cost=i64>> Heuristic<P::Cost> for EuclieanHeuristic<P> {
+impl<P: Policy<Cost=i64>> Heuristic<P::Cost> for EuclideanHeuristic<P> {
     fn estimate_cost(&self, from_vertex: usize, to_goal: usize) -> Option<P::Cost> {
         let speed = self.extrapolation.translational_speed();
         let p0 = self.graph.vertices.get(from_vertex)?;
@@ -487,7 +486,7 @@ pub struct SimplePolicy;
 impl Policy for SimplePolicy {
     type Cost = i64;
     type CostCalculator = TimeCostCalculator;
-    type Heuristic = EuclieanHeuristic<Self>;
+    type Heuristic = EuclideanHeuristic<Self>;
 }
 
 pub type SimpleExpander = Expander<SimplePolicy>;
@@ -497,7 +496,7 @@ mod tests {
     use super::*;
     use crate::algorithm::Status;
 
-    fn make_test_graph() -> Graph<Vector2<f64>> {
+    fn make_test_graph() -> Graph<Point> {
         /*
          * 0-----1-----2-----3
          *           /       |
@@ -508,16 +507,16 @@ mod tests {
          *             7-----8
         */
 
-        let mut vertices = Vec::<Vector2<f64>>::new();
-        vertices.push(Vector2::new(0.0, 0.0)); // 0
-        vertices.push(Vector2::new(1.0, 0.0)); // 1
-        vertices.push(Vector2::new(2.0, 0.0)); // 2
-        vertices.push(Vector2::new(3.0, 0.0)); // 3
-        vertices.push(Vector2::new(1.0, -1.0)); // 4
-        vertices.push(Vector2::new(2.0, -1.0)); // 5
-        vertices.push(Vector2::new(3.0, -1.0)); // 6
-        vertices.push(Vector2::new(2.0, -2.0)); // 7
-        vertices.push(Vector2::new(3.0, -2.0)); // 8
+        let mut vertices = Vec::<Point>::new();
+        vertices.push(Point::new(0.0, 0.0)); // 0
+        vertices.push(Point::new(1.0, 0.0)); // 1
+        vertices.push(Point::new(2.0, 0.0)); // 2
+        vertices.push(Point::new(3.0, 0.0)); // 3
+        vertices.push(Point::new(1.0, -1.0)); // 4
+        vertices.push(Point::new(2.0, -1.0)); // 5
+        vertices.push(Point::new(3.0, -1.0)); // 6
+        vertices.push(Point::new(2.0, -2.0)); // 7
+        vertices.push(Point::new(3.0, -2.0)); // 8
 
         let mut edges = Vec::<Vec::<usize>>::new();
         edges.resize(9, Vec::new());
@@ -550,7 +549,7 @@ mod tests {
 
         let expander = Rc::new(SimpleExpander::new(
             graph.clone(), extrapolation.clone(), cost_calculator.clone(),
-            EuclieanHeuristic{graph, extrapolation, cost_calculator}
+            EuclideanHeuristic{graph, extrapolation, cost_calculator}
         ));
 
         let planner = crate::Planner::<SimpleExpander, crate::a_star::Algorithm>::new(expander);

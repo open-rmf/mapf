@@ -14,10 +14,11 @@
  * limitations under the License.
  *
 */
-#![feature(array_windows)]
+#![feature(array_windows, binary_heap_into_iter_sorted)]
 
+use time_point::{TimePoint, Duration};
 use iced::{
-    Application, Alignment, Element, Length, Command, Column, Row, Text, Container,
+    Application, Alignment, Element, Length, Command, Column, Row, Text, Container, Radio,
     slider::{self, Slider},
     scrollable::{self, Scrollable},
     text_input::{self, TextInput},
@@ -26,16 +27,19 @@ use iced::{
     executor, keyboard, mouse,
 };
 use iced_native;
-use nalgebra::Vector2;
 use mapf::{
-    Planner,
+    Planner, Expander, Node, node::Informed, Progress, motion::Motion,
+    algorithm::Status as PlanningStatus,
     a_star,
     motion::{
         Trajectory,
-        se2::timed_position::{Waypoint, DifferentialDriveLineFollow},
+        se2::{
+            Rotation,
+            timed_position::{Waypoint, DifferentialDriveLineFollow}
+        },
     },
     directed::{line_follow_se2, simple},
-    occupancy::{Grid, SparseGrid, Cell, CornerStatus, Point, Vector}
+    occupancy::{Grid, SparseGrid, Cell, Point, Vector}
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -43,10 +47,51 @@ use mapf_viz::{
     toggle::{Toggle, Toggler, KeyToggler},
 };
 use mapf_viz::spatial_layers;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
+
+fn draw_agent(
+    frame: &mut canvas::Frame,
+    point: Point,
+    angle: Option<f64>,
+    agent_radius: f32,
+    color: iced::Color,
+) {
+    frame.with_save(
+        |frame| {
+            frame.translate([point.x as f32, point.y as f32].into());
+            frame.fill(&Path::circle([0, 0].into(), agent_radius), color);
+
+            if let Some(angle) = angle {
+                frame.rotate(angle as f32);
+                let r = 0.8 * agent_radius;
+                let angle_to_point = |angle: f32| {
+                    iced::Point::new(r * angle.cos(), r * angle.sin())
+                };
+
+                let points: [iced::Point; 3] = [
+                    angle_to_point(-150_f32.to_radians()),
+                    angle_to_point(0_f32.to_radians()),
+                    angle_to_point(150_f32.to_radians()),
+                ];
+
+                frame.fill(
+                    &Path::new(
+                        |builder| {
+                            builder.move_to(points[0]);
+                            builder.line_to(points[1]);
+                            builder.line_to(points[2]);
+                            builder.line_to(points[0]);
+                        }
+                    ),
+                    iced::Color::from_rgb(1.0, 1.0, 1.0)
+                );
+            }
+        }
+    );
+}
 
 #[derive(Debug, Clone)]
 struct EndpointSelector<Message> {
@@ -55,6 +100,7 @@ struct EndpointSelector<Message> {
     pub invalid_color: iced::Color,
     pub start_color: iced::Color,
     pub goal_color: iced::Color,
+    pub show_details: bool,
     pub start_cell: Option<Cell>,
     pub start_angle: Option<f64>,
     pub start_valid: bool,
@@ -97,6 +143,7 @@ impl<Message> EndpointSelector<Message> {
             invalid_color,
             start_color,
             goal_color,
+            show_details: false,
             start_cell: None,
             start_angle: None,
             start_valid: true,
@@ -123,13 +170,6 @@ impl<Message> EndpointSelector<Message> {
         match choice {
             Endpoint::Start => &mut self.start_cell,
             Endpoint::Goal => &mut self.goal_cell,
-        }
-    }
-
-    fn set_endpoint_color(&mut self, choice: Endpoint, color: iced::Color) {
-        match choice {
-            Endpoint::Start => { self.start_color = color; },
-            Endpoint::Goal => { self.goal_color = color; },
         }
     }
 
@@ -231,12 +271,10 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
             let radius = self.agent_radius as f32;
             if let Some(cell) = cell {
                 let p = cell.to_center_point(self.cell_size);
-                let circle = Path::circle([p.x as f32, p.y as f32].into(), radius);
-                frame.fill(&circle, color);
-
+                draw_agent(frame, p, angle, self.agent_radius as f32, color);
                 if !valid {
                     frame.stroke(
-                        &circle,
+                        &Path::circle([p.x as f32, p.y as f32].into(), radius),
                         Stroke{
                             color: self.invalid_color,
                             width: 5_f32,
@@ -289,6 +327,33 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
         }
     }
 
+    fn draw_on_hud<'a, 'b: 'a>(
+        &self,
+        hud: &'a mut mapf_viz::spatial_canvas::SpatialHUD<'b>,
+        bounds: iced::Rectangle,
+        _cursor: canvas::Cursor
+    ) {
+        if self.show_details {
+            for cell_opt in [self.start_cell, self.goal_cell] {
+                if let Some(cell) = cell_opt {
+                    let p = cell.to_center_point(self.cell_size);
+                    let r = self.agent_radius as f32;
+                    let delta = iced::Vector::new(r, -r);
+                    let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
+
+                    if bounds.contains(p) {
+                        hud.at(
+                            p,
+                            |frame| {
+                                frame.fill_text(format!("({}, {})", cell.x, cell.y).to_string());
+                            }
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn estimate_bounds(&self) -> mapf_viz::spatial_canvas::InclusionZone {
         let mut zone = InclusionZone::Empty;
         for endpoint in [self.start_cell, self.goal_cell] {
@@ -308,18 +373,53 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
 
 #[derive(Debug, Clone)]
 struct SolutionVisual<Message> {
+    pub cell_size: f64,
+    pub agent_radius: f32,
     pub path_color: iced::Color,
     pub solution: Option<Trajectory<Waypoint>>,
+    tick_start: Option<TimePoint>,
+    now: Option<Duration>,
     _msg: std::marker::PhantomData<Message>,
 }
 
 impl SolutionVisual<Message> {
-    fn new(path_color: iced::Color) -> Self {
+    fn new(cell_size: f64, agent_radius: f32, path_color: iced::Color) -> Self {
         Self{
+            cell_size,
+            agent_radius,
             path_color,
             solution: None,
+            tick_start: None,
+            now: None,
             _msg: Default::default(),
         }
+    }
+
+    fn reset_time(&mut self) {
+        self.tick_start = Some(TimePoint::from_std_instant(std::time::Instant::now()));
+        self.now = Some(Duration::zero());
+    }
+
+    fn tick(&mut self) -> bool {
+
+        if let Some(solution) = &self.solution {
+            if let Some(start) = self.tick_start {
+                let dt = TimePoint::from_std_instant(std::time::Instant::now()) - start;
+                if dt > solution.duration() + Duration::from_secs(1) {
+                    self.reset_time();
+                } else if dt > solution.duration() {
+                    self.now = Some(solution.duration());
+                } else {
+                    self.now = Some(dt);
+                }
+
+                return true;
+            } else {
+                self.reset_time();
+            }
+        }
+
+        return false;
     }
 }
 
@@ -341,10 +441,59 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
                     ),
                     Stroke{
                         color: self.path_color,
-                        width: 4_f32,
+                        width: 3_f32,
                         ..Default::default()
                     }
                 );
+            }
+
+            if let Some(now) = self.now {
+                let t0 = trajectory.initial_time();
+                if let Ok(p) = trajectory.motion().compute_position(&(t0 + now)) {
+                    draw_agent(
+                        frame,
+                        Point::from(p.translation.vector),
+                        Some(p.rotation.angle()),
+                        self.agent_radius,
+                        self.path_color
+                    );
+                } else {
+                    println!("Unable to compute the position??");
+                }
+            }
+        }
+    }
+
+    fn draw_on_hud<'a, 'b: 'a>(
+        &self,
+        hud: &'a mut mapf_viz::spatial_canvas::SpatialHUD<'b>,
+        bound: iced::Rectangle,
+        _spatial_cursor: canvas::Cursor
+    ) {
+        if let Some(trajectory) = &self.solution {
+            let mut sequence: HashMap<Cell, Vec<String>> = HashMap::new();
+            for (i, wp) in trajectory.iter().enumerate() {
+                sequence.entry(
+                    Cell::from_point(
+                        Point::from(wp.position.translation.vector), self.cell_size
+                    )
+                ).or_default().push(i.to_string());
+            }
+
+            let r = self.agent_radius / 2_f32.sqrt();
+            let delta = iced::Vector::new(r, r);
+            for (cell, seq) in sequence {
+                let p = cell.to_center_point(self.cell_size);
+                let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
+                if bound.contains(p) {
+                    hud.at(
+                        p,
+                        |frame| {
+                            frame.translate([0_f32, -16_f32].into());
+                            frame.fill_text(seq.join(", "));
+                        }
+                    );
+                }
             }
         }
     }
@@ -367,44 +516,16 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    debug_text: String,
-    debug_corners: HashSet<Cell>,
+    progress: Option<Progress<line_follow_se2::SimpleExpander, a_star::Algorithm, mapf::tracker::NoDebug>>,
+    step_progress: button::State,
+    expander: Option<Rc<line_follow_se2::SimpleExpander>>,
+    debug_on: bool,
+    debug_nodes: Vec<Rc<line_follow_se2::Node<i64>>>,
+    debug_node_selected: Option<usize>,
 }
 
 impl App {
     const TICK_COUNT: u32 = 1000;
-
-    fn set_debug_text(&mut self) {
-        self.debug_text.clear();
-        let occupancy = &self.canvas.program.layers.1;
-        let mut corner_info_map: HashMap<Cell, (Option<Cell>, CornerStatus)> = HashMap::new();
-        for (corner_cell, info) in occupancy.visibility().unstable().points() {
-            if self.debug_corners.contains(corner_cell) {
-                corner_info_map.insert(*corner_cell, *info);
-            }
-        }
-
-        let mut edge_info_map: HashMap<Cell, HashMap<Cell, Option<Cell>>> = HashMap::new();
-        let mut reverse_edge_info_map: HashMap<Cell, HashMap<Cell, Option<Cell>>> = HashMap::new();
-        for (cell, info) in occupancy.visibility().unstable().edges() {
-            if self.debug_corners.contains(cell) {
-                edge_info_map.insert(*cell, info.clone());
-            } else {
-                for (other, _) in info {
-                    if self.debug_corners.contains(other) {
-                        reverse_edge_info_map.insert(*cell, info.clone());
-                    }
-                }
-            }
-        }
-
-        self.debug_text = format!(
-            "Point info:\n{:#?}\n\nEdge Info:\n{:#?}\n\nReverse Edge Info:\n{:#?}",
-            corner_info_map,
-            edge_info_map,
-            reverse_edge_info_map,
-        );
-    }
 
     fn default_invalid_color() -> iced::Color {
         iced::Color::from_rgb(1.0, 0.0, 0.0)
@@ -418,7 +539,7 @@ impl App {
     }
 
     fn default_solution_color() -> iced::Color {
-        iced::Color::from_rgb(1.0, 1.0, 1.0)
+        iced::Color::from_rgb(1.0, 0.1, 1.0)
     }
 
     fn visibility(&self) -> &Visibility {
@@ -452,6 +573,7 @@ impl App {
 
     fn set_robot_radius(&mut self, radius: f32) {
         self.canvas.program.layers.1.set_robot_radius(radius);
+        self.canvas.program.layers.3.agent_radius = radius;
         let endpoint_selector = &mut self.canvas.program.layers.2;
         endpoint_selector.agent_radius = radius as f64;
         for endpoint in [Endpoint::Start, Endpoint::Goal] {
@@ -467,6 +589,32 @@ impl App {
 
     fn recalculate_visibility(&mut self) {
         self.canvas.program.layers.2.calculate_visibility(self.canvas.program.layers.1.visibility());
+    }
+
+    fn step_progress(&mut self) {
+        if let Some(progress) = &mut self.progress {
+            if let PlanningStatus::Solved(solution) = progress.step() {
+                println!("Solution: {:#?}", solution);
+                self.canvas.program.layers.3.solution = solution;
+                self.debug_node_selected = None;
+                self.progress = None;
+                self.expander = None;
+                self.debug_nodes.clear();
+            } else {
+                self.debug_nodes = self.progress.as_ref().unwrap().storage().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                if let Some(selection) = self.debug_node_selected {
+                    if let Some(node) = self.debug_nodes.get(selection) {
+                        if let Some(expander) = &self.expander {
+                            self.canvas.program.layers.3.solution = expander.make_solution(
+                                node, &line_follow_se2::Options{}
+                            );
+                        }
+                    }
+                }
+            }
+
+            self.canvas.cache.clear();
+        }
     }
 
     fn generate_plan(&mut self) {
@@ -508,6 +656,10 @@ impl App {
                         edges.get_mut(j).unwrap().push(i);
                     };
 
+                if endpoints.start_sees_goal {
+                    create_edge(0, 1);
+                }
+
                 let start_vis = &endpoints.start_visibility;
                 let goal_vis = &endpoints.goal_visibility;
                 for (i, v_cell) in [
@@ -526,14 +678,46 @@ impl App {
                 }
 
                 let graph = Rc::new(simple::Graph{vertices, edges});
-                let extrapolation = Rc::new(DifferentialDriveLineFollow::new(1.0, 1.0).expect("Bad speeds"));
+                let extrapolation = Rc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
                 let cost_calculator = Rc::new(line_follow_se2::TimeCostCalculator);
                 let expander = Rc::new(line_follow_se2::SimpleExpander::new(
                     graph.clone(), extrapolation.clone(), cost_calculator.clone(),
                     line_follow_se2::EuclideanHeuristic{graph, extrapolation, cost_calculator}
                 ));
 
-                let planner = Planner::<line_follow_se2::SimpleExander, a_star::Algorithm>::new(expander);
+                let planner = Planner::<line_follow_se2::SimpleExpander, a_star::Algorithm>::new(expander.clone());
+                let mut progress = planner.plan(
+                    &line_follow_se2::Start{
+                        vertex: 0,
+                        orientation: Rotation::new(0_f64),
+                        offset_location: None,
+                    },
+                    line_follow_se2::Goal{
+                        vertex: 1,
+                        orientation: None,
+                    },
+                );
+
+                if self.debug_on {
+                    self.progress = Some(progress);
+                    self.debug_nodes = self.progress.as_ref().unwrap().storage().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                    self.expander = Some(expander);
+                } else {
+                    match progress.solve() {
+                        PlanningStatus::Solved(solution) => {
+                            println!("Solution: {:#?}", solution);
+                            self.canvas.program.layers.3.solution = solution;
+                            self.canvas.cache.clear();
+                        },
+                        PlanningStatus::Impossible => {
+                            println!("Impossible to solve!");
+                        },
+                        PlanningStatus::Incomplete => {
+                            println!("Planning is incomplete..?");
+                        }
+                    }
+                }
+                self.debug_node_selected = None;
             }
         }
     }
@@ -565,7 +749,7 @@ impl Application for App {
                         Self::default_endpoint_color(Endpoint::Start),
                         Self::default_endpoint_color(Endpoint::Goal),
                     ),
-                    SolutionVisual::new(Self::default_solution_color()),
+                    SolutionVisual::new(cell_size as f64, robot_radius, Self::default_solution_color()),
                 )
             }
         );
@@ -581,8 +765,12 @@ impl Application for App {
                 canvas,
                 scroll: scrollable::State::new(),
                 show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
-                debug_text: Default::default(),
-                debug_corners: Default::default(),
+                progress: None,
+                step_progress: button::State::new(),
+                expander: None,
+                debug_on: false,
+                debug_nodes: Default::default(),
+                debug_node_selected: None,
             },
             Command::none()
         )
@@ -614,37 +802,41 @@ impl Application for App {
                 let min_size = self.canvas.program.layers.1.grid().cell_size() as f32/10_f32;
                 let new_robot_radius = value as f32 * (self.max_robot_radius - min_size)/(Self::TICK_COUNT as f32) + min_size;
                 self.set_robot_radius(new_robot_radius);
+                self.generate_plan();
             },
             Message::ResetView => {
                 self.canvas.fit_to_bounds();
             },
             Message::EventOccurred(event) => {
                 if let iced_native::Event::Keyboard(event) = event {
-                    if let iced_native::keyboard::Event::KeyPressed{key_code, modifiers} = event {
-                        if keyboard::KeyCode::D == key_code {
-                            if modifiers.shift() {
-                                self.debug_text.clear();
-                            } else {
-                                self.debug_text = format!(
-                                    "Debug visibility:\n{:#?}",
-                                    self.canvas.program.layers.1.visibility(),
-                                );
-                            }
-                        }
-                    }
-
                     match self.show_details.key_toggle(event) {
                         Toggle::On => {
                             self.canvas.program.layers.1.show_details(true);
+                            self.canvas.program.layers.2.show_details = true;
                             self.canvas.cache.clear();
                         },
                         Toggle::Off => {
                             self.canvas.program.layers.1.show_details(false);
+                            self.canvas.program.layers.2.show_details = false;
                             self.canvas.cache.clear();
                         },
                         Toggle::NoChange => {
                             // Do nothing
                         }
+                    }
+
+                    if let keyboard::Event::KeyPressed{key_code: keyboard::KeyCode::D, modifiers} = event {
+                        if modifiers.shift() {
+                            self.debug_on = false;
+                            self.generate_plan();
+                        } else {
+                            self.debug_on = true;
+                            self.generate_plan();
+                        }
+                    }
+
+                    if let keyboard::Event::KeyPressed{key_code: keyboard::KeyCode::S, ..} = event {
+                        self.step_progress();
                     }
                 }
             },
@@ -675,9 +867,25 @@ impl Application for App {
                         self.recalculate_visibility();
                     }
                 }
+
+                self.generate_plan();
+            },
+            Message::DebugNodeSelected(value) => {
+                self.debug_node_selected = Some(value);
+                if let (Some(node), Some(expander)) = (self.debug_nodes.get(value), &self.expander) {
+                    self.canvas.program.layers.3.solution = expander.make_solution(
+                        node, &line_follow_se2::Options{}
+                    );
+                    self.canvas.cache.clear();
+                }
+            },
+            Message::StepProgress => {
+                self.step_progress();
             }
             Message::Tick => {
-
+                if self.canvas.program.layers.3.tick() {
+                    self.canvas.cache.clear();
+                }
             }
         }
 
@@ -687,7 +895,7 @@ impl Application for App {
     fn subscription(&self) -> iced::Subscription<Message> {
         iced_native::Subscription::batch([
             iced_native::subscription::events().map(Message::EventOccurred),
-            iced::time::every(std::time::Duration::from_millis(100)).map(|_|{ Message::Tick }),
+            iced::time::every(std::time::Duration::from_millis(50)).map(|_|{ Message::Tick }),
         ])
     }
 
@@ -744,18 +952,36 @@ impl Application for App {
             .push(file_row)
             .push(instruction_row);
 
-        if self.debug_text.is_empty() {
-            content = content.push(self.canvas.view());
-        } else {
-
+        if self.debug_on {
             content = content.push(
                 Row::new()
                 .push(self.canvas.view())
-                .push(Scrollable::new(&mut self.scroll).push(
-                    Text::new(&self.debug_text)
-                    .size(13)
-                ))
+                .push(
+                    Column::new()
+                    .push(
+                        Button::new(&mut self.step_progress, Text::new("Step"))
+                        .on_press(Message::StepProgress)
+                    )
+                    .push({
+                        let mut scroll = Scrollable::<Message>::new(&mut self.scroll);
+                        for (i, node) in self.debug_nodes.iter().enumerate() {
+                            scroll = scroll.push(Radio::new(
+                                i, format!(
+                                    "{i}: {:?} + {:?} = {:?}",
+                                    node.cost() as f64 / 1e9,
+                                    node.remaining_cost_estimate() as f64 / 1e9,
+                                    node.total_cost_estimate() as f64 / 1e9,
+                                ), self.debug_node_selected,
+                                Message::DebugNodeSelected
+                            ));
+                        }
+
+                        scroll
+                    })
+                )
             );
+        } else {
+            content = content.push(self.canvas.view());
         }
 
         Container::new(content)
@@ -776,6 +1002,8 @@ enum Message {
     EventOccurred(iced_native::Event),
     EndpointSelected(EndpointSelection),
     OccupancyChanged,
+    DebugNodeSelected(usize),
+    StepProgress,
     Tick,
 }
 

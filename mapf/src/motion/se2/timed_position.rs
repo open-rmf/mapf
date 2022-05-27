@@ -16,10 +16,9 @@
 */
 
 use nalgebra::geometry::Isometry2;
-use nalgebra::Vector2;
 use time_point::TimePoint;
 use crate::motion::{timed, Interpolation, InterpError, Extrapolation, ExtrapError};
-use super::{Position, Velocity};
+use super::{Position, Point, Vector, Velocity};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Waypoint {
@@ -46,7 +45,7 @@ impl Waypoint {
         return Waypoint{
             time,
             position: Isometry2::new(
-                Vector2::new(x, y),
+                Vector::new(x, y),
                 yaw
             )
         }
@@ -226,7 +225,7 @@ impl DifferentialDriveLineFollow {
     fn move_towards_target(
         &self,
         from_waypoint: &Waypoint,
-        to_target: &Vector2<f64>,
+        to_target: &Point,
     ) -> Result<ReachedTarget, ExtrapError> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
@@ -234,9 +233,9 @@ impl DifferentialDriveLineFollow {
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
 
-        let p0 = &from_waypoint.position.translation.vector;
+        let p0 = Point::from(from_waypoint.position.translation.vector);
         let p1 = to_target;
-        let delta_p = *p1 - *p0;
+        let delta_p = *p1 - p0;
         let distance = delta_p.norm();
         if distance > self.translational_threshold {
             let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
@@ -256,7 +255,7 @@ impl DifferentialDriveLineFollow {
             current_time += time_point::Duration::from_secs_f64(distance/self.translational_speed);
             output.push(Waypoint{
                 time: current_time,
-                position: Position::new(*p1, approach_yaw.angle())
+                position: Position::new(p1.coords, approach_yaw.angle())
             });
         }
 
@@ -276,7 +275,7 @@ impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
         to_position: &Position
     ) -> Result<Vec<Waypoint>, ExtrapError> {
         let mut arrival = self.move_towards_target(
-            from_waypoint, &to_position.translation.vector
+            from_waypoint, &Point::from(to_position.translation.vector)
         )?;
 
         let delta_yaw_abs = (to_position.rotation / arrival.yaw).angle().abs();
@@ -296,12 +295,12 @@ impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
     }
 }
 
-impl Extrapolation<Waypoint, Vector2<f64>> for DifferentialDriveLineFollow {
+impl Extrapolation<Waypoint, Point> for DifferentialDriveLineFollow {
 
     fn extrapolate(
         &self,
         from_waypoint: &Waypoint,
-        to_target: &Vector2<f64>,
+        to_target: &Point,
     ) -> Result<Vec<Waypoint>, ExtrapError> {
         return self.move_towards_target(
             from_waypoint, to_target
@@ -345,7 +344,7 @@ mod tests {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
         let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
         let movement = DifferentialDriveLineFollow::new(2.0, 3.0).expect("Failed to make LineFollow");
-        let p_target = Position::new(Vector2::new(1.0, 3.0), 60f64.to_radians());
+        let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
         let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
         assert_eq!(waypoints.len(), 3);
         assert_relative_eq!(
