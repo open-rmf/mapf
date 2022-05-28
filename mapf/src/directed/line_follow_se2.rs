@@ -17,7 +17,7 @@
 
 use super::simple::Graph;
 use crate::motion::{
-    Extrapolation,
+    self, Extrapolation,
     trajectory::{Trajectory, CostCalculator},
     se2::{
         Position, Point, Rotation,
@@ -25,7 +25,7 @@ use crate::motion::{
             DifferentialDriveLineFollow,
             Waypoint
         },
-    }
+    },
 };
 use crate::node::{Cost as NodeCost, HashOption, HashOptionClosedSet};
 use std::{
@@ -165,15 +165,11 @@ pub trait Policy {
 
 type NodeType<P> = Node<<P as Policy>::Cost>;
 
-pub struct InternalExpander<P: Policy> {
+pub struct Expander<P: Policy> {
     graph: Rc<Graph<Point>>,
     extrapolation: Rc<DifferentialDriveLineFollow>,
     cost_calculator: Rc<P::CostCalculator>,
     heuristic: P::Heuristic,
-}
-
-pub struct Expander<P: Policy> {
-    internal: Rc<InternalExpander<P>>,
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -181,57 +177,78 @@ pub struct Options {
     // TODO: Come up with some options
 }
 
-pub struct StartExpansion<P: Policy> {
-    start: Start,
+pub struct InitialNodes<'a, P: Policy> {
+    start: &'a Start,
     expanded: bool,
-    expander: Rc<InternalExpander<P>>,
-    goal: Goal,
+    expander: &'a Expander<P>,
+    goal: &'a Goal,
 }
 
-pub struct NodeExpansion<P: Policy> {
+impl<'a, P: Policy> InitialNodes<'a, P> {
+    fn new(expander: &'a Expander<P>, from_start: &'a Start, toward_goal: &'a Goal) -> Self {
+        Self{
+            start: from_start,
+            expanded: false,
+            expander,
+            goal: toward_goal,
+        }
+    }
+}
+
+impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
+    type Item = Rc<Node<P::Cost>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.expanded {
+            return None;
+        }
+        self.expanded = true;
+
+        if let Some(remaining_cost_estimate) = self.expander.heuristic
+            .estimate_cost(self.start.vertex, self.goal.vertex)
+        {
+            let waypoint = self.start.to_waypoint(self.expander.graph.as_ref())?;
+            return Some(Rc::new(Node{
+                cost: P::Cost::zero(),
+                remaining_cost_estimate,
+                total_cost_estimate: remaining_cost_estimate,
+                state: waypoint,
+                key: None,
+                vertex: self.start.vertex,
+                motion_from_parent: None,
+                parent: None,
+                is_start: Some(self.start.clone()),
+            }))
+        }
+
+        return None;
+    }
+}
+
+pub struct Expansion<'a, P: Policy> {
     from_node: Rc<NodeType<P>>,
     expansion_index: usize,
     expanded_start: bool,
     expanded_goal_orientation: bool,
-    expander: Rc<InternalExpander<P>>,
-    goal: Goal,
+    expander: &'a Expander<P>,
+    goal: &'a Goal,
 }
 
-pub enum Expansion<P: Policy> {
-    // TODO(MXG): Figure out how we can arrange the lifetimes so that this use
-    // of expander is acceptable
-    // expander: &'ex Expander<P>,
-    Start(StartExpansion<P>),
-    Node(NodeExpansion<P>),
-}
-
-impl<P: Policy> Expansion<P> {
-    fn from_node(expander: &Expander<P>, from_node: Rc<NodeType<P>>, toward_goal: &Goal) -> Self {
-        return Expansion::Node(
-            NodeExpansion{
-                from_node,
-                expansion_index: 0,
-                expanded_start: false,
-                expanded_goal_orientation: false,
-                expander: expander.internal.clone(),
-                goal: toward_goal.clone(),
-            }
-        );
-    }
-
-    fn from_start(expander: &Expander<P>, from_start: &Start, toward_goal: &Goal) -> Self {
-        return Expansion::Start(
-            StartExpansion{
-                start: from_start.clone(),
-                expanded: false,
-                expander: expander.internal.clone(),
-                goal: toward_goal.clone(),
-            }
-        )
+impl<'a, P: Policy> Expansion<'a, P> {
+    fn new(expander: &'a Expander<P>, from_node: Rc<NodeType<P>>, toward_goal: &'a Goal) -> Self {
+        Self{
+            from_node,
+            expansion_index: 0,
+            expanded_start: false,
+            expanded_goal_orientation: false,
+            expander,
+            goal: toward_goal,
+        }
     }
 }
 
-impl<P: Policy> NodeExpansion<P> {
+
+impl<'a, P: Policy> Expansion<'a, P> {
     fn expand_to(&self, to_vertex: usize) -> Option<Rc<NodeType<P>>> {
         if let Some(vertex) = self.expander.graph.vertices.get(to_vertex) {
             let extrapolation = self.expander.extrapolation.extrapolate(
@@ -292,107 +309,53 @@ impl<P: Policy> NodeExpansion<P> {
     }
 }
 
-impl<P: Policy> Iterator for Expansion<P> {
-    type Item=Rc<Node<P::Cost>>;
+impl<'a, P: Policy> Iterator for Expansion<'a, P> {
+    type Item = Rc<Node<P::Cost>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Expansion::Node(expansion) => {
-                if let Some(start) = &expansion.from_node.is_start {
-                    if let Some(_) = &start.offset_location {
-                        if expansion.expanded_start {
-                            return None;
-                        }
-
-                        expansion.expanded_start = true;
-                        return expansion.expand_from_start(expansion.from_node.vertex);
-                    }
-                }
-
-                loop {
-                    if let Some(to_vertices) = expansion.expander.graph.edges.get(expansion.from_node.vertex) {
-                        if let Some(to_vertex) = to_vertices.get(expansion.expansion_index) {
-                            let next_opt = expansion.expand_to(*to_vertex);
-                            expansion.expansion_index += 1;
-                            if let Some(next) = next_opt {
-                                return Some(next);
-                            } else {
-                                // If it was not possible to expand to this
-                                // vertex for some reason, then try the next one.
-                                continue;
-                            }
-                        }
-                    }
-
-                    break;
-                }
-
-                if expansion.from_node.vertex == expansion.goal.vertex {
-                    if !expansion.expanded_goal_orientation {
-                        expansion.expanded_goal_orientation = true;
-                        if let Some(next) = expansion.rotate_towards_target() {
-                            // We should only return here if the expansion
-                            // succeeded. If it came back None then we should
-                            // fall through to any other expansion that might be
-                            // performable.
-                            return Some(next);
-                        }
-                    }
-                }
-            },
-            Expansion::Start(expansion) => {
-                if expansion.expanded {
+        if let Some(start) = &self.from_node.is_start {
+            if let Some(_) = &start.offset_location {
+                if self.expanded_start {
                     return None;
                 }
-                expansion.expanded = true;
 
-                if let Some(remaining_cost_estimate) = expansion.expander.heuristic
-                    .estimate_cost(expansion.start.vertex, expansion.goal.vertex) {
-                    let waypoint = expansion.start.to_waypoint(expansion.expander.graph.as_ref())?;
-                    return Some(Rc::new(Node{
-                        cost: P::Cost::zero(),
-                        remaining_cost_estimate,
-                        total_cost_estimate: remaining_cost_estimate,
-                        state: waypoint,
-                        key: None,
-                        vertex: expansion.start.vertex,
-                        motion_from_parent: None,
-                        parent: None,
-                        is_start: Some(expansion.start),
-                    }))
+                self.expanded_start = true;
+                return self.expand_from_start(self.from_node.vertex);
+            }
+        }
+
+        loop {
+            if let Some(to_vertices) = self.expander.graph.edges.get(self.from_node.vertex) {
+                if let Some(to_vertex) = to_vertices.get(self.expansion_index) {
+                    let next_opt = self.expand_to(*to_vertex);
+                    self.expansion_index += 1;
+                    if let Some(next) = next_opt {
+                        return Some(next);
+                    } else {
+                        // If it was not possible to expand to this
+                        // vertex for some reason, then try the next one.
+                        continue;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        if self.from_node.vertex == self.goal.vertex {
+            if !self.expanded_goal_orientation {
+                self.expanded_goal_orientation = true;
+                if let Some(next) = self.rotate_towards_target() {
+                    // We should only return here if the expansion
+                    // succeeded. If it came back None then we should
+                    // fall through to any other expansion that might be
+                    // performable.
+                    return Some(next);
                 }
             }
         }
+
         return None;
-    }
-}
-
-impl<P: Policy> InternalExpander<P> {
-    fn make_node(
-        &self,
-        state: Waypoint,
-        to_vertex: usize,
-        remaining_cost_estimate: P::Cost,
-        motion: Option<Trajectory<Waypoint>>,
-        parent: &Rc<Node<P::Cost>>,
-    ) -> Rc<NodeType<P>> {
-
-        let added_cost = match &motion {
-            Some(trajectory) => self.cost_calculator.compute_cost(trajectory),
-            None => P::Cost::zero()
-        };
-        let cost = parent.cost + added_cost;
-        return Rc::new(Node{
-            cost,
-            remaining_cost_estimate,
-            total_cost_estimate: cost + remaining_cost_estimate,
-            state,
-            key: Some(Key{from_vertex: parent.vertex, to_vertex, side: Side::Finish}),
-            vertex: to_vertex,
-            motion_from_parent: motion,
-            parent: Some(parent.clone()),
-            is_start: None,
-        });
     }
 }
 
@@ -403,19 +366,20 @@ impl<P: Policy> crate::Expander for Expander<P> {
     type Options = Options;
     /// The Solution will appear as None if no trajectory is actually needed for
     /// the goal to be reached (i.e. the agent is starting on its goal).
-    type Solution = Option<crate::motion::se2::LinearTrajectory>;
-    type Expansion = Expansion<P>;
+    type Solution = Option<motion::se2::LinearTrajectory>;
+    type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
+    type Expansion<'a> where P: 'a = Expansion<'a, P>;
 
     fn default_options(&self) -> Self::Options {
         return Options::default();
     }
 
-    fn start(&self, start: &Start, goal: &Self::Goal) -> Expansion<P> {
-        return Expansion::from_start(self, start, goal);
+    fn start<'a>(&'a self, start: &'a Start, goal: &'a Self::Goal) -> InitialNodes<'a, P> {
+        InitialNodes::new(self, start, goal)
     }
 
-    fn expand(&self, parent: &Rc<Self::Node>, goal: &Self::Goal, _: &Self::Options) -> Expansion<P> {
-        return Expansion::from_node(self, parent.clone(), goal);
+    fn expand<'a>(&'a self, parent: &Rc<Self::Node>, goal: &'a Self::Goal, _: &'a Self::Options) -> Expansion<'a, P> {
+        Expansion::new(self, parent.clone(), goal)
     }
 
     fn make_solution(&self, solution_node: &Rc<Self::Node>, _: &Self::Options) -> Self::Solution {
@@ -446,14 +410,38 @@ impl<P: Policy> Expander<P> {
         cost_calculator: Rc<P::CostCalculator>,
         heuristic: P::Heuristic,
     ) -> Self {
-        return Self{
-            internal: Rc::new(InternalExpander{
-                graph,
-                extrapolation,
-                cost_calculator,
-                heuristic
-            })
+        Self{
+            graph,
+            extrapolation,
+            cost_calculator,
+            heuristic,
         }
+    }
+
+    fn make_node(
+        &self,
+        state: Waypoint,
+        to_vertex: usize,
+        remaining_cost_estimate: P::Cost,
+        motion: Option<Trajectory<Waypoint>>,
+        parent: &Rc<Node<P::Cost>>,
+    ) -> Rc<NodeType<P>> {
+        let added_cost = match &motion {
+            Some(trajectory) => self.cost_calculator.compute_cost(trajectory),
+            None => P::Cost::zero()
+        };
+        let cost = parent.cost + added_cost;
+        return Rc::new(Node{
+            cost,
+            remaining_cost_estimate,
+            total_cost_estimate: cost + remaining_cost_estimate,
+            state,
+            key: Some(Key{from_vertex: parent.vertex, to_vertex, side: Side::Finish}),
+            vertex: to_vertex,
+            motion_from_parent: motion,
+            parent: Some(parent.clone()),
+            is_start: None,
+        });
     }
 }
 
@@ -564,7 +552,7 @@ mod tests {
                 // orientation: None
                 orientation: Some(OrientationGoal{
                     target: Rotation::new(90f64.to_radians()),
-                    threshold: crate::motion::DEFAULT_ROTATIONAL_THRESHOLD
+                    threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD
                 })
             }
         );

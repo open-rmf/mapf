@@ -356,11 +356,12 @@ mod tests {
         }
     }
 
-    struct CountingExpansion {
-        next_node: Option<Rc<CountingNode>>
+    struct CountingExpansion<'a> {
+        next_node: Option<Rc<CountingNode>>,
+        _phantom: std::marker::PhantomData<&'a u8>,
     }
 
-    impl Iterator for CountingExpansion {
+    impl<'a> Iterator for CountingExpansion<'a> {
         type Item = Rc<CountingNode>;
 
         fn next(&mut self) -> Option<Self::Item> {
@@ -374,13 +375,14 @@ mod tests {
         type Node = CountingNode;
         type Options = CountingExpanderOptions;
         type Solution = std::vec::Vec<u64>;
-        type Expansion = CountingExpansion;
+        type InitialNodes<'a> = CountingExpansion<'a>;
+        type Expansion<'a> = CountingExpansion<'a>;
 
         fn default_options(&self) -> Self::Options {
             return Self::Options::default();
         }
 
-        fn start(&self, start: &u64, goal: &Self::Goal) -> Self::Expansion {
+        fn start<'a>(&'a self, start: &u64, goal: &Self::Goal) -> Self::InitialNodes<'a> {
             if *start <= goal.value {
                 return CountingExpansion {
                     next_node: Some(
@@ -392,19 +394,20 @@ mod tests {
                                 parent: None
                             }
                         )
-                    )
+                    ),
+                    _phantom: Default::default(),
                 };
             }
 
-            return CountingExpansion{next_node: None};
+            return CountingExpansion{next_node: None, _phantom: Default::default()};
         }
 
-        fn expand(
-            &self,
+        fn expand<'a>(
+            &'a self,
             parent: &Rc<Self::Node>,
             goal: &Self::Goal,
             _: &Self::Options
-        ) -> Self::Expansion {
+        ) -> Self::Expansion<'a> {
             if parent.value <= goal.value {
                 return CountingExpansion{
                     next_node: Some(
@@ -416,11 +419,12 @@ mod tests {
                                 parent: Some(parent.clone())
                             }
                         )
-                    )
+                    ),
+                    _phantom: Default::default(),
                 };
             }
 
-            return CountingExpansion{next_node: None};
+            return CountingExpansion{next_node: None, _phantom: Default::default()};
         }
 
         fn make_solution(
