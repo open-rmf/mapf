@@ -15,26 +15,21 @@
  *
 */
 
-use nalgebra::geometry::Isometry2;
 use time_point::TimePoint;
-use crate::motion::{timed, Interpolation, InterpError, Extrapolation, ExtrapError};
+use crate::motion::{self, timed, Interpolation, InterpError, Extrapolation, ExtrapError};
 use super::{Position, Point, Vector, Velocity};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
     pub time: TimePoint,
     pub position: Position,
-}
-
-pub struct Motion {
-    initial_wp: Waypoint,
-    final_wp: Waypoint,
 }
 
 impl timed::Timed for Waypoint {
     fn time(&self) -> &TimePoint {
         return &self.time;
     }
+
     fn set_time(&mut self, new_time: TimePoint) {
         self.time = new_time;
     }
@@ -44,7 +39,7 @@ impl Waypoint {
     pub fn new(time: TimePoint, x: f64, y: f64, yaw: f64) -> Self {
         return Waypoint{
             time,
-            position: Isometry2::new(
+            position: Position::new(
                 Vector::new(x, y),
                 yaw
             )
@@ -52,8 +47,19 @@ impl Waypoint {
     }
 }
 
-impl crate::motion::Motion<Position, Velocity> for Motion {
-    fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError> {
+impl motion::Waypoint for Waypoint {
+    type Position = Position;
+    type Velocity = Velocity;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Motion {
+    initial_wp: Waypoint,
+    final_wp: Waypoint,
+}
+
+impl Motion {
+    pub fn in_time_range(&self, time: &TimePoint) -> Result<(), InterpError> {
         if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
             return Err(InterpError::OutOfBounds);
         }
@@ -62,19 +68,20 @@ impl crate::motion::Motion<Position, Velocity> for Motion {
             return Err(InterpError::OutOfBounds);
         }
 
+        return Ok(());
+    }
+}
+
+impl motion::Motion<Position, Velocity> for Motion {
+    fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError> {
+        self.in_time_range(time)?;
         let delta_t = (*time - self.initial_wp.time).as_secs_f64();
         let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
         return Ok(self.initial_wp.position.lerp_slerp(&self.final_wp.position, delta_t/t_range));
     }
 
     fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError> {
-        if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
-        }
-
-        if self.final_wp.time.nanos_since_zero < time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
-        }
+        self.in_time_range(time)?;
 
         // TODO(MXG): Since velocity is taken to be constant across the whole
         // range, this could be precomputed once and saved inside the Motion object.
@@ -154,8 +161,8 @@ impl DifferentialDriveLineFollow {
         return Ok(DifferentialDriveLineFollow {
             translational_speed,
             rotational_speed,
-            translational_threshold: crate::motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
-            rotational_threshold: crate::motion::DEFAULT_ROTATIONAL_THRESHOLD,
+            translational_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
+            rotational_threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
         })
     }
 
@@ -210,15 +217,6 @@ impl DifferentialDriveLineFollow {
     pub fn rotational_threshold(&self) -> f64 {
         return self.rotational_threshold;
     }
-}
-
-struct ReachedTarget {
-    waypoints: Vec<Waypoint>,
-    time: TimePoint,
-    yaw: nalgebra::UnitComplex<f64>,
-}
-
-impl DifferentialDriveLineFollow {
 
     /// Helper function for the implementations of extrapolate(). Not meant for
     /// use by other functions
@@ -267,6 +265,12 @@ impl DifferentialDriveLineFollow {
     }
 }
 
+struct ReachedTarget {
+    waypoints: Vec<Waypoint>,
+    time: TimePoint,
+    yaw: nalgebra::UnitComplex<f64>,
+}
+
 impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
 
     fn extrapolate(
@@ -308,19 +312,14 @@ impl Extrapolation<Waypoint, Point> for DifferentialDriveLineFollow {
     }
 }
 
-impl crate::motion::Waypoint for Waypoint {
-    type Position = Position;
-    type Velocity = Velocity;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::motion::Motion;
+    use motion::Motion;
     use approx::assert_relative_eq;
 
     #[test]
-    fn test_interpolation_f64() {
+    fn test_interpolation() {
         let t0 = time_point::TimePoint::new(0);
         let t1 = t0 + time_point::Duration::from_secs_f64(2.0);
         let wp0 = Waypoint::new(t0, 1.0, 5.0, 10f64.to_radians());
@@ -340,10 +339,10 @@ mod tests {
     }
 
     #[test]
-    fn test_extrapolation_f64() {
+    fn test_extrapolation() {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
         let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
-        let movement = DifferentialDriveLineFollow::new(2.0, 3.0).expect("Failed to make LineFollow");
+        let movement = DifferentialDriveLineFollow::new(2.0, 3.0).expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
         let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
         assert_eq!(waypoints.len(), 3);
@@ -368,7 +367,7 @@ mod tests {
             p_target.rotation.angle()
         );
 
-        let mut trajectory = crate::motion::se2::LinearTrajectory::from_iter(waypoints.into_iter())
+        let mut trajectory = motion::se2::LinearTrajectory::from_iter(waypoints.into_iter())
             .expect("Failed to create trajectory");
         trajectory.insert(wp0).expect("Waypoint insertion failed");
         assert_eq!(trajectory.len(), 4);

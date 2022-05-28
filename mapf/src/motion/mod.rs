@@ -18,6 +18,7 @@
 pub mod timed;
 
 pub mod se2;
+pub mod r2;
 
 pub mod trajectory;
 pub use trajectory::Trajectory;
@@ -91,6 +92,8 @@ pub trait Extrapolation<W: Waypoint, Target> {
     ///
     /// If the current waypoint is already at the target position, then an empty
     /// Vec<W> will be returned.
+    //
+    // TODO(MXG): Consider having this return a generic Iterator<Item=W> instead of a Vec<W>
     fn extrapolate(&self,
         from_waypoint: &W,
         to_target: &Target,
