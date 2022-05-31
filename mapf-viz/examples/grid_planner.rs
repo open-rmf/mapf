@@ -48,7 +48,7 @@ use mapf_viz::{
 };
 use mapf_viz::spatial_layers;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
 
@@ -518,9 +518,10 @@ struct App {
     show_details: KeyToggler,
     progress: Option<Progress<line_follow_se2::SimpleExpander, a_star::Algorithm, mapf::tracker::NoDebug>>,
     step_progress: button::State,
-    expander: Option<Rc<line_follow_se2::SimpleExpander>>,
+    expander: Option<Arc<line_follow_se2::SimpleExpander>>,
     debug_on: bool,
-    debug_nodes: Vec<Rc<line_follow_se2::Node<i64>>>,
+    debug_nodes: Vec<Arc<line_follow_se2::Node<i64>>>,
+    debug_step_count: u64,
     debug_node_selected: Option<usize>,
 }
 
@@ -593,9 +594,10 @@ impl App {
 
     fn step_progress(&mut self) {
         if let Some(progress) = &mut self.progress {
-            if let PlanningStatus::Solved(solution) = progress.step() {
+            self.debug_step_count += 1;
+            if let PlanningStatus::Solved(solution) = progress.step().unwrap() {
                 println!("Solution: {:#?}", solution);
-                self.canvas.program.layers.3.solution = solution;
+                self.canvas.program.layers.3.solution = solution.motion().clone();
                 self.debug_node_selected = None;
                 self.progress = None;
                 self.expander = None;
@@ -605,9 +607,7 @@ impl App {
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.debug_nodes.get(selection) {
                         if let Some(expander) = &self.expander {
-                            self.canvas.program.layers.3.solution = expander.make_solution(
-                                node, &line_follow_se2::Options{}
-                            );
+                            self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
                         }
                     }
                 }
@@ -677,10 +677,10 @@ impl App {
                     create_edge(i, j);
                 }
 
-                let graph = Rc::new(simple::Graph{vertices, edges});
-                let extrapolation = Rc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                let cost_calculator = Rc::new(line_follow_se2::TimeCostCalculator);
-                let expander = Rc::new(line_follow_se2::SimpleExpander::new(
+                let graph = Arc::new(simple::Graph{vertices, edges});
+                let extrapolation = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
+                let cost_calculator = Arc::new(line_follow_se2::TimeCostCalculator);
+                let expander = Arc::new(line_follow_se2::SimpleExpander::new(
                     graph.clone(), extrapolation.clone(), cost_calculator.clone(),
                     line_follow_se2::EuclideanHeuristic{graph, extrapolation, cost_calculator}
                 ));
@@ -696,17 +696,18 @@ impl App {
                         vertex: 1,
                         orientation: None,
                     },
-                );
+                ).unwrap();
 
+                self.debug_step_count = 0;
                 if self.debug_on {
                     self.progress = Some(progress);
                     self.debug_nodes = self.progress.as_ref().unwrap().storage().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
                     self.expander = Some(expander);
                 } else {
-                    match progress.solve() {
+                    match progress.solve().unwrap() {
                         PlanningStatus::Solved(solution) => {
                             println!("Solution: {:#?}", solution);
-                            self.canvas.program.layers.3.solution = solution;
+                            self.canvas.program.layers.3.solution = solution.motion().clone();
                             self.canvas.cache.clear();
                         },
                         PlanningStatus::Impossible => {
@@ -718,8 +719,17 @@ impl App {
                     }
                 }
                 self.debug_node_selected = None;
+
+                return;
             }
         }
+
+        // If the attempt to plan falls through, then clear out all these fields.
+        self.debug_nodes.clear();
+        self.progress = None;
+        self.expander = None;
+        self.canvas.program.layers.3.solution = None;
+        self.canvas.cache.clear();
     }
 }
 
@@ -770,6 +780,7 @@ impl Application for App {
                 expander: None,
                 debug_on: false,
                 debug_nodes: Default::default(),
+                debug_step_count: 0,
                 debug_node_selected: None,
             },
             Command::none()
@@ -873,9 +884,7 @@ impl Application for App {
             Message::DebugNodeSelected(value) => {
                 self.debug_node_selected = Some(value);
                 if let (Some(node), Some(expander)) = (self.debug_nodes.get(value), &self.expander) {
-                    self.canvas.program.layers.3.solution = expander.make_solution(
-                        node, &line_follow_se2::Options{}
-                    );
+                    self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
                     self.canvas.cache.clear();
                 }
             },
@@ -959,8 +968,16 @@ impl Application for App {
                 .push(
                     Column::new()
                     .push(
-                        Button::new(&mut self.step_progress, Text::new("Step"))
-                        .on_press(Message::StepProgress)
+                        Row::new()
+                        .push(
+                            Button::new(&mut self.step_progress, Text::new("Step"))
+                            .on_press(Message::StepProgress)
+                        )
+                        .push(iced::Space::with_width(Length::Units(16)))
+                        .push(Text::new(format!("Steps: {}", self.debug_step_count)))
+                        .push(iced::Space::with_width(Length::Units(16)))
+                        .push(Text::new(format!("Queue size: {}", self.debug_nodes.len())))
+                        .align_items(Alignment::Center)
                     )
                     .push({
                         let mut scroll = Scrollable::<Message>::new(&mut self.scroll);

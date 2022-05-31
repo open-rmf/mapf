@@ -20,10 +20,9 @@ use super::algorithm::Status;
 use super::expander;
 use super::expander::Goal;
 use super::tracker::Tracker;
-use super::node;
-use super::node::{TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
+use super::node::{self, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::cmp::Reverse;
 
 pub struct Storage<N, E>
@@ -33,7 +32,7 @@ where
 {
     closed_set: <N as node::Node>::ClosedSet,
     queue: BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>>,
-    expander: Rc<E>,
+    expander: Arc<E>,
     goal: E::Goal,
 }
 
@@ -66,44 +65,47 @@ where
     E: expander::Expander<Node=N>,
 {
     type Storage = Storage<N, E>;
+    type Error = ();
 
     fn initialize<T: Tracker<N>>(
         &self,
-        expander: Rc<E>,
+        expander: Arc<E>,
         start: &E::Start,
         goal: E::Goal,
         tracker: &mut T
-    ) -> Self::Storage {
+    ) -> Result<Self::Storage, algorithm::Error<E, Self>> {
 
         let mut queue = BinaryHeap::default();
-        for node in expander.start(start, &goal) {
+        for node in expander.start(start, Some(&goal)) {
+            let node = node.map_err(algorithm::Error::Expander)?;
             queue.push(Reverse(NodeCmp(node)));
         }
 
-        return Storage{
+        return Ok(Storage{
             closed_set: N::ClosedSet::default(),
             queue,
             expander,
             goal
-        };
+        });
     }
 
     fn step<T: Tracker<N>>(
         &self,
         storage: &mut Self::Storage,
-        options: &E::Options,
         tracker: &mut T
-    ) -> Status<E> {
+    ) -> Result<Status<E>, algorithm::Error<E, Self>> {
 
         if let Some(top) = storage.queue.pop().map(|x| x.0.0) {
             if storage.goal.is_satisfied(&top) {
                 tracker.solution_found_from(&top);
-                return Status::Solved(storage.expander.make_solution(&top, options));
+                let solution = storage.expander.make_solution(&top).map_err(algorithm::Error::Expander)?;
+                return Ok(Status::Solved(solution));
             }
 
             if let CloseResult::Closed = storage.closed_set.close(&top) {
                 tracker.expanded_from(&top);
-                for next in storage.expander.expand(&top, &storage.goal, options) {
+                for next in storage.expander.expand(&top, Some(&storage.goal)) {
+                    let next = next.map_err(algorithm::Error::Expander)?;
                     if let ClosedStatus::Open = storage.closed_set.status(next.as_ref()) {
                         tracker.expanded_to(&next);
                         storage.queue.push(Reverse(NodeCmp(next)));
@@ -111,9 +113,9 @@ where
                 }
             }
 
-            return Status::Incomplete;
+            return Ok(Status::Incomplete);
         }
 
-        return Status::Impossible;
+        return Ok(Status::Impossible);
     }
 }

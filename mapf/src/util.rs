@@ -27,3 +27,50 @@ pub(crate) fn triangular_for<Item>(
         }
     }
 }
+
+pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
+    value: Option<T>,
+    f: F,
+}
+
+impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
+    pub(crate) fn new(f: F) -> Self {
+        Self{value: None, f}
+    }
+
+    pub(crate) fn consider(&mut self, other: &T) -> bool {
+        if let Some(value) = &self.value {
+            if std::cmp::Ordering::Less == (self.f)(other, value) {
+                self.value = Some(other.clone());
+                return true;
+            }
+        } else {
+            self.value = Some(other.clone());
+            return true;
+        }
+
+        return false;
+    }
+
+    pub(crate) fn consider_take(&mut self, other: T) -> bool {
+        if let Some(value) = &self.value {
+            if std::cmp::Ordering::Less == (self.f)(&other, value) {
+                self.value = Some(other);
+                return true;
+            }
+        } else {
+            self.value = Some(other);
+            return true;
+        }
+
+        return false;
+    }
+
+    pub(crate) fn result(self) -> Option<T> {
+        self.value
+    }
+
+    pub(crate) fn has_value(&self) -> bool {
+        self.value.is_some()
+    }
+}

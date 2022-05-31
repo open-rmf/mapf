@@ -16,6 +16,7 @@
 */
 
 use super::simple::Graph;
+use crate::expander;
 use crate::motion::{
     self, Extrapolation,
     trajectory::{Trajectory, CostCalculator},
@@ -24,13 +25,11 @@ use crate::motion::{
         timed_position::{LineFollow, Waypoint},
     },
 };
-use crate::node::{Cost as NodeCost, HashOption, HashOptionClosedSet};
-use std::{
-    hash::{Hash, Hasher},
-    rc::Rc,
-};
+use crate::node::{Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
+use std::sync::Arc;
 use time_point::TimePoint;
 use num::Zero;
+use derivative::Derivative;
 
 #[derive(Clone, Debug)]
 pub struct Node<Cost: NodeCost> {
@@ -40,31 +39,32 @@ pub struct Node<Cost: NodeCost> {
     pub state: Waypoint,
     pub vertex: usize,
     pub motion_from_parent: Option<Trajectory<Waypoint>>,
-    pub parent: Option<Rc<Node<Cost>>>,
+    pub parent: Option<Arc<Node<Cost>>>,
 }
 
-impl<Cost: NodeCost> HashOption for Node<Cost> {
-    fn hash_opt<H: Hasher>(&self, state: &mut H) -> bool {
-        self.vertex.hash(state);
-        return true;
+impl<Cost: NodeCost> PartialKeyed for Node<Cost> {
+    type Key = usize;
+
+    fn key(&self) -> Option<Self::Key> {
+        Some(self.vertex)
     }
 }
 
 impl<Cost: NodeCost> crate::Node for Node<Cost> {
     type Cost = Cost;
-    type ClosedSet = HashOptionClosedSet<Self>;
+    type ClosedSet = PartialKeyedClosedSet<Self>;
 
     fn cost(&self) -> Self::Cost {
         return self.cost;
     }
 
-    fn parent(&self) -> &Option<Rc<Self>> {
+    fn parent(&self) -> &Option<Arc<Self>> {
         return &self.parent;
     }
 }
 
 pub trait Heuristic<Cost: NodeCost> {
-    fn estimate_cost(&self, from_vertex: usize, to_goal: usize) -> Option<Cost>;
+    fn estimate_cost(&self, from_vertex: usize, to_goal: Option<usize>) -> Option<Cost>;
 }
 
 pub trait Policy {
@@ -85,17 +85,17 @@ impl<C: NodeCost> crate::expander::Goal<Node<C>> for Goal {
 }
 
 pub struct Expander<P: Policy> {
-    graph: Rc<Graph<Position>>,
-    extrapolation: Rc<LineFollow>,
-    cost_calculator: Rc<P::CostCalculator>,
+    graph: Arc<Graph<Position>>,
+    extrapolation: Arc<LineFollow>,
+    cost_calculator: Arc<P::CostCalculator>,
     heuristic: P::Heuristic,
 }
 
 impl<P: Policy> Expander<P> {
     pub fn new(
-        graph: Rc<Graph<Position>>,
-        extrapolation: Rc<LineFollow>,
-        cost_calculator: Rc<P::CostCalculator>,
+        graph: Arc<Graph<Position>>,
+        extrapolation: Arc<LineFollow>,
+        cost_calculator: Arc<P::CostCalculator>,
         heuristic: P::Heuristic,
     ) -> Self {
         Self{graph, extrapolation, cost_calculator, heuristic}
@@ -107,14 +107,14 @@ impl<P: Policy> Expander<P> {
         vertex: usize,
         remaining_cost_estimate: P::Cost,
         motion: Option<Trajectory<Waypoint>>,
-        parent: &Rc<Node<P::Cost>>,
-    ) -> Rc<NodeType<P>> {
+        parent: &Arc<Node<P::Cost>>,
+    ) -> Arc<NodeType<P>> {
         let added_cost = motion.as_ref().map(
             |trajectory| self.cost_calculator.compute_cost(&trajectory)
         ).unwrap_or(P::Cost::zero());
 
         let cost = parent.cost + added_cost;
-        return Rc::new(Node{
+        return Arc::new(Node{
             cost,
             remaining_cost_estimate,
             total_cost_estimate: cost + remaining_cost_estimate,
@@ -126,38 +126,53 @@ impl<P: Policy> Expander<P> {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug, Clone)]
+pub struct Solution<P: Policy> {
+    cost: P::Cost,
+    motion: Option<motion::r2::LinearTrajectory>,
+}
+
+impl<P: Policy> Solution<P> {
+    pub fn motion(&self) -> &Option<motion::r2::LinearTrajectory> {
+        &self.motion
+    }
+}
+
+impl<P: Policy> expander::Solution<P::Cost> for Solution<P> {
+    fn cost(&self) -> P::Cost {
+        self.cost
+    }
+}
+
 impl<P: Policy> crate::Expander for Expander<P> {
     type Node = NodeType<P>;
     type Start = usize;
     type Goal = Goal;
-    type Options = ();
-    type Solution = Option<motion::r2::LinearTrajectory>;
+    type Solution = Solution<P>;
     type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
     type Expansion<'a> where P: 'a = Expansion<'a, P>;
+    type Error = ();
 
-    fn default_options(&self) -> Self::Options {
-        return ();
-    }
-
-    fn start<'a>(&'a self, start: &'a Self::Start, goal: &'a Self::Goal) -> Self::InitialNodes<'a> {
+    fn start<'a>(&'a self, start: &'a Self::Start, goal: Option<&'a Self::Goal>) -> Self::InitialNodes<'a> {
         InitialNodes{
             start: *start,
             expanded: false,
             expander: self,
-            goal: goal.0,
+            goal: goal.map(|g| g.0),
         }
     }
 
-    fn expand<'a>(&'a self, parent: &Rc<Self::Node>, goal: &'a Self::Goal, _: &'a Self::Options) -> Self::Expansion<'a> {
+    fn expand<'a>(&'a self, parent: &Arc<Self::Node>, goal: Option<&'a Self::Goal>) -> Self::Expansion<'a> {
         Expansion{
             from_node: parent.clone(),
             expansion_index: 0,
             expander: self,
-            goal: goal.0,
+            goal: goal.map(|g| g.0),
         }
     }
 
-    fn make_solution(&self, solution_node: &Rc<Self::Node>, _: &Self::Options) -> Self::Solution {
+    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, ()> {
         let mut node = solution_node.clone();
         let mut waypoints = Vec::new();
         loop {
@@ -174,7 +189,10 @@ impl<P: Policy> crate::Expander for Expander<P> {
         }
 
         waypoints.reverse();
-        return Trajectory::from_iter(waypoints.into_iter()).ok();
+        return Ok(Solution{
+            cost: solution_node.cost,
+            motion: Trajectory::from_iter(waypoints.into_iter()).ok(),
+        });
     }
 }
 
@@ -182,11 +200,11 @@ pub struct InitialNodes<'a, P: Policy> {
     start: usize,
     expanded: bool,
     expander: &'a Expander<P>,
-    goal: usize,
+    goal: Option<usize>,
 }
 
 impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
-    type Item = Rc<Node<P::Cost>>;
+    type Item = Result<Arc<Node<P::Cost>>, ()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.expanded {
@@ -198,7 +216,7 @@ impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
             .estimate_cost(self.start, self.goal)
         {
             let p = self.expander.graph.vertices.get(self.start)?;
-            return Some(Rc::new(Node{
+            return Some(Ok(Arc::new(Node{
                 cost: P::Cost::zero(),
                 remaining_cost_estimate,
                 total_cost_estimate: remaining_cost_estimate,
@@ -209,7 +227,7 @@ impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
                 vertex: self.start,
                 motion_from_parent: None,
                 parent: None,
-            }));
+            })));
         }
 
         return None;
@@ -217,14 +235,14 @@ impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
 }
 
 pub struct Expansion<'a, P: Policy> {
-    from_node: Rc<NodeType<P>>,
+    from_node: Arc<NodeType<P>>,
     expansion_index: usize,
     expander: &'a Expander<P>,
-    goal: usize,
+    goal: Option<usize>,
 }
 
 impl<'a, P: Policy> Iterator for Expansion<'a, P> {
-    type Item = Rc<Node<P::Cost>>;
+    type Item = Result<Arc<Node<P::Cost>>, ()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -232,7 +250,7 @@ impl<'a, P: Policy> Iterator for Expansion<'a, P> {
                 if let Some(to_vertex) = to_vertices.get(self.expansion_index) {
                     self.expansion_index += 1;
                     if let Some(remaining_cost_estimate) = self.expander.heuristic.estimate_cost(
-                        self.from_node.vertex, *to_vertex
+                        *to_vertex, self.goal
                     ) {
                         if let Some(to_target) = self.expander.graph.vertices.get(*to_vertex) {
                             let waypoints_opt = self.expander.extrapolation.extrapolate(
@@ -244,9 +262,9 @@ impl<'a, P: Policy> Iterator for Expansion<'a, P> {
                                 let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
                                 waypoints.insert(0, self.from_node.state);
                                 let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
-                                return Some(self.expander.make_node(
+                                return Some(Ok(self.expander.make_node(
                                     state, *to_vertex, remaining_cost_estimate, trajectory, &self.from_node,
-                                ));
+                                )));
                             }
                         }
                     }

@@ -15,14 +15,12 @@
  *
 */
 
-use std::rc::Rc;
+use std::sync::Arc;
 use std::ops::FnMut;
 use std::boxed::Box;
 
-use super::expander;
-use super::expander::Cost;
-use super::algorithm;
-use super::algorithm::{Status, Storage};
+use super::expander::{self, Cost};
+use super::algorithm::{self, Status, Storage, Error};
 use super::tracker;
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
@@ -37,10 +35,10 @@ pub struct Planner<Expander, Algorithm>  where
     Algorithm: algorithm::Algorithm<Expander>, {
 
     /// The object which determines the search pattern
-    algorithm: Rc<Algorithm>,
+    algorithm: Arc<Algorithm>,
 
     /// The object which determines patterns for expansion
-    expander: Rc<Expander>,
+    expander: Arc<Expander>,
 }
 
 impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
@@ -50,11 +48,11 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
     /// Construct a new planner with the given configuration and a set of
     /// default options.
     pub fn new(
-        expander: Rc<Expander>
+        expander: Arc<Expander>
     ) -> Self
     where Algorithm: Default {
         return Self {
-            algorithm: Rc::new(Algorithm::default()),
+            algorithm: Arc::new(Algorithm::default()),
             expander
         }
     }
@@ -62,8 +60,8 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
     /// If the algorithm being used is configurable, this function can be used
     /// to configure its settings while constructing the planner.
     pub fn with_algorithm(
-        algorithm: Rc<Algorithm>,
-        expander: Rc<Expander>
+        algorithm: Arc<Algorithm>,
+        expander: Arc<Expander>
     ) -> Self {
         return Self { algorithm, expander }
     }
@@ -73,19 +71,18 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
         &self,
         start: &Expander::Start,
         goal: Expander::Goal,
-    ) -> Progress<Expander, Algorithm, tracker::NoDebug> {
+    ) -> Result<Progress<Expander, Algorithm, tracker::NoDebug>, Error<Expander, Algorithm>> {
         let mut tracker = tracker::NoDebug::default();
         let storage = self.algorithm.initialize(
             self.expander.clone(), &start, goal, &mut tracker
-        );
+        )?;
 
-        return Progress {
+        Ok(Progress {
             storage,
             algorithm: self.algorithm.clone(),
             progression_options: ProgressionOptions::default(),
-            expansion_options: self.expander.default_options(),
             tracker
-        }
+        })
     }
 
     /// Perform a planning job while tracking the behavior, usually for debugging purposes.
@@ -94,20 +91,19 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
         start: &Expander::Start,
         goal: Expander::Goal,
         mut tracker: Tracker
-    ) -> Progress<Expander, Algorithm, Tracker>
+    ) -> Result<Progress<Expander, Algorithm, Tracker>, Error<Expander, Algorithm>>
     where Tracker: tracker::Tracker<Expander::Node> {
 
         let storage = self.algorithm.initialize(
             self.expander.clone(), &start, goal, &mut tracker
-        );
+        )?;
 
-        return Progress {
+        Ok(Progress{
             storage,
             algorithm: self.algorithm.clone(),
             progression_options: ProgressionOptions::default(),
-            expansion_options: self.expander.default_options(),
             tracker,
-        }
+        })
     }
 }
 
@@ -157,13 +153,10 @@ pub struct Progress<Expander, Algorithm, Tracker> where
     storage: Algorithm::Storage,
 
     /// The object which determines the search pattern
-    algorithm: Rc<Algorithm>,
+    algorithm: Arc<Algorithm>,
 
     /// The options that moderate the progress of the solving
     progression_options: ProgressionOptions<Expander>,
-
-    /// The options that should be used by the expander
-    expansion_options: Expander::Options,
 
     /// The object which tracks planning progress
     tracker: Tracker
@@ -173,16 +166,8 @@ impl<Expander, Algorithm, Tracker> Progress<Expander, Algorithm, Tracker>
 where
     Expander: expander::Expander,
     Algorithm: algorithm::Algorithm<Expander>,
-    Tracker: tracker::Tracker<Expander::Node> {
-
-    /// Set the expansion options for the planner to use. If this is not set,
-    /// then the Expander::default_options will be used.
-    pub fn with_expansion_options(&mut self, expansion_opts: Expander::Options)
-    -> &mut Self {
-        self.expansion_options = expansion_opts;
-        return self;
-    }
-
+    Tracker: tracker::Tracker<Expander::Node>
+{
     /// Set the progression options for the planning.
     pub fn with_progression_options(
         &mut self,
@@ -224,14 +209,6 @@ where
         return self;
     }
 
-    pub fn expansion_options_mut(&mut self) -> &mut Expander::Options {
-        return &mut self.expansion_options;
-    }
-
-    pub fn expansion_options(&self) -> &Expander::Options {
-        return &self.expansion_options;
-    }
-
     pub fn progression_options_mut(&mut self) -> &mut ProgressionOptions<Expander> {
         return &mut self.progression_options;
     }
@@ -244,25 +221,23 @@ where
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Status<Expander> {
+    pub fn solve(&mut self) -> Result<Status<Expander>, Error<Expander, Algorithm>> {
         loop {
             if self.need_to_interrupt() {
-                return Status::Incomplete;
+                return Ok(Status::Incomplete);
             }
 
-            let result = self.step();
+            let result = self.step()?;
             if let Status::Incomplete = result {
                 continue;
             }
 
-            return result;
+            return Ok(result);
         }
     }
 
-    pub fn step(&mut self) -> Status<Expander> {
-        return self.algorithm.step(
-            &mut self.storage, &self.expansion_options, &mut self.tracker
-        );
+    pub fn step(&mut self) -> Result<Status<Expander>, Error<Expander, Algorithm>> {
+        return self.algorithm.step(&mut self.storage, &mut self.tracker);
     }
 
     fn need_to_interrupt(&mut self) -> bool {
@@ -306,29 +281,30 @@ mod tests {
     use crate::node;
     use crate::node::Node;
     use crate::expander::Goal;
-    use std::hash::Hash;
 
     struct CountingNode {
         value: u64,
         cost: u64,
         remaining_cost_estimate: u64,
-        parent: Option<Rc<Self>>,
+        parent: Option<Arc<Self>>,
     }
 
-    impl Hash for CountingNode {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            state.write_u64(self.value);
+    impl node::PartialKeyed for CountingNode {
+        type Key = u64;
+
+        fn key(&self) -> Option<Self::Key> {
+            Some(self.value)
         }
     }
 
     impl node::Node for CountingNode {
-        type ClosedSet = node::HashOptionClosedSet<Self>;
+        type ClosedSet = node::PartialKeyedClosedSet<Self>;
         type Cost = u64;
 
         fn cost(&self) -> u64 {
             return self.cost;
         }
-        fn parent(&self) -> &Option<Rc<Self>> {
+        fn parent(&self) -> &Option<Arc<Self>> {
             return &self.parent;
         }
     }
@@ -357,15 +333,27 @@ mod tests {
     }
 
     struct CountingExpansion<'a> {
-        next_node: Option<Rc<CountingNode>>,
+        next_node: Option<Arc<CountingNode>>,
         _phantom: std::marker::PhantomData<&'a u8>,
     }
 
     impl<'a> Iterator for CountingExpansion<'a> {
-        type Item = Rc<CountingNode>;
+        type Item = Result<Arc<CountingNode>, ()>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            return self.next_node.take();
+            return self.next_node.take().map(|v| Ok(v));
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct CountingSolution {
+        cost: u64,
+        sequence: std::vec::Vec<u64>,
+    }
+
+    impl expander::Solution<u64> for CountingSolution {
+        fn cost(&self) -> u64 {
+            self.cost
         }
     }
 
@@ -373,30 +361,28 @@ mod tests {
         type Start = u64;
         type Goal = CountingGoal;
         type Node = CountingNode;
-        type Options = CountingExpanderOptions;
-        type Solution = std::vec::Vec<u64>;
+        type Solution = CountingSolution;
         type InitialNodes<'a> = CountingExpansion<'a>;
         type Expansion<'a> = CountingExpansion<'a>;
+        type Error = ();
 
-        fn default_options(&self) -> Self::Options {
-            return Self::Options::default();
-        }
-
-        fn start<'a>(&'a self, start: &u64, goal: &Self::Goal) -> Self::InitialNodes<'a> {
-            if *start <= goal.value {
-                return CountingExpansion {
-                    next_node: Some(
-                        Rc::new(
-                            CountingNode{
-                                value: *start,
-                                cost: 0u64,
-                                remaining_cost_estimate: goal.value - start,
-                                parent: None
-                            }
-                        )
-                    ),
-                    _phantom: Default::default(),
-                };
+        fn start<'a>(&'a self, start: &u64, goal: Option<&Self::Goal>) -> Self::InitialNodes<'a> {
+            if let Some(goal) = goal {
+                if *start <= goal.value {
+                    return CountingExpansion {
+                        next_node: Some(
+                            Arc::new(
+                                CountingNode{
+                                    value: *start,
+                                    cost: 0u64,
+                                    remaining_cost_estimate: goal.value - start,
+                                    parent: None
+                                }
+                            )
+                        ),
+                        _phantom: Default::default(),
+                    };
+                }
             }
 
             return CountingExpansion{next_node: None, _phantom: Default::default()};
@@ -404,24 +390,25 @@ mod tests {
 
         fn expand<'a>(
             &'a self,
-            parent: &Rc<Self::Node>,
-            goal: &Self::Goal,
-            _: &Self::Options
+            parent: &Arc<Self::Node>,
+            goal: Option<&Self::Goal>,
         ) -> Self::Expansion<'a> {
-            if parent.value <= goal.value {
-                return CountingExpansion{
-                    next_node: Some(
-                        Rc::new(
-                            CountingNode{
-                                value: parent.value+1,
-                                cost: parent.cost+1,
-                                remaining_cost_estimate: goal.value - parent.value,
-                                parent: Some(parent.clone())
-                            }
-                        )
-                    ),
-                    _phantom: Default::default(),
-                };
+            if let Some(goal) = goal {
+                if parent.value <= goal.value {
+                    return CountingExpansion{
+                        next_node: Some(
+                            Arc::new(
+                                CountingNode{
+                                    value: parent.value+1,
+                                    cost: parent.cost+1,
+                                    remaining_cost_estimate: goal.value - parent.value,
+                                    parent: Some(parent.clone())
+                                }
+                            )
+                        ),
+                        _phantom: Default::default(),
+                    };
+                }
             }
 
             return CountingExpansion{next_node: None, _phantom: Default::default()};
@@ -429,25 +416,27 @@ mod tests {
 
         fn make_solution(
             &self,
-            solution_node: &Rc<Self::Node>,
-            _: &Self::Options
-        ) -> Self::Solution {
+            solution_node: &Arc<Self::Node>,
+        ) -> Result<Self::Solution, ()> {
             let mut solution = std::vec::Vec::<u64>::new();
-            let mut next: Option<Rc<Self::Node>> = Some(solution_node.clone());
+            let mut next: Option<Arc<Self::Node>> = Some(solution_node.clone());
             while let Some(n) = next {
                 solution.push(n.value);
                 next = n.parent.clone();
             }
 
             solution.reverse();
-            return solution;
+            Ok(CountingSolution{
+                cost: solution_node.cost,
+                sequence: solution
+            })
         }
     }
 
     struct TestAlgorithmStorage<Expander: expander::Expander> {
-        expander: Rc<Expander>,
+        expander: Arc<Expander>,
         goal: Expander::Goal,
-        queue: std::vec::Vec<Rc<Expander::Node>>,
+        queue: std::vec::Vec<Arc<Expander::Node>>,
     }
 
     impl<Expander: expander::Expander> Storage<Expander> for TestAlgorithmStorage<Expander> {
@@ -468,48 +457,52 @@ mod tests {
     impl<Expander: expander::Expander>
     algorithm::Algorithm<Expander> for TestAlgorithm {
         type Storage = TestAlgorithmStorage<Expander>;
+        type Error = ();
 
         fn initialize<Tracker: tracker::Tracker<Expander::Node>>(
             &self,
-            expander: Rc<Expander>,
+            expander: Arc<Expander>,
             start: &Expander::Start,
             goal: Expander::Goal,
             tracker: &mut Tracker,
-        ) -> Self::Storage {
-            let mut queue: std::vec::Vec<Rc<Expander::Node>> = Vec::new();
-            for node in expander.start(start, &goal) {
+        ) -> Result<Self::Storage, Error<Expander, Self>> {
+            let mut queue: std::vec::Vec<Arc<Expander::Node>> = Vec::new();
+            for node in expander.start(start, Some(&goal)) {
+                let node = node.map_err(Error::Expander)?;
                 tracker.expanded_to(&node);
                 queue.push(node);
             }
 
-            return Self::Storage{ expander, goal, queue }
+            Ok(Self::Storage{expander, goal, queue})
         }
 
         fn step<Tracker: tracker::Tracker<Expander::Node>>(
             &self,
             storage: &mut Self::Storage,
-            options: &Expander::Options,
             tracker: &mut Tracker
-        ) -> Status<Expander> {
+        ) -> Result<Status<Expander>, Error<Expander, Self>> {
             let top_opt = storage.queue.pop();
             if let Some(top) = top_opt {
                 if storage.goal.is_satisfied(&top) {
                     tracker.solution_found_from(&top);
-                    return Status::Solved(storage.expander.make_solution(&top, options));
+                    return storage.expander.make_solution(&top)
+                        .map(Status::Solved)
+                        .map_err(Error::Expander);
                 }
 
-                for node in storage.expander.expand(&top, &storage.goal, options) {
+                for node in storage.expander.expand(&top, Some(&storage.goal)) {
+                    let node = node.map_err(Error::Expander)?;
                     storage.queue.push(node);
                 }
 
                 if storage.queue.is_empty() {
-                    return Status::Impossible;
+                    return Ok(Status::Impossible);
                 }
 
-                return Status::Incomplete;
+                return Ok(Status::Incomplete);
 
             } else {
-                return Status::Impossible;
+                return Ok(Status::Impossible);
             }
         }
     }
@@ -518,38 +511,38 @@ mod tests {
 
     #[test]
     fn counting_expander_can_reach_a_higher_goal() {
-        let planner = CountingPlanner::new(Rc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
         let start = 5;
         let goal = 10;
-        let result = planner.plan(&start, CountingGoal{value: goal}).solve();
+        let result = planner.plan(&start, CountingGoal{value: goal}).unwrap().solve().unwrap();
         assert!(matches!(result, Status::Solved(_)));
         if let Status::Solved(solution) = result {
-            assert!(solution.len() == (goal - start + 1) as usize);
-            assert!(solution.first() == Some(&start));
-            assert!(solution.last() == Some(&goal));
+            assert!(solution.sequence.len() == (goal - start + 1) as usize);
+            assert!(solution.sequence.first() == Some(&start));
+            assert!(solution.sequence.last() == Some(&goal));
         }
     }
 
     #[test]
     fn counting_expander_finds_lower_goal_impossible() {
-        let planner = CountingPlanner::new(Rc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
         let start = 10;
         let goal = 5;
-        let result = planner.plan(&start, CountingGoal{value: goal}).solve();
+        let result = planner.plan(&start, CountingGoal{value: goal}).unwrap().solve().unwrap();
         assert!(matches!(result, Status::Impossible));
     }
 
     #[test]
     fn planner_incomplete_after_insufficient_steps() {
-        let planner = CountingPlanner::new(Rc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
         let start = 5;
         let goal = 10;
-        let mut progress = planner.plan(&start, CountingGoal{value: goal});
-        assert!(matches!(progress.step(), Status::Incomplete));
-        assert!(matches!(progress.step(), Status::Incomplete));
-        assert!(matches!(progress.step(), Status::Incomplete));
-        assert!(matches!(progress.step(), Status::Incomplete));
-        assert!(matches!(progress.step(), Status::Incomplete));
-        assert!(matches!(progress.step(), Status::Solved(_)));
+        let mut progress = planner.plan(&start, CountingGoal{value: goal}).unwrap();
+        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
+        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
+        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
+        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
+        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
+        assert!(matches!(progress.step().unwrap(), Status::Solved(_)));
     }
 }

@@ -15,37 +15,45 @@
  *
 */
 
-use super::expander;
+use super::expander::{Expander, Cost};
 use super::tracker;
-use std::rc::Rc;
+use std::sync::Arc;
+use derivative::Derivative;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Status<Expander: expander::Expander> {
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
+pub enum Error<E: Expander, A: Algorithm<E>> {
+    Algorithm(A::Error),
+    Expander(E::Error),
+}
+
+#[derive(Debug, Clone)]
+pub enum Status<E: Expander> {
     Incomplete,
     Impossible,
-    Solved(Expander::Solution)
+    Solved(E::Solution),
 }
 
-pub trait Storage<Expander: expander::Expander> {
+pub trait Storage<E: Expander> {
     fn node_count(&self) -> usize;
-    fn top_cost_estimate(&self) -> Option<expander::Cost<Expander>>;
+    fn top_cost_estimate(&self) -> Option<Cost<E>>;
 }
 
-pub trait Algorithm<Expander: expander::Expander>  {
-    type Storage: Storage<Expander>;
+pub trait Algorithm<E: Expander>: Sized {
+    type Storage: Storage<E>;
+    type Error: std::fmt::Debug + Clone;
 
-    fn initialize<Tracker: tracker::Tracker<Expander::Node>>(
+    fn initialize<Tracker: tracker::Tracker<E::Node>>(
         &self,
-        expander: Rc<Expander>,
-        start: &Expander::Start,
-        goal: Expander::Goal,
+        expander: Arc<E>,
+        start: &E::Start,
+        goal: E::Goal,
         tracker: &mut Tracker,
-    ) -> Self::Storage;
+    ) -> Result<Self::Storage, Error<E, Self>>;
 
-    fn step<Tracker: tracker::Tracker<Expander::Node>>(
+    fn step<Tracker: tracker::Tracker<E::Node>>(
         &self,
         storage: &mut Self::Storage,
-        options: &Expander::Options,
         tracker: &mut Tracker,
-    ) -> Status<Expander>;
+    ) -> Result<Status<E>, Error<E, Self>>;
 }

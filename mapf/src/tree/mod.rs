@@ -14,30 +14,9 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds)]
-
-pub mod planner;
-pub use planner::{Planner, Progress};
-
-pub mod expander;
-pub use expander::Expander;
-
-pub mod node;
-pub use node::{Node, Cost};
-
-pub mod algorithm;
-pub use algorithm::{Error, Algorithm};
-
-pub mod tracker;
-pub use tracker::Tracker;
 
 pub mod tree;
+pub use tree::Tree;
 
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
-
-pub mod occupancy;
-
-mod util;
+pub mod garden;
+pub use garden::Garden;
