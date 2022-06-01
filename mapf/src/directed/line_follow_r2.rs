@@ -25,7 +25,7 @@ use crate::motion::{
         timed_position::{LineFollow, Waypoint},
     },
 };
-use crate::node::{Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
+use crate::node::{self, Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
 use std::sync::Arc;
 use time_point::TimePoint;
 use num::Zero;
@@ -60,6 +60,16 @@ impl<Cost: NodeCost> crate::Node for Node<Cost> {
 
     fn parent(&self) -> &Option<Arc<Self>> {
         return &self.parent;
+    }
+}
+
+impl<Cost: NodeCost> node::Informed for Node<Cost> {
+    fn remaining_cost_estimate(&self) -> Self::Cost {
+        self.remaining_cost_estimate
+    }
+
+    fn total_cost_estimate(&self) -> Self::Cost {
+        self.total_cost_estimate
     }
 }
 

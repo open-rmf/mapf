@@ -16,7 +16,7 @@
 */
 
 use crate::expander::Expander;
-use crate::node::{Node, CostCmp, ClosedSet, ClosedStatus, CloseResult};
+use crate::node::{Node, CostCmp, ClosedSet};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use std::sync::Arc;

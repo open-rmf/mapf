@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::ops::FnMut;
 use std::boxed::Box;
 
-use super::expander::{self, Cost};
+use super::expander::{self, CostOf};
 use super::algorithm::{self, Status, Storage, Error};
 use super::tracker;
 
@@ -126,7 +126,7 @@ pub struct ProgressionOptions<Expander: expander::Expander> {
 
     /// The maximum total cost estimate that the top node can reach before
     /// the solve attempt quits.
-    pub max_cost_estimate: Option<Cost<Expander>>,
+    pub max_cost_estimate: Option<CostOf<Expander>>,
 
     /// The maximum size that the search queue can reach before the
     /// solve attemptp quits.
@@ -193,7 +193,7 @@ where
     /// incomplete.
     pub fn with_max_cost_estimate(
         &mut self,
-        max_cost_estimate: Option<Cost<Expander>>
+        max_cost_estimate: Option<CostOf<Expander>>
     ) -> &mut Self {
         self.progression_options.max_cost_estimate = max_cost_estimate;
         return self;
@@ -443,7 +443,7 @@ mod tests {
         fn node_count(&self) -> usize {
             return self.queue.len();
         }
-        fn top_cost_estimate(&self) -> Option<expander::Cost<Expander>> {
+        fn top_cost_estimate(&self) -> Option<expander::CostOf<Expander>> {
             if let Some(last) = self.queue.last() {
                 return Some((*last).cost())
             }

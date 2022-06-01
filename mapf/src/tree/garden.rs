@@ -16,8 +16,8 @@
 */
 
 use super::Tree;
-use crate::node::{self, Node, PartialKeyed, ClosedSet};
-use crate::expander::{self, Expander, Solution};
+use crate::node::{self, Node, PartialKeyed, ClosedSet, KeyOf};
+use crate::expander::{self, Expander, Solution, NodeOf, ReverseOf, SolutionOf};
 use crate::util::Minimum;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
@@ -32,9 +32,9 @@ pub enum Error<E: expander::Reversible> where E::Node: node::Reversible {
 }
 
 // type TreeCache<E: Expander> where E::Node: HashOption = MutexRefCell<HashMap<<E::Node as node::HashOption>::Key, MutexRefCell<Tree<E>>>>;
-type TreeCache<E: expander::Reversible> = MutexRefCell<HashMap<<E::Node as node::PartialKeyed>::Key, Arc<MutexRefCell<Tree<E>>>>>;
-type SolutionCache<E: expander::Reversible> = MutexRefCell<HashMap<(<E::Node as PartialKeyed>::Key, <E::Node as PartialKeyed>::Key), Option<E::Solution>>>;
-type ConnectionMap<E: expander::Reversible> = HashMap<<E::Node as PartialKeyed>::Key, (Option<Arc<E::Node>>, Option<Arc<<E::Reverse as Expander>::Node>>)>;
+type TreeCache<E> = MutexRefCell<HashMap<KeyOf<NodeOf<E>>, Arc<MutexRefCell<Tree<E>>>>>;
+type SolutionCache<E> = MutexRefCell<HashMap<(KeyOf<NodeOf<E>>, KeyOf<NodeOf<E>>), Option<SolutionOf<E>>>>;
+type ConnectionMap<E> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Option<Arc<NodeOf<ReverseOf<E>>>>)>;
 
 pub struct Garden<E: expander::Reversible>
 where

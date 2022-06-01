@@ -18,7 +18,7 @@
 use super::algorithm;
 use super::algorithm::Status;
 use super::expander;
-use super::expander::Goal;
+use super::expander::{Goal, CostOf};
 use super::tracker::Tracker;
 use super::node::{self, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
@@ -51,7 +51,7 @@ where
         return self.queue.len();
     }
 
-    fn top_cost_estimate(&self) -> Option<expander::Cost<E>> {
+    fn top_cost_estimate(&self) -> Option<CostOf<E>> {
         self.queue.peek().map(|x| x.0.0.total_cost_estimate())
     }
 }
@@ -78,6 +78,7 @@ where
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, Some(&goal)) {
             let node = node.map_err(algorithm::Error::Expander)?;
+            tracker.expanded_to(&node);
             queue.push(Reverse(NodeCmp(node)));
         }
 

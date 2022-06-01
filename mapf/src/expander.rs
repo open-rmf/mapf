@@ -84,4 +84,7 @@ pub trait Reversible: Expander where Self::Node: node::Reversible {
     ) -> Result<Self::Solution, Self::Error>;
 }
 
-pub type Cost<E> = <<E as Expander>::Node as node::Node>::Cost;
+pub type NodeOf<E> = <E as Expander>::Node;
+pub type CostOf<E> = <NodeOf<E> as node::Node>::Cost;
+pub type ReverseOf<E> = <E as Reversible>::Reverse;
+pub type SolutionOf<E> = <E as Expander>::Solution;

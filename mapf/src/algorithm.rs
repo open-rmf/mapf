@@ -15,7 +15,7 @@
  *
 */
 
-use super::expander::{Expander, Cost};
+use super::expander::{Expander, CostOf};
 use super::tracker;
 use std::sync::Arc;
 use derivative::Derivative;
@@ -36,7 +36,7 @@ pub enum Status<E: Expander> {
 
 pub trait Storage<E: Expander> {
     fn node_count(&self) -> usize;
-    fn top_cost_estimate(&self) -> Option<Cost<E>>;
+    fn top_cost_estimate(&self) -> Option<CostOf<E>>;
 }
 
 pub trait Algorithm<E: Expander>: Sized {

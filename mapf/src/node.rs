@@ -260,6 +260,7 @@ impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
 
 impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
 
+pub type KeyOf<N> = <N as PartialKeyed>::Key;
 
 #[cfg(test)]
 mod tests {
