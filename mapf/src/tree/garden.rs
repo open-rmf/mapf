@@ -53,15 +53,15 @@ where
     E::Node: node::Reversible + node::Keyed,
     <E::Reverse as Expander>::Node: node::Keyed,
 {
-    pub fn new(expander: Arc<E>) -> Self {
-        let reverser = expander.reverse();
-        Self{
+    pub fn new(expander: Arc<E>) -> Result<Self, Error<E>> {
+        let reverser = expander.reverse().map_err(|e| Error::Forward(e))?;
+        Ok(Self{
             expander,
             reverser,
             forward_trees: Default::default(),
             reverse_trees: Default::default(),
             solutions: Default::default(),
-        }
+        })
     }
 
     pub fn solve(&self, from: &E::Start, to: &E::Goal) -> Result<Option<E::Solution>, Error<E>> {

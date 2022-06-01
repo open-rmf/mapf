@@ -206,12 +206,12 @@ type ConfirmedChanges = Vec<(Cell, bool)>;
 type ChangedCorners = Vec<(Cell, CornerStatus)>;
 
 pub trait Grid: std::fmt::Debug {
-    type OccupiedIterator<'a>: Iterator<Item=&'a Cell> + std::fmt::Debug
+    type OccupiedIterator<'a>: IntoIterator<Item=&'a Cell>
     where
         Cell: 'a,
         Self: 'a;
 
-    type CornerIterator<'a>: Iterator<Item=(&'a Cell, &'a CornerStatus)> + std::fmt::Debug
+    type CornerIterator<'a>: IntoIterator<Item=(&'a Cell, &'a CornerStatus)>
     where
         Cell: 'a,
         CornerStatus: 'a,
@@ -396,7 +396,7 @@ impl<G: Grid> Visibility<G> {
     fn update_corners<'b>(
         grid: &G,
         confirmed_changes: &ConfirmedChanges,
-        corners: impl Iterator<Item=(&'b Cell, &'b CornerStatus)> + std::fmt::Debug,
+        corners: impl IntoIterator<Item=(&'b Cell, &'b CornerStatus)>,
         agent_radius: f64,
         cell_shift: i64,
         points: &mut HashMap<Cell, (BlockedBy, CornerStatus)>,

@@ -15,26 +15,17 @@
  *
 */
 
-use std::vec::Vec;
+use super::{timed, Interpolation};
 
-pub struct Graph<Vertex: Clone> {
-    pub vertices: Vec<Vertex>,
-    pub edges: Vec<Vec<usize>>,
-}
+pub trait Waypoint:
+    timed::Timed
+    + Interpolation<Self::Position, Self::Velocity>
+    + Clone
+    + std::fmt::Debug
+{
+    /// What type of spatial position does the waypoint have
+    type Position;
 
-impl<Vertex: Clone> Graph<Vertex> {
-    pub fn reverse(&self) -> Self {
-        let mut r_edges = Vec::new();
-        r_edges.resize(self.edges.len(), Vec::new());
-        for (r_v_to, edges) in self.edges.iter().enumerate() {
-            for r_v_from in edges {
-                r_edges.get_mut(*r_v_from).unwrap().push(r_v_to);
-            }
-        }
-
-        Self{
-            vertices: self.vertices.clone(),
-            edges: r_edges,
-        }
-    }
+    /// How does the waypoint represent the time derivative of its position
+    type Velocity;
 }

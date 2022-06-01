@@ -18,7 +18,7 @@
 use super::simple::Graph;
 use crate::expander;
 use crate::motion::{
-    self, Extrapolation,
+    self, Extrapolator,
     trajectory::{Trajectory, CostCalculator},
     se2::{
         Position, Point, Rotation,
@@ -29,6 +29,7 @@ use crate::motion::{
     },
 };
 use crate::node::{Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
+use crate::tree::Garden;
 use std::{
     hash::Hash,
     sync::Arc,
@@ -165,7 +166,7 @@ type NodeType<P> = Node<<P as Policy>::Cost>;
 
 pub struct Expander<P: Policy> {
     graph: Arc<Graph<Point>>,
-    extrapolation: Arc<DifferentialDriveLineFollow>,
+    extrapolator: Arc<DifferentialDriveLineFollow>,
     cost_calculator: Arc<P::CostCalculator>,
     heuristic: P::Heuristic,
 }
@@ -244,7 +245,7 @@ impl<'a, P: Policy> Expansion<'a, P> {
 impl<'a, P: Policy> Expansion<'a, P> {
     fn expand_to(&self, to_vertex: usize) -> Option<Arc<NodeType<P>>> {
         if let Some(vertex) = self.expander.graph.vertices.get(to_vertex) {
-            let extrapolation = self.expander.extrapolation.extrapolate(
+            let extrapolation = self.expander.extrapolator.extrapolate(
                 &self.from_node.state,
                 vertex
             );
@@ -267,7 +268,7 @@ impl<'a, P: Policy> Expansion<'a, P> {
             self.from_node.state.position.translation,
             orientation_goal.target
         );
-        let extrapolation = self.expander.extrapolation.extrapolate(
+        let extrapolation = self.expander.extrapolator.extrapolate(
             &self.from_node.state, &to_target
         );
         if let Ok(mut waypoints) = extrapolation {
@@ -283,7 +284,7 @@ impl<'a, P: Policy> Expansion<'a, P> {
 
     fn expand_from_start(&self, to_vertex: usize) -> Option<Arc<NodeType<P>>> {
         if let Some(to_target) = self.expander.graph.vertices.get(to_vertex) {
-            let extrapolation = self.expander.extrapolation.extrapolate(
+            let extrapolation = self.expander.extrapolator.extrapolate(
                 &self.from_node.state,
                 to_target
             );
@@ -419,13 +420,13 @@ impl<P: Policy> crate::Expander for Expander<P> {
 impl<P: Policy> Expander<P> {
     pub fn new(
         graph: Arc<Graph<Point>>,
-        extrapolation: Arc<DifferentialDriveLineFollow>,
+        extrapolator: Arc<DifferentialDriveLineFollow>,
         cost_calculator: Arc<P::CostCalculator>,
         heuristic: P::Heuristic,
     ) -> Self {
         Self{
             graph,
-            extrapolation,
+            extrapolator,
             cost_calculator,
             heuristic,
         }
@@ -477,6 +478,10 @@ impl<P: Policy<Cost=i64>> Heuristic<P::Cost> for EuclideanHeuristic<P> {
         return Some(P::Cost::zero());
     }
 }
+
+// pub struct ShortestPathHeuristic<P: Policy> {
+//     pub garden: Garden<
+// }
 
 pub struct TimeCostCalculator;
 impl CostCalculator<Waypoint> for TimeCostCalculator {

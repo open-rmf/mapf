@@ -15,7 +15,7 @@
  *
 */
 
-use super::{TimePoint, Duration, Motion, Waypoint, InterpError, timed::TimeCmp};
+use super::{waypoint, TimePoint, Duration, Motion, Waypoint, InterpError, timed::{TimeCmp, Timed}};
 use sorted_vec::{SortedSet, FindOrInsert};
 use cached::{Cached, UnboundCache};
 use std::cell::RefCell;
@@ -95,7 +95,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Drains elements out of the given iterator type and constructs a
     /// Trajectory with them. If the final number of elements that would be in
     /// the trajectory is less than 2, then this function returns an Err.
-    pub fn from_iter<I: std::iter::Iterator<Item=W>>(iter: I) -> Result<Self, ()> {
+    pub fn from_iter<I: std::iter::IntoIterator<Item=W>>(iter: I) -> Result<Self, ()> {
         let mut result = Self{ waypoints: SortedSet::new() };
         for element in iter {
             result.waypoints.push(TimeCmp(element));

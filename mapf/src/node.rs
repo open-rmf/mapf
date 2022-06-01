@@ -112,7 +112,7 @@ impl<N: Node> ClosedStatus<N> {
 /// visited a certain location.
 pub trait ClosedSet<NodeType: Node>: Default {
 
-    type Iter<'a>: Iterator<Item=&'a Arc<NodeType>> where Self: 'a, NodeType: 'a;
+    type Iter<'a>: IntoIterator<Item=&'a Arc<NodeType>> where Self: 'a, NodeType: 'a;
 
     /// Tell the closed set to close this node.
     fn close(&mut self, node: &Arc<NodeType>) -> CloseResult<NodeType>;

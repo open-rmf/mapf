@@ -16,8 +16,9 @@
 */
 
 use time_point::TimePoint;
-use crate::motion::{self, timed, Interpolation, InterpError, Extrapolation, ExtrapError};
+use crate::motion::{self, timed, Interpolation, InterpError, Extrapolator, ExtrapError};
 use super::{Position, Point, Vector, Velocity};
+use arrayvec::ArrayVec;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -227,7 +228,7 @@ impl DifferentialDriveLineFollow {
     ) -> Result<ReachedTarget, ExtrapError> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
-        let mut output: Vec<Waypoint> = Vec::new();
+        let mut output: ArrayVec<Waypoint, 3> = ArrayVec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
 
@@ -266,18 +267,19 @@ impl DifferentialDriveLineFollow {
 }
 
 struct ReachedTarget {
-    waypoints: Vec<Waypoint>,
+    waypoints: ArrayVec<Waypoint, 3>,
     time: TimePoint,
     yaw: nalgebra::UnitComplex<f64>,
 }
 
-impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
+impl Extrapolator<Waypoint, Position> for DifferentialDriveLineFollow {
+    type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
 
     fn extrapolate(
         &self,
         from_waypoint: &Waypoint,
         to_position: &Position
-    ) -> Result<Vec<Waypoint>, ExtrapError> {
+    ) -> Result<ArrayVec<Waypoint, 3>, ExtrapError> {
         let mut arrival = self.move_towards_target(
             from_waypoint, &Point::from(to_position.translation.vector)
         )?;
@@ -299,16 +301,17 @@ impl Extrapolation<Waypoint, Position> for DifferentialDriveLineFollow {
     }
 }
 
-impl Extrapolation<Waypoint, Point> for DifferentialDriveLineFollow {
+impl Extrapolator<Waypoint, Point> for DifferentialDriveLineFollow {
+    type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
 
-    fn extrapolate(
-        &self,
+    fn extrapolate<'a>(
+        &'a self,
         from_waypoint: &Waypoint,
         to_target: &Point,
-    ) -> Result<Vec<Waypoint>, ExtrapError> {
-        return self.move_towards_target(
+    ) -> Result<ArrayVec<Waypoint, 3>, ExtrapError> {
+        self.move_towards_target(
             from_waypoint, to_target
-        ).map(|arrival| arrival.waypoints );
+        ).map(|arrival| arrival.waypoints )
     }
 }
 

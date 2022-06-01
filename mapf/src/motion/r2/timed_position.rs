@@ -16,8 +16,9 @@
 */
 
 use time_point::{TimePoint, Duration};
-use crate::motion::{self, timed, Interpolation, InterpError, Extrapolation, ExtrapError};
+use crate::motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator, ExtrapError};
 use super::{Position, Velocity};
+use arrayvec::ArrayVec;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -100,6 +101,8 @@ impl Interpolation<Position, Velocity> for Waypoint {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineFollow {
     speed: f64,
+    direction: f64,
+    distance_threshold: f64,
 }
 
 impl LineFollow {
@@ -108,7 +111,7 @@ impl LineFollow {
             return Err(());
         }
 
-        Ok(LineFollow{speed})
+        Ok(LineFollow{speed, direction: 1.0, distance_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD})
     }
 
     pub fn set_speed(&mut self, value: f64) -> Result<(), ()> {
@@ -125,15 +128,33 @@ impl LineFollow {
     }
 }
 
-impl Extrapolation<Waypoint, Position> for LineFollow {
-    fn extrapolate(
-        &self,
+impl Extrapolator<Waypoint, Position> for LineFollow {
+    type Extrapolation<'a> = ArrayVec<Waypoint, 1>;
+
+    fn extrapolate<'a>(
+        &'a self,
         from_waypoint: &Waypoint,
         to_target: &Position
-    ) -> Result<Vec<Waypoint>, ExtrapError> {
+    ) -> Result<ArrayVec<Waypoint, 1>, ExtrapError> {
         let dx = (to_target - from_waypoint.position).norm();
-        let t = Duration::from_secs_f64(dx / self.speed) + from_waypoint.time;
-        Ok(vec![Waypoint::new(t, to_target.x, to_target.y)])
+        if dx <= self.distance_threshold {
+            return Ok(ArrayVec::new());
+        }
+
+        let t = Duration::from_secs_f64(self.direction * dx / self.speed) + from_waypoint.time;
+        Ok(ArrayVec::from_iter([Waypoint::new(t, to_target.x, to_target.y)]))
+    }
+}
+
+impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
+    type Reverse = LineFollow;
+
+    fn reverse(&self) -> Self::Reverse {
+        Self{
+            speed: self.speed,
+            direction: -1.0 * self.direction,
+            distance_threshold: self.distance_threshold,
+        }
     }
 }
 
@@ -185,7 +206,7 @@ mod tests {
         );
 
         let trajectory = motion::r2::LinearTrajectory::from_iter(
-            [vec![wp0], waypoints].iter().flatten().map(|wp| *wp)
+            [wp0].into_iter().chain(waypoints.iter().map(|wp| *wp))
         ).expect("Failed to create trajectory");
         assert_eq!(trajectory.len(), 2);
     }

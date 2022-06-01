@@ -16,9 +16,10 @@
 */
 
 use super::simple::Graph;
-use crate::expander;
+use crate::expander::{self, NodeOf, ErrorOf, ReverseOf};
 use crate::motion::{
-    self, Extrapolation,
+    self, Extrapolator,
+    timed::Timed,
     trajectory::{Trajectory, CostCalculator},
     r2::{
         Position,
@@ -26,7 +27,10 @@ use crate::motion::{
     },
 };
 use crate::node::{self, Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 use time_point::TimePoint;
 use num::Zero;
 use derivative::Derivative;
@@ -73,6 +77,10 @@ impl<Cost: NodeCost> node::Informed for Node<Cost> {
     }
 }
 
+impl<Cost: NodeCost> node::Reversible for Node<Cost> {
+    type Reverse = Self;
+}
+
 pub trait Heuristic<Cost: NodeCost> {
     fn estimate_cost(&self, from_vertex: usize, to_goal: Option<usize>) -> Option<Cost>;
 }
@@ -88,27 +96,28 @@ type NodeType<P> = Node<<P as Policy>::Cost>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Goal(usize);
 
-impl<C: NodeCost> crate::expander::Goal<Node<C>> for Goal {
+impl<C: NodeCost> crate::expander::Goal<Node<C>> for usize {
     fn is_satisfied(&self, node: &Node<C>) -> bool {
-        return node.vertex == self.0;
+        return node.vertex == *self;
     }
 }
 
 pub struct Expander<P: Policy> {
     graph: Arc<Graph<Position>>,
-    extrapolation: Arc<LineFollow>,
+    extrapolator: Arc<LineFollow>,
     cost_calculator: Arc<P::CostCalculator>,
-    heuristic: P::Heuristic,
+    heuristic: Arc<P::Heuristic>,
+    reverse: Mutex<RefCell<Option<Arc<Expander<P>>>>>,
 }
 
 impl<P: Policy> Expander<P> {
     pub fn new(
         graph: Arc<Graph<Position>>,
-        extrapolation: Arc<LineFollow>,
+        extrapolator: Arc<LineFollow>,
         cost_calculator: Arc<P::CostCalculator>,
-        heuristic: P::Heuristic,
+        heuristic: Arc<P::Heuristic>,
     ) -> Self {
-        Self{graph, extrapolation, cost_calculator, heuristic}
+        Self{graph, extrapolator, cost_calculator, heuristic, reverse: Mutex::new(RefCell::new(None))}
     }
 
     fn make_node(
@@ -136,6 +145,37 @@ impl<P: Policy> Expander<P> {
     }
 }
 
+// impl<P: Policy> expander::Reversible for Expander<P> {
+//     type Reverse = Expander<P>;
+
+//     fn reverse(&self) -> Result<Arc<Self::Reverse>, Error> {
+//          Ok(self.reverse.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut()
+//             .get_or_insert_with(|| {
+//                 Arc::new(
+//                     Expander::new(
+//                         Arc::new(self.graph.reverse()),
+//                         self.extrapolator.reverse(),
+//                         self.cost_calculator,
+//                         self.heuristic,
+//                     )
+//                 )
+//             })
+//             .clone())
+//     }
+
+//     fn make_bidirectional_solution(
+//         &self,
+//         forward_solution_node: &Arc<Self::Node>,
+//         reverse_solution_node: &Arc<NodeOf<ReverseOf<Self>>>,
+//     ) -> Result<Self::Solution, Self::Error> {
+//         let mut node = forward_solution_node.clone();
+//         let mut waypoints = Vec::new();
+//         loop {
+//             if let
+//         }
+//     }
+// }
+
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]
 pub struct Solution<P: Policy> {
@@ -155,21 +195,26 @@ impl<P: Policy> expander::Solution<P::Cost> for Solution<P> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Error {
+    PoisonedMutex,
+}
+
 impl<P: Policy> crate::Expander for Expander<P> {
     type Node = NodeType<P>;
     type Start = usize;
-    type Goal = Goal;
+    type Goal = usize;
     type Solution = Solution<P>;
     type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
     type Expansion<'a> where P: 'a = Expansion<'a, P>;
-    type Error = ();
+    type Error = Error;
 
     fn start<'a>(&'a self, start: &'a Self::Start, goal: Option<&'a Self::Goal>) -> Self::InitialNodes<'a> {
         InitialNodes{
             start: *start,
             expanded: false,
             expander: self,
-            goal: goal.map(|g| g.0),
+            goal: goal.map(|g| *g),
         }
     }
 
@@ -178,31 +223,61 @@ impl<P: Policy> crate::Expander for Expander<P> {
             from_node: parent.clone(),
             expansion_index: 0,
             expander: self,
-            goal: goal.map(|g| g.0),
+            goal: goal.map(|g| *g),
         }
     }
 
-    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, ()> {
-        let mut node = solution_node.clone();
-        let mut waypoints = Vec::new();
-        loop {
-            if let Some(next_waypoints) = &node.motion_from_parent {
-                for wp in next_waypoints.iter().rev() {
-                    waypoints.push(*wp.clone());
-                }
-            }
-
-            match &node.parent {
-                Some(parent) => { node = parent.clone() },
-                None => { break; }
-            }
-        }
-
-        waypoints.reverse();
-        return Ok(Solution{
+    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, Self::Error> {
+        Ok(Solution{
             cost: solution_node.cost,
-            motion: Trajectory::from_iter(waypoints.into_iter()).ok(),
-        });
+            motion: Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok(),
+        })
+    }
+}
+
+struct ReconstructMotion<C: NodeCost> {
+    node: Option<Arc<Node<C>>>,
+    index: usize,
+    shift: time_point::Duration,
+}
+
+impl<C: NodeCost> ReconstructMotion<C> {
+    fn new(root: Arc<Node<C>>) -> Self {
+        Self{
+            node: Some(root),
+            index: 0,
+            shift: time_point::Duration::zero(),
+        }
+    }
+
+    fn shifted(mut self, shift: time_point::Duration) -> Self {
+        self.shift = shift;
+        self
+    }
+}
+
+impl<C: NodeCost> Iterator for ReconstructMotion<C> {
+    type Item = Waypoint;
+
+    fn next(&mut self) -> Option<Waypoint> {
+        loop {
+            if let Some(node) = &self.node {
+                if let Some(motion) = &node.motion_from_parent {
+                    if self.index < motion.len() {
+                        self.index += 1;
+                        let mut wp = motion[self.index - 1].0;
+                        wp.set_time(*wp.time() + self.shift);
+                        return Some(wp);
+                    }
+                }
+
+                self.node = node.parent.clone();
+                self.index = 0;
+                continue;
+            }
+
+            return None;
+        }
     }
 }
 
@@ -214,7 +289,7 @@ pub struct InitialNodes<'a, P: Policy> {
 }
 
 impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
-    type Item = Result<Arc<Node<P::Cost>>, ()>;
+    type Item = Result<Arc<Node<P::Cost>>, ErrorOf<Expander<P>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.expanded {
@@ -252,7 +327,7 @@ pub struct Expansion<'a, P: Policy> {
 }
 
 impl<'a, P: Policy> Iterator for Expansion<'a, P> {
-    type Item = Result<Arc<Node<P::Cost>>, ()>;
+    type Item = Result<Arc<Node<P::Cost>>, ErrorOf<Expander<P>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -263,7 +338,7 @@ impl<'a, P: Policy> Iterator for Expansion<'a, P> {
                         *to_vertex, self.goal
                     ) {
                         if let Some(to_target) = self.expander.graph.vertices.get(*to_vertex) {
-                            let waypoints_opt = self.expander.extrapolation.extrapolate(
+                            let waypoints_opt = self.expander.extrapolator.extrapolate(
                                 &self.from_node.state,
                                 &to_target
                             );
