@@ -20,7 +20,7 @@ use std::ops::FnMut;
 use std::boxed::Box;
 
 use super::expander::{self, CostOf};
-use super::algorithm::{self, Status, Storage, Error};
+use super::algorithm::{self, Status, Storage, InitError, StepError};
 use super::tracker;
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
@@ -71,7 +71,7 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
         &self,
         start: &Expander::Start,
         goal: Expander::Goal,
-    ) -> Result<Progress<Expander, Algorithm, tracker::NoDebug>, Error<Expander, Algorithm>> {
+    ) -> Result<Progress<Expander, Algorithm, tracker::NoDebug>, InitError<Expander, Algorithm>> {
         let mut tracker = tracker::NoDebug::default();
         let storage = self.algorithm.initialize(
             self.expander.clone(), &start, goal, &mut tracker
@@ -91,7 +91,7 @@ impl<Expander, Algorithm> Planner<Expander, Algorithm>  where
         start: &Expander::Start,
         goal: Expander::Goal,
         mut tracker: Tracker
-    ) -> Result<Progress<Expander, Algorithm, Tracker>, Error<Expander, Algorithm>>
+    ) -> Result<Progress<Expander, Algorithm, Tracker>, InitError<Expander, Algorithm>>
     where Tracker: tracker::Tracker<Expander::Node> {
 
         let storage = self.algorithm.initialize(
@@ -221,7 +221,7 @@ where
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Result<Status<Expander>, Error<Expander, Algorithm>> {
+    pub fn solve(&mut self) -> Result<Status<Expander>, StepError<Expander, Algorithm>> {
         loop {
             if self.need_to_interrupt() {
                 return Ok(Status::Incomplete);
@@ -236,7 +236,7 @@ where
         }
     }
 
-    pub fn step(&mut self) -> Result<Status<Expander>, Error<Expander, Algorithm>> {
+    pub fn step(&mut self) -> Result<Status<Expander>, StepError<Expander, Algorithm>> {
         return self.algorithm.step(&mut self.storage, &mut self.tracker);
     }
 
@@ -320,6 +320,8 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct CountingExpanderOptions;
+
+    #[derive(Debug)]
     struct CountingExpander;
 
     struct CountingGoal {
@@ -361,10 +363,12 @@ mod tests {
         type Start = u64;
         type Goal = CountingGoal;
         type Node = CountingNode;
-        type Solution = CountingSolution;
+        type InitError = ();
         type InitialNodes<'a> = CountingExpansion<'a>;
+        type ExpansionError = ();
         type Expansion<'a> = CountingExpansion<'a>;
-        type Error = ();
+        type SolveError = ();
+        type Solution = CountingSolution;
 
         fn start<'a>(&'a self, start: &u64, goal: Option<&Self::Goal>) -> Self::InitialNodes<'a> {
             if let Some(goal) = goal {
@@ -457,7 +461,8 @@ mod tests {
     impl<Expander: expander::Expander>
     algorithm::Algorithm<Expander> for TestAlgorithm {
         type Storage = TestAlgorithmStorage<Expander>;
-        type Error = ();
+        type InitError = ();
+        type StepError = ();
 
         fn initialize<Tracker: tracker::Tracker<Expander::Node>>(
             &self,
@@ -465,10 +470,10 @@ mod tests {
             start: &Expander::Start,
             goal: Expander::Goal,
             tracker: &mut Tracker,
-        ) -> Result<Self::Storage, Error<Expander, Self>> {
+        ) -> Result<Self::Storage, InitError<Expander, Self>> {
             let mut queue: std::vec::Vec<Arc<Expander::Node>> = Vec::new();
             for node in expander.start(start, Some(&goal)) {
-                let node = node.map_err(Error::Expander)?;
+                let node = node.map_err(InitError::Expander)?;
                 tracker.expanded_to(&node);
                 queue.push(node);
             }
@@ -480,18 +485,18 @@ mod tests {
             &self,
             storage: &mut Self::Storage,
             tracker: &mut Tracker
-        ) -> Result<Status<Expander>, Error<Expander, Self>> {
+        ) -> Result<Status<Expander>, StepError<Expander, Self>> {
             let top_opt = storage.queue.pop();
             if let Some(top) = top_opt {
                 if storage.goal.is_satisfied(&top) {
                     tracker.solution_found_from(&top);
                     return storage.expander.make_solution(&top)
                         .map(Status::Solved)
-                        .map_err(Error::Expander);
+                        .map_err(StepError::Solve);
                 }
 
                 for node in storage.expander.expand(&top, Some(&storage.goal)) {
-                    let node = node.map_err(Error::Expander)?;
+                    let node = node.map_err(StepError::Expansion)?;
                     storage.queue.push(node);
                 }
 

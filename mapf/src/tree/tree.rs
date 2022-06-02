@@ -15,7 +15,7 @@
  *
 */
 
-use crate::expander::Expander;
+use crate::expander::{Expander, ExpansionErrorOf};
 use crate::node::{Node, CostCmp, ClosedSet};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -73,9 +73,9 @@ pub struct Growth<'a, E: Expander> {
 }
 
 impl<'a, N: Node, E: Expander<Node=N>> Iterator for Growth<'a, E> {
-    type Item = Result<Arc<N>, E::Error>;
+    type Item = Result<Arc<N>, ExpansionErrorOf<E>>;
 
-    fn next(&mut self) -> Option<Result<Arc<N>, E::Error>> {
+    fn next(&mut self) -> Option<Result<Arc<N>, ExpansionErrorOf<E>>> {
         while !self.tree.queue.is_empty() {
             if let Some(top) = self.tree.queue.peek() {
                 // First check if the cost is tied for the expected cost.

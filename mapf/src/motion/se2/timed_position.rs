@@ -16,7 +16,7 @@
 */
 
 use time_point::TimePoint;
-use crate::motion::{self, timed, Interpolation, InterpError, Extrapolator, ExtrapError};
+use crate::motion::{self, timed, Interpolation, InterpError, Extrapolator};
 use super::{Position, Point, Vector, Velocity};
 use arrayvec::ArrayVec;
 
@@ -127,7 +127,7 @@ pub enum Steering {
     Holonomic
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DifferentialDriveLineFollow {
     /// What is the nominal translational speed that the agent will move with
     translational_speed: f64,
@@ -225,7 +225,7 @@ impl DifferentialDriveLineFollow {
         &self,
         from_waypoint: &Waypoint,
         to_target: &Point,
-    ) -> Result<ReachedTarget, ExtrapError> {
+    ) -> Result<ReachedTarget, ()> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
         let mut output: ArrayVec<Waypoint, 3> = ArrayVec::new();
@@ -274,12 +274,13 @@ struct ReachedTarget {
 
 impl Extrapolator<Waypoint, Position> for DifferentialDriveLineFollow {
     type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
+    type Error = ();
 
     fn extrapolate(
         &self,
         from_waypoint: &Waypoint,
         to_position: &Position
-    ) -> Result<ArrayVec<Waypoint, 3>, ExtrapError> {
+    ) -> Result<ArrayVec<Waypoint, 3>, ()> {
         let mut arrival = self.move_towards_target(
             from_waypoint, &Point::from(to_position.translation.vector)
         )?;
@@ -303,12 +304,13 @@ impl Extrapolator<Waypoint, Position> for DifferentialDriveLineFollow {
 
 impl Extrapolator<Waypoint, Point> for DifferentialDriveLineFollow {
     type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
+    type Error = ();
 
     fn extrapolate<'a>(
         &'a self,
         from_waypoint: &Waypoint,
         to_target: &Point,
-    ) -> Result<ArrayVec<Waypoint, 3>, ExtrapError> {
+    ) -> Result<ArrayVec<Waypoint, 3>, ()> {
         self.move_towards_target(
             from_waypoint, to_target
         ).map(|arrival| arrival.waypoints )

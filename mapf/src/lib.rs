@@ -26,7 +26,7 @@ pub mod node;
 pub use node::{Node, Cost};
 
 pub mod algorithm;
-pub use algorithm::{Error, Algorithm};
+pub use algorithm::{InitError, StepError, Algorithm};
 
 pub mod tracker;
 pub use tracker::Tracker;

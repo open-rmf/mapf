@@ -17,6 +17,7 @@
 
 use std::vec::Vec;
 
+#[derive(Debug, Clone)]
 pub struct Graph<Vertex: Clone> {
     pub vertices: Vec<Vertex>,
     pub edges: Vec<Vec<usize>>,

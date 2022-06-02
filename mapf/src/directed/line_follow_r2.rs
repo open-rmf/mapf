@@ -16,9 +16,10 @@
 */
 
 use super::simple::Graph;
-use crate::expander::{self, NodeOf, ErrorOf, ReverseOf};
+use crate::expander::{self, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
 use crate::motion::{
     self, Extrapolator,
+    extrapolator::{self, Reversible},
     timed::Timed,
     trajectory::{Trajectory, CostCalculator},
     r2::{
@@ -81,8 +82,13 @@ impl<Cost: NodeCost> node::Reversible for Node<Cost> {
     type Reverse = Self;
 }
 
-pub trait Heuristic<Cost: NodeCost> {
-    fn estimate_cost(&self, from_vertex: usize, to_goal: Option<usize>) -> Option<Cost>;
+pub trait Heuristic<C: NodeCost> {
+    type EstimationError: std::error::Error;
+    fn estimate_cost(
+        &self,
+        from_vertex: usize,
+        to_goal: Option<usize>
+    ) -> Result<Option<C>, Self::EstimationError>;
 }
 
 pub trait Policy {
@@ -147,31 +153,34 @@ impl<P: Policy> Expander<P> {
 
 // impl<P: Policy> expander::Reversible for Expander<P> {
 //     type Reverse = Expander<P>;
+//     type ReversalError = ReversalError;
+//     type BidirSolveError = BidirSolveError;
 
-//     fn reverse(&self) -> Result<Arc<Self::Reverse>, Error> {
-//          Ok(self.reverse.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut()
+//     fn reverse(&self) -> Result<Arc<Self::Reverse>, ReversalError> {
+//         let reversal = self.extrapolator.reverse().map_err(ReversalError::Extrapolator)?;
+//         Ok(self.reverse.lock().map_err(|_| ReversalError::PoisonedMutex)?.borrow_mut()
 //             .get_or_insert_with(|| {
 //                 Arc::new(
 //                     Expander::new(
 //                         Arc::new(self.graph.reverse()),
-//                         self.extrapolator.reverse(),
+//                         Arc::new(reversal),
 //                         self.cost_calculator,
 //                         self.heuristic,
 //                     )
 //                 )
-//             })
-//             .clone())
+//             }
+//         ).clone())
 //     }
 
 //     fn make_bidirectional_solution(
 //         &self,
 //         forward_solution_node: &Arc<Self::Node>,
 //         reverse_solution_node: &Arc<NodeOf<ReverseOf<Self>>>,
-//     ) -> Result<Self::Solution, Self::Error> {
+//     ) -> Result<Self::Solution, BidirSolveError> {
 //         let mut node = forward_solution_node.clone();
 //         let mut waypoints = Vec::new();
 //         loop {
-//             if let
+
 //         }
 //     }
 // }
@@ -196,18 +205,38 @@ impl<P: Policy> expander::Solution<P::Cost> for Solution<P> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Error {
+pub enum ReversalError {
+    /// The expander may use mutexes to protect cache read/writes across multiple
+    /// threads. If a mutex gets [poisoned](https://doc.rust-lang.org/nomicon/poisoning.html)
+    /// then this error will be raised.
     PoisonedMutex,
+    Extrapolator(<LineFollow as extrapolator::Reversible<Waypoint, Position>>::Error)
+}
+
+/// Returned by make_bidirectional_solution
+#[derive(Debug, Clone)]
+pub enum BidirSolveError {
+    /// The forward and reverse nodes do not have matching keys.
+    KeyMismatch
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub enum ExpansionError<P: Policy> {
+    Extrapolator(<LineFollow as Extrapolator<Waypoint, Position>>::Error),
+    Heuristic(<P::Heuristic as Heuristic<P::Cost>>::EstimationError),
 }
 
 impl<P: Policy> crate::Expander for Expander<P> {
     type Node = NodeType<P>;
     type Start = usize;
     type Goal = usize;
-    type Solution = Solution<P>;
+    type InitError = <P::Heuristic as Heuristic<P::Cost>>::EstimationError;
     type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
+    type ExpansionError = ExpansionError<P>;
     type Expansion<'a> where P: 'a = Expansion<'a, P>;
-    type Error = Error;
+    type SolveError = ();
+    type Solution = Solution<P>;
 
     fn start<'a>(&'a self, start: &'a Self::Start, goal: Option<&'a Self::Goal>) -> Self::InitialNodes<'a> {
         InitialNodes{
@@ -227,7 +256,7 @@ impl<P: Policy> crate::Expander for Expander<P> {
         }
     }
 
-    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, Self::Error> {
+    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, Self::SolveError> {
         Ok(Solution{
             cost: solution_node.cost,
             motion: Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok(),
@@ -289,7 +318,7 @@ pub struct InitialNodes<'a, P: Policy> {
 }
 
 impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
-    type Item = Result<Arc<Node<P::Cost>>, ErrorOf<Expander<P>>>;
+    type Item = Result<Arc<Node<P::Cost>>, InitErrorOf<Expander<P>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.expanded {
@@ -297,9 +326,12 @@ impl<'a, P: Policy> Iterator for InitialNodes<'a, P> {
         }
         self.expanded = true;
 
-        if let Some(remaining_cost_estimate) = self.expander.heuristic
-            .estimate_cost(self.start, self.goal)
-        {
+        let estimate = match self.expander.heuristic.estimate_cost(self.start, self.goal) {
+            Ok(value) => value,
+            Err(e) => { return Some(Err(e)); }
+        };
+
+        if let Some(remaining_cost_estimate) = estimate {
             let p = self.expander.graph.vertices.get(self.start)?;
             return Some(Ok(Arc::new(Node{
                 cost: P::Cost::zero(),
@@ -327,30 +359,36 @@ pub struct Expansion<'a, P: Policy> {
 }
 
 impl<'a, P: Policy> Iterator for Expansion<'a, P> {
-    type Item = Result<Arc<Node<P::Cost>>, ErrorOf<Expander<P>>>;
+    type Item = Result<Arc<Node<P::Cost>>, ExpansionErrorOf<Expander<P>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(to_vertices) = self.expander.graph.edges.get(self.from_node.vertex) {
                 if let Some(to_vertex) = to_vertices.get(self.expansion_index) {
                     self.expansion_index += 1;
-                    if let Some(remaining_cost_estimate) = self.expander.heuristic.estimate_cost(
+                    let estimate = match self.expander.heuristic.estimate_cost(
                         *to_vertex, self.goal
-                    ) {
+                    ).map_err(ExpansionError::Heuristic) {
+                        Ok(estimate) => estimate,
+                        Err(e) => { return Some(Err(e)); }
+                    };
+
+                    if let Some(remaining_cost_estimate) = estimate {
                         if let Some(to_target) = self.expander.graph.vertices.get(*to_vertex) {
-                            let waypoints_opt = self.expander.extrapolator.extrapolate(
+                            let mut waypoints = match self.expander.extrapolator.extrapolate(
                                 &self.from_node.state,
                                 &to_target
-                            );
+                            ).map_err(ExpansionError::Extrapolator) {
+                                Ok(value) => value,
+                                Err(e) => { return Some(Err(e)); }
+                            };
 
-                            if let Ok(mut waypoints) = waypoints_opt {
-                                let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
-                                waypoints.insert(0, self.from_node.state);
-                                let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
-                                return Some(Ok(self.expander.make_node(
-                                    state, *to_vertex, remaining_cost_estimate, trajectory, &self.from_node,
-                                )));
-                            }
+                            let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
+                            waypoints.insert(0, self.from_node.state);
+                            let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
+                            return Some(Ok(self.expander.make_node(
+                                state, *to_vertex, remaining_cost_estimate, trajectory, &self.from_node,
+                            )));
                         }
                     }
 

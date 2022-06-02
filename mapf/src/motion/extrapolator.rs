@@ -17,20 +17,10 @@
 
 use super::Waypoint;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExtrapError {
-    /// The requested extrapolation is impossible. This usually means that your
-    /// Movement parameters are flawed or there is something wrong with the
-    /// requested position.
-    Impossible,
-
-    /// There is no unique solution for how to extrapolate to the target.
-    Indeterminate
-}
-
-
 /// Can extrapolate the motion from a waypoint towards a target.
 pub trait Extrapolator<W: Waypoint, Target> {
+    /// The type of error that can happen while extrapolating.
+    type Error: std::fmt::Debug;
 
     /// An iterator that produces a sequence of waypoints representing a motion
     /// through time.
@@ -45,15 +35,18 @@ pub trait Extrapolator<W: Waypoint, Target> {
         &'a self,
         from_waypoint: &W,
         to_target: &Target,
-    ) -> Result<Self::Extrapolation<'a>, ExtrapError>;
+    ) -> Result<Self::Extrapolation<'a>, Self::Error>;
 }
 
 /// Trait to indicate that the extrapolation can be reversed and provide
 /// extrapolation in the reverse direction of time.
 pub trait Reversible<W: Waypoint, Target> {
+    /// The type of error that can happen while reversing.
+    type Error: std::fmt::Debug;
+
     /// The Reverse of this extrapolation.
     type Reverse: Extrapolator<W, Target>;
 
     /// Get the reverse of this extrapolation.
-    fn reverse(&self) -> Self::Reverse;
+    fn reverse(&self) -> Result<Self::Reverse, Self::Error>;
 }

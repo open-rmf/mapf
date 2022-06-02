@@ -17,7 +17,7 @@
 
 use super::Tree;
 use crate::node::{self, Node, PartialKeyed, ClosedSet, KeyOf};
-use crate::expander::{self, Expander, Solution, NodeOf, ReverseOf, SolutionOf};
+use crate::expander::{self, Expander, Solution, NodeOf, ReverseOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
 use crate::util::Minimum;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,8 +26,11 @@ use std::cell::RefCell;
 type MutexRefCell<T> = Mutex<RefCell<T>>;
 
 pub enum Error<E: expander::Reversible> where E::Node: node::Reversible {
-    Forward(E::Error),
-    Reverse(<E::Reverse as Expander>::Error),
+    ForwardInit(InitErrorOf<E>),
+    ReverseInit(InitErrorOf<ReverseOf<E>>),
+    ForwardExpansion(ExpansionErrorOf<E>),
+    ReverseExpansion(ExpansionErrorOf<ReverseOf<E>>),
+    Solve(BidirSolveErrorOf<E>),
     PoisonedMutex,
 }
 
@@ -53,8 +56,8 @@ where
     E::Node: node::Reversible + node::Keyed,
     <E::Reverse as Expander>::Node: node::Keyed,
 {
-    pub fn new(expander: Arc<E>) -> Result<Self, Error<E>> {
-        let reverser = expander.reverse().map_err(|e| Error::Forward(e))?;
+    pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E>> {
+        let reverser = expander.reverse()?;
         Ok(Self{
             expander,
             reverser,
@@ -73,10 +76,10 @@ where
         // doing an informed search. Calculating a heuristic would be a waste of
         // effort.
         for forward in self.expander.start(from, None) {
-            let forward = forward.map_err(Error::Forward)?;
+            let forward = forward.map_err(Error::ForwardInit)?;
             let key_f = forward.key().unwrap();
             for reverse in self.reverser.start(to, None) {
-                let reverse = reverse.map_err(Error::Reverse)?;
+                let reverse = reverse.map_err(Error::ReverseInit)?;
                 let key_r = reverse.key().unwrap();
                 {
                     let guard = self.solutions.lock().map_err(|_| Error::PoisonedMutex)?;
@@ -92,7 +95,7 @@ where
                 }
 
                 if let Some((f, r)) = self.grow_best_connection(forward.clone(), key_f.clone(), reverse, key_r.clone())? {
-                    let solution = self.expander.make_bidirectional_solution(&f, &r).map_err(Error::Forward)?;
+                    let solution = self.expander.make_bidirectional_solution(&f, &r).map_err(Error::Solve)?;
                     best_solution.consider(&solution);
                     self.solutions.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut().insert((key_f.clone(), key_r), Some(solution));
                 } else {
@@ -166,7 +169,7 @@ where
 
         while !forward_tree.is_exhausted() || !reverse_tree.is_exhausted() {
             for node in forward_tree.grow() {
-                let node = node.map_err(Error::Forward)?;
+                let node = node.map_err(Error::ForwardExpansion)?;
                 let connection = connections.entry(node.key().unwrap())
                     .or_insert((Some(node), None));
 
@@ -182,7 +185,7 @@ where
             }
 
             for node in reverse_tree.grow() {
-                let node = node.map_err(Error::Reverse)?;
+                let node = node.map_err(Error::ReverseExpansion)?;
                 let connection = connections.entry(node.key().unwrap())
                     .or_insert((None, Some(node)));
 

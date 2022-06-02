@@ -65,7 +65,8 @@ where
     E: expander::Expander<Node=N>,
 {
     type Storage = Storage<N, E>;
-    type Error = ();
+    type InitError = ();
+    type StepError = ();
 
     fn initialize<T: Tracker<N>>(
         &self,
@@ -73,11 +74,11 @@ where
         start: &E::Start,
         goal: E::Goal,
         tracker: &mut T
-    ) -> Result<Self::Storage, algorithm::Error<E, Self>> {
+    ) -> Result<Self::Storage, algorithm::InitError<E, Self>> {
 
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, Some(&goal)) {
-            let node = node.map_err(algorithm::Error::Expander)?;
+            let node = node.map_err(algorithm::InitError::Expander)?;
             tracker.expanded_to(&node);
             queue.push(Reverse(NodeCmp(node)));
         }
@@ -94,19 +95,19 @@ where
         &self,
         storage: &mut Self::Storage,
         tracker: &mut T
-    ) -> Result<Status<E>, algorithm::Error<E, Self>> {
+    ) -> Result<Status<E>, algorithm::StepError<E, Self>> {
 
         if let Some(top) = storage.queue.pop().map(|x| x.0.0) {
             if storage.goal.is_satisfied(&top) {
                 tracker.solution_found_from(&top);
-                let solution = storage.expander.make_solution(&top).map_err(algorithm::Error::Expander)?;
+                let solution = storage.expander.make_solution(&top).map_err(algorithm::StepError::Solve)?;
                 return Ok(Status::Solved(solution));
             }
 
             if let CloseResult::Closed = storage.closed_set.close(&top) {
                 tracker.expanded_from(&top);
                 for next in storage.expander.expand(&top, Some(&storage.goal)) {
-                    let next = next.map_err(algorithm::Error::Expander)?;
+                    let next = next.map_err(algorithm::StepError::Expansion)?;
                     if let ClosedStatus::Open = storage.closed_set.status(next.as_ref()) {
                         tracker.expanded_to(&next);
                         storage.queue.push(Reverse(NodeCmp(next)));

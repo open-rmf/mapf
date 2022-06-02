@@ -16,7 +16,7 @@
 */
 
 use time_point::{TimePoint, Duration};
-use crate::motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator, ExtrapError};
+use crate::motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator};
 use super::{Position, Velocity};
 use arrayvec::ArrayVec;
 
@@ -130,12 +130,13 @@ impl LineFollow {
 
 impl Extrapolator<Waypoint, Position> for LineFollow {
     type Extrapolation<'a> = ArrayVec<Waypoint, 1>;
+    type Error = ();
 
     fn extrapolate<'a>(
         &'a self,
         from_waypoint: &Waypoint,
         to_target: &Position
-    ) -> Result<ArrayVec<Waypoint, 1>, ExtrapError> {
+    ) -> Result<ArrayVec<Waypoint, 1>, Self::Error> {
         let dx = (to_target - from_waypoint.position).norm();
         if dx <= self.distance_threshold {
             return Ok(ArrayVec::new());
@@ -148,13 +149,14 @@ impl Extrapolator<Waypoint, Position> for LineFollow {
 
 impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
     type Reverse = LineFollow;
+    type Error = ();
 
-    fn reverse(&self) -> Self::Reverse {
-        Self{
+    fn reverse(&self) -> Result<Self::Reverse, ()> {
+        Ok(Self{
             speed: self.speed,
             direction: -1.0 * self.direction,
             distance_threshold: self.distance_threshold,
-        }
+        })
     }
 }
 

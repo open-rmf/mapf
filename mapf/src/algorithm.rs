@@ -15,16 +15,24 @@
  *
 */
 
-use super::expander::{Expander, CostOf};
+use super::expander::{Expander, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use super::tracker;
 use std::sync::Arc;
 use derivative::Derivative;
 
-#[derive(Derivative, Clone)]
+#[derive(Derivative)]
 #[derivative(Debug)]
-pub enum Error<E: Expander, A: Algorithm<E>> {
-    Algorithm(A::Error),
-    Expander(E::Error),
+pub enum InitError<E: Expander, A: Algorithm<E>> {
+    Algorithm(A::InitError),
+    Expander(InitErrorOf<E>),
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub enum StepError<E: Expander, A: Algorithm<E>> {
+    Algorithm(A::StepError),
+    Expansion(ExpansionErrorOf<E>),
+    Solve(SolveErrorOf<E>),
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +49,9 @@ pub trait Storage<E: Expander> {
 
 pub trait Algorithm<E: Expander>: Sized {
     type Storage: Storage<E>;
-    type Error: std::fmt::Debug + Clone;
+
+    type InitError: std::fmt::Debug;
+    type StepError: std::fmt::Debug;
 
     fn initialize<Tracker: tracker::Tracker<E::Node>>(
         &self,
@@ -49,11 +59,11 @@ pub trait Algorithm<E: Expander>: Sized {
         start: &E::Start,
         goal: E::Goal,
         tracker: &mut Tracker,
-    ) -> Result<Self::Storage, Error<E, Self>>;
+    ) -> Result<Self::Storage, InitError<E, Self>>;
 
     fn step<Tracker: tracker::Tracker<E::Node>>(
         &self,
         storage: &mut Self::Storage,
         tracker: &mut Tracker,
-    ) -> Result<Status<E>, Error<E, Self>>;
+    ) -> Result<Status<E>, StepError<E, Self>>;
 }
