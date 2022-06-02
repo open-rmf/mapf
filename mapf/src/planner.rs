@@ -280,7 +280,7 @@ mod tests {
     use super::*;
     use crate::node;
     use crate::node::Node;
-    use crate::expander::Goal;
+    use crate::expander::{Initializable, Expandable, Solvable, Goal};
 
     struct CountingNode {
         value: u64,
@@ -359,18 +359,11 @@ mod tests {
         }
     }
 
-    impl expander::Expander for CountingExpander {
-        type Start = u64;
-        type Goal = CountingGoal;
-        type Node = CountingNode;
+    impl Initializable<u64, CountingNode, CountingGoal> for CountingExpander {
         type InitError = ();
         type InitialNodes<'a> = CountingExpansion<'a>;
-        type ExpansionError = ();
-        type Expansion<'a> = CountingExpansion<'a>;
-        type SolveError = ();
-        type Solution = CountingSolution;
 
-        fn start<'a>(&'a self, start: &u64, goal: Option<&Self::Goal>) -> Self::InitialNodes<'a> {
+        fn start<'a>(&'a self, start: &u64, goal: Option<&CountingGoal>) -> Self::InitialNodes<'a> {
             if let Some(goal) = goal {
                 if *start <= goal.value {
                     return CountingExpansion {
@@ -391,11 +384,16 @@ mod tests {
 
             return CountingExpansion{next_node: None, _phantom: Default::default()};
         }
+    }
+
+    impl Expandable<CountingNode, CountingGoal> for CountingExpander {
+        type ExpansionError = ();
+        type Expansion<'a> = CountingExpansion<'a>;
 
         fn expand<'a>(
             &'a self,
-            parent: &Arc<Self::Node>,
-            goal: Option<&Self::Goal>,
+            parent: &Arc<CountingNode>,
+            goal: Option<&CountingGoal>,
         ) -> Self::Expansion<'a> {
             if let Some(goal) = goal {
                 if parent.value <= goal.value {
@@ -417,13 +415,18 @@ mod tests {
 
             return CountingExpansion{next_node: None, _phantom: Default::default()};
         }
+    }
+
+    impl Solvable<CountingNode> for CountingExpander {
+        type SolveError = ();
+        type Solution = CountingSolution;
 
         fn make_solution(
             &self,
-            solution_node: &Arc<Self::Node>,
+            solution_node: &Arc<CountingNode>,
         ) -> Result<Self::Solution, ()> {
             let mut solution = std::vec::Vec::<u64>::new();
-            let mut next: Option<Arc<Self::Node>> = Some(solution_node.clone());
+            let mut next: Option<Arc<CountingNode>> = Some(solution_node.clone());
             while let Some(n) = next {
                 solution.push(n.value);
                 next = n.parent.clone();
@@ -435,6 +438,12 @@ mod tests {
                 sequence: solution
             })
         }
+    }
+
+    impl expander::Expander for CountingExpander {
+        type Start = u64;
+        type Goal = CountingGoal;
+        type Node = CountingNode;
     }
 
     struct TestAlgorithmStorage<Expander: expander::Expander> {

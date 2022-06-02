@@ -28,7 +28,8 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    Planner, Expander, Node, node::Informed, Progress, motion::Motion,
+    Planner, Node, node::Informed, Progress, motion::Motion,
+    expander::Solvable,
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{

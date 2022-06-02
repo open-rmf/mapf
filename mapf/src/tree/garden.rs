@@ -17,7 +17,7 @@
 
 use super::Tree;
 use crate::node::{self, Node, PartialKeyed, ClosedSet, KeyOf};
-use crate::expander::{self, Expander, Solution, NodeOf, ReverseOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
+use crate::expander::{self, Expander, Initializable, Solution, NodeOf, ReverseOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
 use crate::util::Minimum;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};

@@ -16,7 +16,7 @@
 */
 
 use super::simple::Graph;
-use crate::expander::{self, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
+use crate::expander::{self, Initializable, Expandable, Solvable, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
 use crate::motion::{
     self, Extrapolator,
     extrapolator::{self, Reversible},
@@ -227,18 +227,11 @@ pub enum ExpansionError<P: Policy> {
     Heuristic(<P::Heuristic as Heuristic<P::Cost>>::EstimationError),
 }
 
-impl<P: Policy> crate::Expander for Expander<P> {
-    type Node = NodeType<P>;
-    type Start = usize;
-    type Goal = usize;
+impl<P: Policy> Initializable<usize, NodeType<P>, usize> for Expander<P> {
     type InitError = <P::Heuristic as Heuristic<P::Cost>>::EstimationError;
     type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
-    type ExpansionError = ExpansionError<P>;
-    type Expansion<'a> where P: 'a = Expansion<'a, P>;
-    type SolveError = ();
-    type Solution = Solution<P>;
 
-    fn start<'a>(&'a self, start: &'a Self::Start, goal: Option<&'a Self::Goal>) -> Self::InitialNodes<'a> {
+    fn start<'a>(&'a self, start: &'a usize, goal: Option<&'a usize>) -> Self::InitialNodes<'a> {
         InitialNodes{
             start: *start,
             expanded: false,
@@ -246,8 +239,13 @@ impl<P: Policy> crate::Expander for Expander<P> {
             goal: goal.map(|g| *g),
         }
     }
+}
 
-    fn expand<'a>(&'a self, parent: &Arc<Self::Node>, goal: Option<&'a Self::Goal>) -> Self::Expansion<'a> {
+impl<P: Policy> Expandable<NodeType<P>, usize> for Expander<P> {
+    type ExpansionError = ExpansionError<P>;
+    type Expansion<'a> where P: 'a = Expansion<'a, P>;
+
+    fn expand<'a>(&'a self, parent: &Arc<NodeType<P>>, goal: Option<&'a usize>) -> Self::Expansion<'a> {
         Expansion{
             from_node: parent.clone(),
             expansion_index: 0,
@@ -255,13 +253,24 @@ impl<P: Policy> crate::Expander for Expander<P> {
             goal: goal.map(|g| *g),
         }
     }
+}
 
-    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, Self::SolveError> {
+impl<P: Policy> Solvable<NodeType<P>> for Expander<P> {
+    type SolveError = ();
+    type Solution = Solution<P>;
+
+    fn make_solution(&self, solution_node: &Arc<NodeType<P>>) -> Result<Self::Solution, Self::SolveError> {
         Ok(Solution{
             cost: solution_node.cost,
             motion: Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok(),
         })
     }
+}
+
+impl<P: Policy> crate::Expander for Expander<P> {
+    type Node = NodeType<P>;
+    type Start = usize;
+    type Goal = usize;
 }
 
 struct ReconstructMotion<C: NodeCost> {

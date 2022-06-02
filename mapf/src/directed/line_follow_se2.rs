@@ -16,7 +16,7 @@
 */
 
 use super::simple::Graph;
-use crate::expander::{self, InitErrorOf, ExpansionErrorOf};
+use crate::expander::{self, Initializable, Expandable, Solvable, InitErrorOf, ExpansionErrorOf};
 use crate::motion::{
     self, Extrapolator,
     trajectory::{Trajectory, CostCalculator},
@@ -395,27 +395,30 @@ pub enum ExpansionError<P: Policy> {
     Heuristic(<P::Heuristic as Heuristic<P::Cost>>::EstimationError),
 }
 
-impl<P: Policy> crate::Expander for Expander<P> {
-    type Node = NodeType<P>;
-    type Start = Start;
-    type Goal = Goal;
+impl<P: Policy> Initializable<Start, NodeType<P>, Goal> for Expander<P> {
     type InitError = <P::Heuristic as Heuristic<P::Cost>>::EstimationError;
     type InitialNodes<'a> where P: 'a = InitialNodes<'a, P>;
+
+    fn start<'a>(&'a self, start: &'a Start, goal: Option<&'a Goal>) -> InitialNodes<'a, P> {
+        InitialNodes::new(self, start, goal)
+    }
+}
+
+impl<P: Policy> Expandable<NodeType<P>, Goal> for Expander<P> {
     type ExpansionError = ExpansionError<P>;
     type Expansion<'a> where P: 'a = Expansion<'a, P>;
+
+    fn expand<'a>(&'a self, parent: &Arc<NodeType<P>>, goal: Option<&'a Goal>) -> Expansion<'a, P> {
+        Expansion::new(self, parent.clone(), goal)
+    }
+}
+
+impl<P: Policy> Solvable<NodeType<P>> for Expander<P> {
     type SolveError = ();
     type Solution = Solution<P>;
 
-    fn start<'a>(&'a self, start: &'a Start, goal: Option<&'a Self::Goal>) -> InitialNodes<'a, P> {
-        InitialNodes::new(self, start, goal)
-    }
-
-    fn expand<'a>(&'a self, parent: &Arc<Self::Node>, goal: Option<&'a Self::Goal>) -> Expansion<'a, P> {
-        Expansion::new(self, parent.clone(), goal)
-    }
-
-    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, ()> {
-        let mut node: Arc<Self::Node> = solution_node.clone();
+    fn make_solution(&self, solution_node: &Arc<NodeType<P>>) -> Result<Self::Solution, ()> {
+        let mut node: Arc<NodeType<P>> = solution_node.clone();
         let mut waypoints: Vec<Waypoint> = Vec::new();
         loop {
             if let Some(next_waypoints) = &node.motion_from_parent {
@@ -436,6 +439,12 @@ impl<P: Policy> crate::Expander for Expander<P> {
             motion: Trajectory::from_iter(waypoints.into_iter()).ok(),
         });
     }
+}
+
+impl<P: Policy> crate::Expander for Expander<P> {
+    type Node = NodeType<P>;
+    type Start = Start;
+    type Goal = Goal;
 }
 
 impl<P: Policy> Expander<P> {
