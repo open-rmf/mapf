@@ -250,32 +250,6 @@ impl<'a, P: Policy> Expansion<'a, P> {
             goal: toward_goal,
         }
     }
-}
-
-
-impl<'a, P: Policy> Expansion<'a, P> {
-    fn expand_to(&self, to_vertex: usize) -> Result<Option<Arc<NodeType<P>>>, ExpansionErrorOf<Expander<P>>> {
-        if let Some(vertex) = self.expander.graph.vertices.get(to_vertex) {
-            let mut waypoints = self.expander.extrapolator.extrapolate(
-                &self.from_node.state,
-                vertex
-            ).map_err(ExpansionError::Extrapolator)?;
-
-            let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
-            waypoints.insert(0, self.from_node.state);
-            let trajectory = Trajectory::from_iter(waypoints.into_iter()).ok();
-            match self.expander.heuristic.estimate_cost(
-                to_vertex, self.goal.map(|g| g.vertex)
-            ).map_err(ExpansionError::Heuristic)? {
-                Some(estimate) => {
-                    return Ok(Some(self.expander.make_node(state, to_vertex, estimate, trajectory, &self.from_node)));
-                },
-                None => { return Ok(None); }
-            }
-        }
-
-        return Ok(None);
-    }
 
     fn rotate_towards_target(&self, orientation_goal: OrientationGoal) -> Result<Arc<NodeType<P>>, ExpansionErrorOf<Expander<P>>> {
         let to_target = Position::from_parts(
@@ -314,57 +288,91 @@ impl<'a, P: Policy> Expansion<'a, P> {
     }
 }
 
-impl<'a, P: Policy> Iterator for Expansion<'a, P> {
+impl<'a, P: Policy> IntoIterator for &'a Expansion<'a, P> {
     type Item = Result<Arc<Node<P::Cost>>, ExpansionErrorOf<Expander<P>>>;
+    type IntoIter = Box<dyn Iterator<Item=Self::Item> + 'a>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(start) = &self.from_node.is_start {
-            if let Some(_) = &start.offset_location {
-                if self.expanded_start {
-                    return None;
-                }
+    fn into_iter(self) -> Self::IntoIter {
+        if let Some(to_targets) = self.expander.graph.edges.get(self.from_node.vertex) {
+            return Box::new(to_targets.iter()
+                .filter_map(
+                    |to_vertex| self.expander.graph.vertices.get(*to_vertex).map(|p| (to_vertex, p))
+                )
+                .map(|(to_vertex, to_point)| {
+                    let h =  self.expander.heuristic.estimate_cost(
+                        *to_vertex, self.goal.map(|g| g.vertex)
+                    ).map_err(ExpansionError::Heuristic)?;
 
-                self.expanded_start = true;
-                return self.expand_from_start(self.from_node.vertex).transpose();
-            }
+                    Ok(h.map(|h| (to_vertex, to_point, h)))
+                    // Ok((to_vertex, to_point, h))
+                }).filter_map(|r| r.transpose())
+                .map(|r| {
+                    r.and_then(|(to_vertex, to_point, h)| {
+                        let waypoints = self.expander.extrapolator.extrapolate(
+                            &self.from_node.state,
+                            to_point
+                        ).map_err(ExpansionError::Extrapolator)?;
+
+                        let state = waypoints.last().unwrap_or(&self.from_node.state).clone();
+                        let trajectory = Trajectory::from_iter(
+                            [self.from_node.state.clone()].into_iter().chain(waypoints.into_iter())
+                        ).ok();
+                        Ok(self.expander.make_node(state, *to_vertex, h, trajectory, &self.from_node))
+                    })
+                }));
         }
 
-        loop {
-            if let Some(to_vertices) = self.expander.graph.edges.get(self.from_node.vertex) {
-                if let Some(to_vertex) = to_vertices.get(self.expansion_index) {
-                    match self.expand_to(*to_vertex) {
-                        Ok(next) => {
-                            self.expansion_index += 1;
-                            if let Some(next) = next {
-                                return Some(Ok(next));
-                            } else {
-                                // If it was not possible to expand to this
-                                // vertex for some reason, then try the next one.
-                                continue;
-                            }
-                        },
-                        Err(e) => { return Some(Err(e)); }
-                    }
-                }
-            }
-
-            break;
-        }
-
-        if let Some(goal) = self.goal {
-            if self.from_node.vertex == goal.vertex {
-                if !self.expanded_goal_orientation {
-                    self.expanded_goal_orientation = true;
-                    if let Some(orientation_goal) = goal.orientation {
-                        return self.rotate_towards_target(orientation_goal)
-                            .map(|n| Some(n)).transpose();
-                    }
-                }
-            }
-        }
-
-        return None;
+        return Box::new([].into_iter());
     }
+
+    // fn next(&mut self) -> Option<Self::Item> {
+    //     if let Some(start) = &self.from_node.is_start {
+    //         if let Some(_) = &start.offset_location {
+    //             if self.expanded_start {
+    //                 return None;
+    //             }
+
+    //             self.expanded_start = true;
+    //             return self.expand_from_start(self.from_node.vertex).transpose();
+    //         }
+    //     }
+
+    //     loop {
+    //         if let Some(to_vertices) = self.expander.graph.edges.get(self.from_node.vertex) {
+    //             if let Some(to_vertex) = to_vertices.get(self.expansion_index) {
+    //                 match self.expand_to(*to_vertex) {
+    //                     Ok(next) => {
+    //                         self.expansion_index += 1;
+    //                         if let Some(next) = next {
+    //                             return Some(Ok(next));
+    //                         } else {
+    //                             // If it was not possible to expand to this
+    //                             // vertex for some reason, then try the next one.
+    //                             continue;
+    //                         }
+    //                     },
+    //                     Err(e) => { return Some(Err(e)); }
+    //                 }
+    //             }
+    //         }
+
+    //         break;
+    //     }
+
+    //     if let Some(goal) = self.goal {
+    //         if self.from_node.vertex == goal.vertex {
+    //             if !self.expanded_goal_orientation {
+    //                 self.expanded_goal_orientation = true;
+    //                 if let Some(orientation_goal) = goal.orientation {
+    //                     return self.rotate_towards_target(orientation_goal)
+    //                         .map(|n| Some(n)).transpose();
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     return None;
+    // }
 }
 
 #[derive(Derivative)]
@@ -406,10 +414,66 @@ impl<P: Policy> Initializable<Start, NodeType<P>, Goal> for Expander<P> {
 
 impl<P: Policy> Expandable<NodeType<P>, Goal> for Expander<P> {
     type ExpansionError = ExpansionError<P>;
-    type Expansion<'a> where P: 'a = Expansion<'a, P>;
+    type Expansion<'a> where P: 'a = Box<dyn Iterator<Item=Result<Arc<Node<P::Cost>>, ExpansionErrorOf<Expander<P>>>> + 'a>;
 
-    fn expand<'a>(&'a self, parent: &Arc<NodeType<P>>, goal: Option<&'a Goal>) -> Expansion<'a, P> {
-        Expansion::new(self, parent.clone(), goal)
+    fn expand<'a>(&'a self, parent: &'a Arc<NodeType<P>>, goal: Option<&'a Goal>) -> Self::Expansion<'a> {
+        if let Some(to_targets) = self.graph.edges.get(parent.vertex) {
+            return Box::new(to_targets.iter()
+                .filter_map(
+                    |to_vertex| self.graph.vertices.get(*to_vertex).map(|p| (to_vertex, p))
+                )
+                .map(move |(to_vertex, to_point)| {
+                    let h =  self.heuristic.estimate_cost(
+                        *to_vertex, goal.map(|g| g.vertex)
+                    ).map_err(ExpansionError::Heuristic)?;
+
+                    Ok(h.map(|h| (to_vertex, to_point, h)))
+                    // Ok((to_vertex, to_point, h))
+                }).filter_map(|r| r.transpose())
+                .map(move |r| {
+                    r.and_then(|(to_vertex, to_point, h)| {
+                        let waypoints = self.extrapolator.extrapolate(
+                            &parent.state,
+                            to_point
+                        ).map_err(ExpansionError::Extrapolator)?;
+
+                        let state = waypoints.last().unwrap_or(&parent.state).clone();
+                        let trajectory = Trajectory::from_iter(
+                            [parent.state.clone()].into_iter().chain(waypoints.into_iter())
+                        ).ok();
+                        Ok(self.make_node(state, *to_vertex, h, trajectory, &parent))
+                    })
+                })
+                .chain([parent].into_iter()
+                    .filter_map(move |parent| {
+                        let goal = goal?;
+                        if goal.vertex != parent.vertex {
+                            return None;
+                        }
+
+                        let goal_orientation = goal.orientation?;
+                        Some(Position::from_parts(
+                            parent.state.position.translation,
+                            goal_orientation.target
+                        ))
+                    })
+                    .map(move |to_target| {
+                        let waypoints = self.extrapolator.extrapolate(
+                            &parent.state, &to_target
+                        ).map_err(ExpansionError::Extrapolator)?;
+
+                        let state = waypoints.last().unwrap_or(&parent.state).clone();
+                        let trajectory = Trajectory::from_iter(
+                            [parent.state.clone()].into_iter().chain(waypoints.into_iter())
+                        ).ok();
+
+                        Ok(self.make_node(state, parent.vertex, P::Cost::zero(), trajectory, &parent))
+                    })
+                )
+            );
+        }
+
+        return Box::new([].into_iter());
     }
 }
 
