@@ -14,7 +14,7 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds)]
+#![feature(generic_associated_types, associated_type_bounds, type_alias_impl_trait)]
 
 pub mod planner;
 pub use planner::{Planner, Progress};
