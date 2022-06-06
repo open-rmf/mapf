@@ -14,31 +14,11 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds, type_alias_impl_trait)]
 
-pub mod progress;
+pub mod traits;
+pub use traits::*;
 
-pub mod planner;
-pub use planner::Planner;
+pub mod closed_set;
+pub use closed_set::*;
 
-pub mod expander;
-pub use expander::Expander;
-
-pub mod node;
-
-pub mod algorithm;
-pub use algorithm::{InitError, StepError, Algorithm};
-
-pub mod trace;
-pub use trace::Trace;
-
-pub mod tree;
-
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
-
-pub mod occupancy;
-
-mod util;
+pub type KeyOf<N> = <N as PartialKeyed>::Key;

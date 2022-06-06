@@ -357,7 +357,7 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
 }
 
 pub trait CostCalculator<W: Waypoint> {
-    type Cost: crate::Cost;
+    type Cost: crate::node::Cost;
 
     fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
 }

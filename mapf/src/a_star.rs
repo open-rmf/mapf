@@ -19,38 +19,44 @@ use super::algorithm;
 use super::algorithm::Status;
 use super::expander;
 use super::expander::{Goal, CostOf};
-use super::tracker::Tracker;
+use super::Trace;
 use super::node::{self, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::cmp::Reverse;
 
-pub struct Storage<N, E>
+pub struct Memory<N, E>
 where
-    N: node::Informed,
+    N: node::Informed + node::Closable,
     E: expander::Expander<Node=N>
 {
-    closed_set: <N as node::Node>::ClosedSet,
+    closed_set: <N as node::Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>>,
     expander: Arc<E>,
     goal: E::Goal,
 }
 
-impl<N: node::Informed, E: expander::Expander<Node=N>> Storage<N, E> {
+impl<N: node::Informed + node::Closable, E: expander::Expander<Node=N>> Memory<N, E> {
     pub fn queue(&self) -> &BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>> {
         &self.queue
     }
 }
 
-impl<N, E> algorithm::Storage<E> for Storage<N, E>
+impl<N, E> algorithm::Memory for Memory<N, E>
 where
-    N: node::Informed,
+    N: node::Informed + node::Closable,
     E: expander::Expander<Node=N>,
 {
     fn node_count(&self) -> usize {
         return self.queue.len();
     }
+}
 
+impl<N, E> algorithm::WeightSorted<E> for Memory<N, E>
+where
+    N: node::Informed + node::Closable,
+    E: expander::Expander<Node=N>
+{
     fn top_cost_estimate(&self) -> Option<CostOf<E>> {
         self.queue.peek().map(|x| x.0.0.total_cost_estimate())
     }
@@ -61,20 +67,20 @@ pub struct Algorithm;
 
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where
-    N: node::Informed,
+    N: node::Informed + node::Closable,
     E: expander::Expander<Node=N>,
 {
-    type Storage = Storage<N, E>;
+    type Memory = Memory<N, E>;
     type InitError = ();
     type StepError = ();
 
-    fn initialize<T: Tracker<N>>(
+    fn initialize<T: Trace<N>>(
         &self,
         expander: Arc<E>,
         start: &E::Start,
         goal: E::Goal,
         tracker: &mut T
-    ) -> Result<Self::Storage, algorithm::InitError<E, Self>> {
+    ) -> Result<Self::Memory, algorithm::InitError<E, Self>> {
 
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, Some(&goal)) {
@@ -83,7 +89,7 @@ where
             queue.push(Reverse(NodeCmp(node)));
         }
 
-        return Ok(Storage{
+        return Ok(Memory{
             closed_set: N::ClosedSet::default(),
             queue,
             expander,
@@ -91,9 +97,9 @@ where
         });
     }
 
-    fn step<T: Tracker<N>>(
+    fn step<T: Trace<N>>(
         &self,
-        storage: &mut Self::Storage,
+        storage: &mut Self::Memory,
         tracker: &mut T
     ) -> Result<Status<E>, algorithm::StepError<E, Self>> {
 

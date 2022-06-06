@@ -16,8 +16,8 @@
 */
 
 use super::Tree;
-use crate::node::{self, Node, PartialKeyed, ClosedSet, KeyOf};
-use crate::expander::{self, Expander, Initializable, Solution, NodeOf, ReverseOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
+use crate::node::{self, PartialKeyed, ClosedSet, KeyOf, Weighted};
+use crate::expander::{self, Expander, Initializable, CostOf, NodeOf, ReverseOf, ReverseNodeOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
 use crate::util::Minimum;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
@@ -41,8 +41,8 @@ type ConnectionMap<E> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Optio
 
 pub struct Garden<E: expander::Reversible>
 where
-    E::Node: node::Reversible + node::Keyed,
-    <E::Reverse as Expander>::Node: node::Keyed,
+    NodeOf<E>: node::Weighted + node::Closable + node::Reversible + node::Keyed,
+    ReverseNodeOf<E>: node::Weighted + node::Closable + node::Keyed,
 {
     expander: Arc<E>,
     reverser: Arc<E::Reverse>,
@@ -53,8 +53,9 @@ where
 
 impl<E: expander::Reversible> Garden<E>
 where
-    E::Node: node::Reversible + node::Keyed,
-    <E::Reverse as Expander>::Node: node::Keyed,
+    E::Node: node::Weighted + node::Closable + node::Reversible + node::Keyed,
+    E::Solution: node::Weighted + Clone,
+    ReverseNodeOf<E>: node::Weighted<Cost=CostOf<E>> + node::Closable + node::Keyed,
 {
     pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E>> {
         let reverser = expander.reverse()?;

@@ -28,8 +28,9 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    Planner, Node, node::Informed, Progress, motion::Motion,
+    Planner, node::{Weighted, Informed}, motion::Motion, trace::NoTrace,
     expander::Solvable,
+    progress::BasicProgress,
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{
@@ -517,7 +518,7 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<Progress<line_follow_se2::SimpleExpander, a_star::Algorithm, mapf::tracker::NoDebug>>,
+    progress: Option<BasicProgress<line_follow_se2::SimpleExpander, a_star::Algorithm, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<line_follow_se2::SimpleExpander>>,
     debug_on: bool,
@@ -604,7 +605,7 @@ impl App {
                 self.expander = None;
                 self.debug_nodes.clear();
             } else {
-                self.debug_nodes = self.progress.as_ref().unwrap().storage().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.debug_nodes.get(selection) {
                         if let Some(expander) = &self.expander {
@@ -691,7 +692,6 @@ impl App {
                     &line_follow_se2::Start{
                         vertex: 0,
                         orientation: Rotation::new(0_f64),
-                        offset_location: None,
                     },
                     line_follow_se2::Goal{
                         vertex: 1,
@@ -702,7 +702,7 @@ impl App {
                 self.debug_step_count = 0;
                 if self.debug_on {
                     self.progress = Some(progress);
-                    self.debug_nodes = self.progress.as_ref().unwrap().storage().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                    self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
                     self.expander = Some(expander);
                 } else {
                     match progress.solve().unwrap() {

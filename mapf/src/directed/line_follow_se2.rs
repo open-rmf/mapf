@@ -28,8 +28,7 @@ use crate::motion::{
         },
     },
 };
-use crate::node::{Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
-use crate::tree::Garden;
+use crate::node::{self, Cost as NodeCost, PartialKeyed, PartialKeyedClosedSet};
 use std::{
     hash::Hash,
     sync::Arc,
@@ -64,24 +63,28 @@ pub struct Node<Cost: NodeCost> {
     pub is_start: Option<Start>,
 }
 
+impl<C: NodeCost> node::Weighted for Node<C> {
+    type Cost = C;
+    fn cost(&self) -> Self::Cost {
+        return self.cost;
+    }
+}
+
+impl<C: NodeCost> node::Closable for Node<C> {
+    type ClosedSet = PartialKeyedClosedSet<Self>;
+}
+
+impl<C: NodeCost> node::PathSearch for Node<C> {
+    fn parent(&self) -> &Option<Arc<Self>> {
+        return &self.parent;
+    }
+}
+
 impl<Cost: NodeCost> PartialKeyed for Node<Cost> {
     type Key = Key;
 
     fn key(&self) -> Option<Self::Key> {
         self.key
-    }
-}
-
-impl<Cost: NodeCost> crate::Node for Node<Cost> {
-    type Cost = Cost;
-    type ClosedSet = PartialKeyedClosedSet<Self>;
-
-    fn cost(&self) -> Self::Cost {
-        return self.cost;
-    }
-
-    fn parent(&self) -> &Option<Arc<Self>> {
-        return &self.parent;
     }
 }
 
@@ -99,20 +102,12 @@ impl<Cost: NodeCost> crate::node::Informed for Node<Cost> {
 pub struct Start {
     pub vertex: usize,
     pub orientation: Rotation,
-    pub offset_location: Option<Point>,
 }
 
 impl Start {
     /// Convert the start value into a waypoint. If the start value has an
     /// invalid vertex, this will return None.
     fn to_waypoint(&self, graph: &Graph<Point>) -> Option<Waypoint> {
-        if let Some(location) = self.offset_location {
-            return Some(Waypoint{
-                time: TimePoint::zero(),
-                position: Position::new(location.coords, self.orientation.angle()),
-            });
-        }
-
         if let Some(location) = graph.vertices.get(self.vertex) {
             return Some(Waypoint{
                 time: TimePoint::zero(),
@@ -162,7 +157,7 @@ pub trait Heuristic<Cost: NodeCost> {
 }
 
 pub trait Policy {
-    type Cost: crate::Cost;
+    type Cost: NodeCost;
     type CostCalculator: CostCalculator<Waypoint, Cost=Self::Cost>;
     type Heuristic: Heuristic<Self::Cost>;
 }
@@ -245,7 +240,8 @@ impl<P: Policy> Solution<P> {
     }
 }
 
-impl<P: Policy> expander::Solution<P::Cost> for Solution<P> {
+impl<P: Policy> node::Weighted for Solution<P> {
+    type Cost = P::Cost;
     fn cost(&self) -> P::Cost {
         self.cost
     }
@@ -523,7 +519,6 @@ mod tests {
             &Start{
                 vertex: 0,
                 orientation: Rotation::new(0.0),
-                offset_location: None,
             },
             Goal{
                 vertex: 8,

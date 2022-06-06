@@ -15,56 +15,12 @@
  *
 */
 
-use std::hash::Hash;
+use super::traits::*;
 use std::sync::Arc;
 use std::collections::hash_map::{self, HashMap, Entry};
-use std::ops::Add;
-use std::cmp::Ord;
-use num::traits::Zero;
-use std::cmp::Ordering;
-
-/// A trait that describes what is needed to define a cost.
-pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug { }
-impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug> Cost for T { }
-
-/// The generic trait for a Node. This contains the minimal generalized
-/// information that most algorithms will need from a search node in order to
-/// solve a search problem.
-pub trait Node : Sized {
-    type Cost: Cost;
-    type ClosedSet: ClosedSet<Self>;
-
-    fn cost(&self) -> Self::Cost;
-    fn parent(&self) -> &Option<Arc<Self>>;
-}
-
-/// A subset of Node which has an informed estimate of how far it is from its goal
-pub trait Informed: Node {
-
-    /// Get the estimate of the remaining cost from the goal
-    fn remaining_cost_estimate(&self) -> Self::Cost;
-
-    /// Get the estimate of the total cost from the goal. This should always be
-    /// equal to cost() + remaining_cost_estimate(), but we make it a separate
-    /// function so that implementers can choose to micro-optimize by adding and
-    /// saving the result inside of the node itself.
-    fn total_cost_estimate(&self) -> Self::Cost {
-        self.cost() + self.remaining_cost_estimate()
-    }
-}
-
-/// Trait for nodes that can expand in reverse. HashOption is required for both
-/// Self and Self::Reverse because the keys are used to match up when a forward
-/// and reverse node are connected. Nodes that return None for their key cannot
-/// connect to a complementary Node.
-pub trait Reversible: Node + PartialKeyed {
-    /// The reversed type of this Node. Its key type must match the key type of
-    /// the forward node so that they can be compared against each other.
-    type Reverse: Node<Cost=Self::Cost> + PartialKeyed<Key=<Self as PartialKeyed>::Key>;
-}
 
 /// The result of attempting to add a node to the Closed Set.
-pub enum CloseResult<N: Node> {
+pub enum CloseResult<N> {
     /// The node was successfully closed. No other node was previously closed
     /// with an equivalent state.
     Closed,
@@ -74,7 +30,7 @@ pub enum CloseResult<N: Node> {
     Prior(Arc<N>)
 }
 
-impl<N: Node> CloseResult<N> {
+impl<N> CloseResult<N> {
     pub fn accepted(&self) -> bool {
         match self {
             Self::Closed => true,
@@ -89,12 +45,12 @@ impl<N: Node> CloseResult<N> {
 
 /// The result of checking whether an equivalent node is already in the
 /// ClosedSet.
-pub enum ClosedStatus<N: Node> {
+pub enum ClosedStatus<N> {
     Open,
     Closed(Arc<N>)
 }
 
-impl<N: Node> ClosedStatus<N> {
+impl<N> ClosedStatus<N> {
     pub fn is_open(&self) -> bool {
         match self {
             Self::Open => true,
@@ -107,46 +63,27 @@ impl<N: Node> ClosedStatus<N> {
     }
 }
 
-/// The generic trait of a Closed Set. "Closed Sets" are used to keep avoid
+/// The generic trait of a Closed Set. "Closed Sets" are used to avoid
 /// unnecessary search effort. They keep track of the lowest cost node which has
 /// visited a certain location.
-pub trait ClosedSet<NodeType: Node>: Default {
+pub trait ClosedSet<N>: Default {
 
-    type Iter<'a>: IntoIterator<Item=&'a Arc<NodeType>> where Self: 'a, NodeType: 'a;
+    type Iter<'a>: IntoIterator<Item=&'a Arc<N>> where Self: 'a, N: 'a;
 
     /// Tell the closed set to close this node.
-    fn close(&mut self, node: &Arc<NodeType>) -> CloseResult<NodeType>;
+    fn close(&mut self, node: &Arc<N>) -> CloseResult<N>;
 
     /// Check whether an equivalent node has been closed.
-    fn status(&self, node: &NodeType) -> ClosedStatus<NodeType>;
+    fn status(&self, node: &N) -> ClosedStatus<N>;
 
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
 }
 
-/// A trait for nodes that can sometimes provide a unique key but other times
-/// cannot.
-pub trait PartialKeyed {
-
-    type Key: Hash + Eq + Clone;
-
-    /// Attempt to get a key that uniquely identifies the state of this node.
-    /// If the node cannot be uniquely identified by a key, this will return
-    /// None.
-    #[must_use]
-    fn key(&self) -> Option<Self::Key>;
+pub struct PartialKeyedClosedSet<N: Weighted + PartialKeyed> {
+    closed_set: HashMap<N::Key, Arc<N>>
 }
 
-/// A trait for nodes that can always provide a unique key. The PartialKeyed
-/// trait must be implemented, and its implementation is what will be used. If
-/// PartialKeyed ever returns None, then generics which use the Keyed trait may
-/// panic.
-pub trait Keyed: PartialKeyed { }
-
-pub struct PartialKeyedClosedSet<NodeType: PartialKeyed> {
-    closed_set: HashMap<NodeType::Key, Arc<NodeType>>
-}
-
-impl<NodeType: PartialKeyed> Default for PartialKeyedClosedSet<NodeType> {
+impl<N: Weighted + PartialKeyed> Default for PartialKeyedClosedSet<N> {
     fn default() -> Self {
         return PartialKeyedClosedSet {
             closed_set: Default::default()
@@ -154,13 +91,22 @@ impl<NodeType: PartialKeyed> Default for PartialKeyedClosedSet<NodeType> {
     }
 }
 
-impl<NodeType> ClosedSet<NodeType> for PartialKeyedClosedSet<NodeType>
-where
-    NodeType: Node + PartialKeyed
-{
-    type Iter<'a> where NodeType: 'a = HashOptionClosedSetIter<'a, NodeType>;
+pub struct HashOptionClosedSetIter<'a, N: Weighted + PartialKeyed> {
+    iter: hash_map::Iter<'a, N::Key, Arc<N>>,
+}
 
-    fn close(&mut self, node: &Arc<NodeType>) -> CloseResult<NodeType> {
+impl<'a, N: Weighted + PartialKeyed + 'a> Iterator for HashOptionClosedSetIter<'a, N> {
+    type Item = &'a Arc<N>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|(_, n)| n)
+    }
+}
+
+impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
+    type Iter<'a> where N: 'a = HashOptionClosedSetIter<'a, N>;
+
+    fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
         if let Some(key) = node.key() {
             let entry = self.closed_set.entry(key);
             match entry {
@@ -182,7 +128,7 @@ where
         return CloseResult::Closed;
     }
 
-    fn status(&self, node: &NodeType) -> ClosedStatus<NodeType> {
+    fn status(&self, node: &N) -> ClosedStatus<N> {
         if let Some(key) = node.key() {
             let entry = self.closed_set.get(&key);
             match entry {
@@ -202,65 +148,6 @@ where
         HashOptionClosedSetIter{iter: self.closed_set.iter()}
     }
 }
-
-pub struct HashOptionClosedSetIter<'a, NodeType: PartialKeyed> {
-    iter: hash_map::Iter<'a, NodeType::Key, Arc<NodeType>>,
-}
-
-impl<'a, NodeType: PartialKeyed + 'a> Iterator for HashOptionClosedSetIter<'a, NodeType> {
-    type Item = &'a Arc<NodeType>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(_, n)| n)
-    }
-}
-
-pub struct CostCmp<N: Node>(pub Arc<N>);
-
-impl<N: Node> Ord for CostCmp<N> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        return self.0.cost().cmp(&other.0.cost());
-    }
-}
-
-impl<N: Node> PartialOrd for CostCmp<N> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        return self.0.cost().partial_cmp(&other.0.cost());
-    }
-}
-
-impl<N: Node> PartialEq for CostCmp<N> {
-    fn eq(&self, other: &Self) -> bool {
-        return self.0.cost().eq(&other.0.cost());
-    }
-}
-
-impl<N: Node> Eq for CostCmp<N> { }
-
-#[derive(Debug, Clone)]
-pub struct TotalCostEstimateCmp<N: Informed>(pub Arc<N>);
-
-impl<N: Informed> Ord for TotalCostEstimateCmp<N> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        return self.0.total_cost_estimate().cmp(&other.0.total_cost_estimate());
-    }
-}
-
-impl<N: Informed> PartialOrd for TotalCostEstimateCmp<N> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        return self.0.total_cost_estimate().partial_cmp(&other.0.total_cost_estimate());
-    }
-}
-
-impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
-    fn eq(&self, other: &Self) -> bool {
-        return self.0.total_cost_estimate().eq(&other.0.total_cost_estimate());
-    }
-}
-
-impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
-
-pub type KeyOf<N> = <N as PartialKeyed>::Key;
 
 #[cfg(test)]
 mod tests {
@@ -282,15 +169,21 @@ mod tests {
         }
     }
 
-    impl Node for TestNode {
+    impl PathSearch for TestNode {
+        fn parent(&self) -> &Option<Arc<Self>> {
+            return &self.parent;
+        }
+    }
+
+    impl Closable for TestNode {
         type ClosedSet = PartialKeyedClosedSet<Self>;
+    }
+
+    impl Weighted for TestNode {
         type Cost = u64;
 
         fn cost(&self) -> u64 {
             return self.cost;
-        }
-        fn parent(&self) -> &Option<Arc<Self>> {
-            return &self.parent;
         }
     }
 

@@ -15,8 +15,9 @@
  *
 */
 
-use super::expander::{Expander, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
-use super::tracker;
+use crate::node;
+use crate::expander::{Expander, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
+use crate::trace::Trace;
 use std::sync::Arc;
 use derivative::Derivative;
 
@@ -42,28 +43,31 @@ pub enum Status<E: Expander> {
     Solved(E::Solution),
 }
 
-pub trait Storage<E: Expander> {
+pub trait Memory {
     fn node_count(&self) -> usize;
+}
+
+pub trait WeightSorted<E: Expander<Node: node::Weighted>> {
     fn top_cost_estimate(&self) -> Option<CostOf<E>>;
 }
 
 pub trait Algorithm<E: Expander>: Sized {
-    type Storage: Storage<E>;
+    type Memory: Memory;
 
     type InitError: std::fmt::Debug;
     type StepError: std::fmt::Debug;
 
-    fn initialize<Tracker: tracker::Tracker<E::Node>>(
+    fn initialize<T: Trace<E::Node>>(
         &self,
         expander: Arc<E>,
         start: &E::Start,
         goal: E::Goal,
-        tracker: &mut Tracker,
-    ) -> Result<Self::Storage, InitError<E, Self>>;
+        trace: &mut T,
+    ) -> Result<Self::Memory, InitError<E, Self>>;
 
-    fn step<Tracker: tracker::Tracker<E::Node>>(
+    fn step<T: Trace<E::Node>>(
         &self,
-        storage: &mut Self::Storage,
-        tracker: &mut Tracker,
+        storage: &mut Self::Memory,
+        tracker: &mut T,
     ) -> Result<Status<E>, StepError<E, Self>>;
 }

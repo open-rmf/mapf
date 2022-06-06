@@ -47,24 +47,28 @@ pub struct Node<Cost: NodeCost> {
     pub parent: Option<Arc<Node<Cost>>>,
 }
 
+impl<C: NodeCost> node::Weighted for Node<C> {
+    type Cost = C;
+    fn cost(&self) -> Self::Cost {
+        return self.cost;
+    }
+}
+
+impl<C: NodeCost> node::Closable for Node<C> {
+    type ClosedSet = PartialKeyedClosedSet<Self>;
+}
+
+impl<C: NodeCost> node::PathSearch for Node<C> {
+    fn parent(&self) -> &Option<Arc<Self>> {
+        return &self.parent;
+    }
+}
+
 impl<Cost: NodeCost> PartialKeyed for Node<Cost> {
     type Key = usize;
 
     fn key(&self) -> Option<Self::Key> {
         Some(self.vertex)
-    }
-}
-
-impl<Cost: NodeCost> crate::Node for Node<Cost> {
-    type Cost = Cost;
-    type ClosedSet = PartialKeyedClosedSet<Self>;
-
-    fn cost(&self) -> Self::Cost {
-        return self.cost;
-    }
-
-    fn parent(&self) -> &Option<Arc<Self>> {
-        return &self.parent;
     }
 }
 
@@ -92,7 +96,7 @@ pub trait Heuristic<C: NodeCost> {
 }
 
 pub trait Policy {
-    type Cost: crate::Cost;
+    type Cost: NodeCost;
     type CostCalculator: CostCalculator<Waypoint, Cost=Self::Cost>;
     type Heuristic: Heuristic<Self::Cost>;
 }
@@ -198,7 +202,8 @@ impl<P: Policy> Solution<P> {
     }
 }
 
-impl<P: Policy> expander::Solution<P::Cost> for Solution<P> {
+impl<P: Policy> node::Weighted for Solution<P> {
+    type Cost = P::Cost;
     fn cost(&self) -> P::Cost {
         self.cost
     }

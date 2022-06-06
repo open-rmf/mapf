@@ -15,18 +15,18 @@
  *
 */
 
-pub trait Tracker<Node>: Default {
+pub trait Trace<Node>: Default {
     fn expanded_from(&mut self, node: &Node);
     fn expanded_to(&mut self, node: &Node);
     fn solution_found_from(&mut self, node: &Node);
 }
 
 
-#[derive(Default)]
-pub struct NoDebug;
+#[derive(Default, Debug)]
+pub struct NoTrace;
 
-impl<Node> Tracker<Node> for NoDebug {
-    fn expanded_from(&mut self, _: &Node) { }
-    fn expanded_to(&mut self, _: &Node) { }
-    fn solution_found_from(&mut self, _: &Node) { }
+impl<N> Trace<N> for NoTrace {
+    fn expanded_from(&mut self, _: &N) { }
+    fn expanded_to(&mut self, _: &N) { }
+    fn solution_found_from(&mut self, _: &N) { }
 }
