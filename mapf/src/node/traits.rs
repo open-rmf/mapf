@@ -30,6 +30,17 @@ pub trait PathSearch {
     fn parent(&self) -> &Option<Arc<Self>>;
 }
 
+/// A trait for nodes that represent an agent that is taking actions which change
+/// its state. This is expected to be used with the PathSearch trait where the
+/// path represents a sequence of actions take by the agent.
+pub trait Agent: PathSearch {
+    type State;
+    fn state(&self) -> &Self::State;
+
+    type Action;
+    fn action(&self) -> &Option<Self::Action>;
+}
+
 /// A trait that describes what is needed to define a cost.
 pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug { }
 impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug> Cost for T { }
@@ -42,13 +53,6 @@ pub trait Weighted: Sized {
     /// this means the cost of the path that leads up to this node from the root
     /// of the path search.
     fn cost(&self) -> Self::Cost;
-}
-
-/// A trait for nodes which can be inserted into a closed set. This trait is
-/// used to inform planners what concrete type should be used as the closed set
-/// for this node.
-pub trait Closable: Sized {
-    type ClosedSet: ClosedSet<Self>;
 }
 
 /// A subset of Node which has an informed estimate of how far it is from its goal
@@ -76,18 +80,21 @@ pub trait Reversible: PartialKeyed {
     type Reverse: PartialKeyed<Key=<Self as PartialKeyed>::Key>;
 }
 
+/// The set of traits required for a Key
+pub trait Key: Hash + Eq + Clone { }
+impl<T: Hash + Eq + Clone> Key for T { }
 
 /// A trait for nodes that can sometimes provide a unique key but other times
 /// cannot.
 pub trait PartialKeyed {
 
-    type Key: Hash + Eq + Clone;
+    type Key: Key;
 
     /// Attempt to get a key that uniquely identifies the state of this node.
     /// If the node cannot be uniquely identified by a key, this will return
     /// None.
     #[must_use]
-    fn key(&self) -> Option<Self::Key>;
+    fn key(&self) -> Option<&Self::Key>;
 }
 
 /// A trait for nodes that can always provide a unique key. The PartialKeyed

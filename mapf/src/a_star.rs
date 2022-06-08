@@ -15,37 +15,35 @@
  *
 */
 
-use super::algorithm;
-use super::algorithm::Status;
-use super::expander;
-use super::expander::{Goal, CostOf};
+use super::algorithm::{self, Status};
+use super::expander::{Expander, Closable, Goal, CostOf};
 use super::Trace;
-use super::node::{self, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
+use super::node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::cmp::Reverse;
 
 pub struct Memory<N, E>
 where
-    N: node::Informed + node::Closable,
-    E: expander::Expander<Node=N>
+    N: Informed,
+    E: Expander<Node=N> + Closable<N>
 {
-    closed_set: <N as node::Closable>::ClosedSet,
-    queue: BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>>,
+    closed_set: <E as Closable<N>>::ClosedSet,
+    queue: BinaryHeap<Reverse<NodeCmp<N>>>,
     expander: Arc<E>,
     goal: E::Goal,
 }
 
-impl<N: node::Informed + node::Closable, E: expander::Expander<Node=N>> Memory<N, E> {
-    pub fn queue(&self) -> &BinaryHeap<Reverse<node::TotalCostEstimateCmp<N>>> {
+impl<N: Informed, E: Expander<Node=N> + Closable<N>> Memory<N, E> {
+    pub fn queue(&self) -> &BinaryHeap<Reverse<NodeCmp<N>>> {
         &self.queue
     }
 }
 
 impl<N, E> algorithm::Memory for Memory<N, E>
 where
-    N: node::Informed + node::Closable,
-    E: expander::Expander<Node=N>,
+    N: Informed,
+    E: Expander<Node=N> + Closable<N>,
 {
     fn node_count(&self) -> usize {
         return self.queue.len();
@@ -54,8 +52,8 @@ where
 
 impl<N, E> algorithm::WeightSorted<E> for Memory<N, E>
 where
-    N: node::Informed + node::Closable,
-    E: expander::Expander<Node=N>
+    N: Informed,
+    E: Expander<Node=N> + Closable<N>,
 {
     fn top_cost_estimate(&self) -> Option<CostOf<E>> {
         self.queue.peek().map(|x| x.0.0.total_cost_estimate())
@@ -67,8 +65,8 @@ pub struct Algorithm;
 
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where
-    N: node::Informed + node::Closable,
-    E: expander::Expander<Node=N>,
+    N: Informed,
+    E: Expander<Node=N> + Closable<N>,
 {
     type Memory = Memory<N, E>;
     type InitError = ();
@@ -90,7 +88,7 @@ where
         }
 
         return Ok(Memory{
-            closed_set: N::ClosedSet::default(),
+            closed_set: E::ClosedSet::default(),
             queue,
             expander,
             goal

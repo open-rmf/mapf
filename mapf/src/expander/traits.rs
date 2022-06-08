@@ -63,6 +63,13 @@ pub trait Solvable<N> {
     fn make_solution(&self, solution_node: &Arc<N>) -> Result<Self::Solution, Self::SolveError>;
 }
 
+/// A trait for nodes which can be inserted into a closed set. This trait is
+/// used to inform planners what concrete type should be used as the closed set
+/// for this node.
+pub trait Closable<N>: Sized {
+    type ClosedSet: node::ClosedSet<N>;
+}
+
 pub trait Expander
 where
     Self:

@@ -16,7 +16,7 @@
 */
 
 use super::simple::Graph;
-use crate::expander::{self, Initializable, Expandable, Solvable, InitErrorOf, ExpansionErrorOf};
+use crate::expander::{Closable, Initializable, Expandable, Solvable, InitErrorOf, ExpansionErrorOf};
 use crate::motion::{
     self, Extrapolator,
     trajectory::{Trajectory, CostCalculator},
@@ -70,10 +70,6 @@ impl<C: NodeCost> node::Weighted for Node<C> {
     }
 }
 
-impl<C: NodeCost> node::Closable for Node<C> {
-    type ClosedSet = PartialKeyedClosedSet<Self>;
-}
-
 impl<C: NodeCost> node::PathSearch for Node<C> {
     fn parent(&self) -> &Option<Arc<Self>> {
         return &self.parent;
@@ -83,8 +79,8 @@ impl<C: NodeCost> node::PathSearch for Node<C> {
 impl<Cost: NodeCost> PartialKeyed for Node<Cost> {
     type Key = Key;
 
-    fn key(&self) -> Option<Self::Key> {
-        self.key
+    fn key(&self) -> Option<&Self::Key> {
+        self.key.as_ref()
     }
 }
 
@@ -268,58 +264,62 @@ impl<P: Policy> Expandable<NodeType<P>, Goal> for Expander<P> {
     type Expansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<Node<P::Cost>>, ExpansionErrorOf<Expander<P>>>> + 'a;
 
     fn expand<'a>(&'a self, parent: &'a Arc<NodeType<P>>, goal: Option<&'a Goal>) -> Self::Expansion<'a> {
-        return self.graph.edges.get(parent.vertex).unwrap().iter()
-            .filter_map(
-                |to_vertex| self.graph.vertices.get(*to_vertex).map(|p| (to_vertex, p))
-            )
-            .map(move |(to_vertex, to_point)| {
-                let h =  self.heuristic.estimate_cost(
-                    *to_vertex, goal.map(|g| g.vertex)
-                ).map_err(ExpansionError::Heuristic)?;
+        [self.graph.edges.get(parent.vertex)].into_iter()
+            .filter_map(|x| x)
+            .flat_map(move |edges| {
+                edges.into_iter()
+                .filter_map(
+                    |to_vertex| self.graph.vertices.get(*to_vertex).map(|p| (to_vertex, p))
+                )
+                .map(move |(to_vertex, to_point)| {
+                    let h =  self.heuristic.estimate_cost(
+                        *to_vertex, goal.map(|g| g.vertex)
+                    ).map_err(ExpansionError::Heuristic)?;
 
-                Ok(h.map(|h| (to_vertex, to_point, h)))
+                    Ok(h.map(|h| (to_vertex, to_point, h)))
+                })
+                .filter_map(|r| r.transpose())
+                .map(move |r| {
+                    r.and_then(|(to_vertex, to_point, h)| {
+                        let waypoints = self.extrapolator.extrapolate(
+                            &parent.state,
+                            to_point
+                        ).map_err(ExpansionError::Extrapolator)?;
+
+                        let state = waypoints.last().unwrap_or(&parent.state).clone();
+                        let trajectory = Trajectory::from_iter(
+                            [parent.state.clone()].into_iter().chain(waypoints.into_iter())
+                        ).ok();
+                        Ok(self.make_node(state, *to_vertex, h, trajectory, &parent))
+                    })
+                })
+                .chain([parent].into_iter()
+                    .filter_map(move |parent| {
+                        let goal = goal?;
+                        if goal.vertex != parent.vertex {
+                            return None;
+                        }
+
+                        let goal_orientation = goal.orientation?;
+                        Some(Position::from_parts(
+                            parent.state.position.translation,
+                            goal_orientation.target
+                        ))
+                    })
+                    .map(move |to_target| {
+                        let waypoints = self.extrapolator.extrapolate(
+                            &parent.state, &to_target
+                        ).map_err(ExpansionError::Extrapolator)?;
+
+                        let state = waypoints.last().unwrap_or(&parent.state).clone();
+                        let trajectory = Trajectory::from_iter(
+                            [parent.state.clone()].into_iter().chain(waypoints.into_iter())
+                        ).ok();
+
+                        Ok(self.make_node(state, parent.vertex, P::Cost::zero(), trajectory, &parent))
+                    })
+                )
             })
-            .filter_map(|r| r.transpose())
-            .map(move |r| {
-                r.and_then(|(to_vertex, to_point, h)| {
-                    let waypoints = self.extrapolator.extrapolate(
-                        &parent.state,
-                        to_point
-                    ).map_err(ExpansionError::Extrapolator)?;
-
-                    let state = waypoints.last().unwrap_or(&parent.state).clone();
-                    let trajectory = Trajectory::from_iter(
-                        [parent.state.clone()].into_iter().chain(waypoints.into_iter())
-                    ).ok();
-                    Ok(self.make_node(state, *to_vertex, h, trajectory, &parent))
-                })
-            })
-            .chain([parent].into_iter()
-                .filter_map(move |parent| {
-                    let goal = goal?;
-                    if goal.vertex != parent.vertex {
-                        return None;
-                    }
-
-                    let goal_orientation = goal.orientation?;
-                    Some(Position::from_parts(
-                        parent.state.position.translation,
-                        goal_orientation.target
-                    ))
-                })
-                .map(move |to_target| {
-                    let waypoints = self.extrapolator.extrapolate(
-                        &parent.state, &to_target
-                    ).map_err(ExpansionError::Extrapolator)?;
-
-                    let state = waypoints.last().unwrap_or(&parent.state).clone();
-                    let trajectory = Trajectory::from_iter(
-                        [parent.state.clone()].into_iter().chain(waypoints.into_iter())
-                    ).ok();
-
-                    Ok(self.make_node(state, parent.vertex, P::Cost::zero(), trajectory, &parent))
-                })
-            );
     }
 }
 
@@ -355,6 +355,10 @@ impl<P: Policy> crate::Expander for Expander<P> {
     type Node = NodeType<P>;
     type Start = Start;
     type Goal = Goal;
+}
+
+impl<P: Policy> Closable<NodeType<P>> for Expander<P> {
+    type ClosedSet = PartialKeyedClosedSet<NodeType<P>>;
 }
 
 impl<P: Policy> Expander<P> {
@@ -495,7 +499,7 @@ mod tests {
         add_bidir_edge(5, 7);
         add_bidir_edge(7, 8);
 
-        return Graph{vertices, edges};
+        return Graph::new(vertices, edges);
     }
 
     fn make_test_extrapolation() -> DifferentialDriveLineFollow {

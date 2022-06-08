@@ -679,7 +679,7 @@ impl App {
                     create_edge(i, j);
                 }
 
-                let graph = Arc::new(simple::Graph{vertices, edges});
+                let graph = Arc::new(simple::Graph::new(vertices, edges));
                 let extrapolation = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
                 let cost_calculator = Arc::new(line_follow_se2::TimeCostCalculator);
                 let expander = Arc::new(line_follow_se2::SimpleExpander::new(

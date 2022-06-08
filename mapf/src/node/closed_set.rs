@@ -91,11 +91,11 @@ impl<N: Weighted + PartialKeyed> Default for PartialKeyedClosedSet<N> {
     }
 }
 
-pub struct HashOptionClosedSetIter<'a, N: Weighted + PartialKeyed> {
+pub struct PartialKeyedClosedSetIter<'a, N: Weighted + PartialKeyed> {
     iter: hash_map::Iter<'a, N::Key, Arc<N>>,
 }
 
-impl<'a, N: Weighted + PartialKeyed + 'a> Iterator for HashOptionClosedSetIter<'a, N> {
+impl<'a, N: Weighted + PartialKeyed + 'a> Iterator for PartialKeyedClosedSetIter<'a, N> {
     type Item = &'a Arc<N>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -104,11 +104,11 @@ impl<'a, N: Weighted + PartialKeyed + 'a> Iterator for HashOptionClosedSetIter<'
 }
 
 impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
-    type Iter<'a> where N: 'a = HashOptionClosedSetIter<'a, N>;
+    type Iter<'a> where N: 'a = PartialKeyedClosedSetIter<'a, N>;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
         if let Some(key) = node.key() {
-            let entry = self.closed_set.entry(key);
+            let entry = self.closed_set.entry(key.clone());
             match entry {
                 Entry::Occupied(mut occupied) => {
                     if occupied.get().cost() <= node.cost() {
@@ -145,7 +145,7 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
     }
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
-        HashOptionClosedSetIter{iter: self.closed_set.iter()}
+        PartialKeyedClosedSetIter{iter: self.closed_set.iter()}
     }
 }
 
@@ -164,8 +164,8 @@ mod tests {
     impl PartialKeyed for TestNode {
         type Key = usize;
 
-        fn key(&self) -> Option<Self::Key> {
-            Some(self.graph_index)
+        fn key(&self) -> Option<&Self::Key> {
+            Some(&self.graph_index)
         }
     }
 
@@ -173,10 +173,6 @@ mod tests {
         fn parent(&self) -> &Option<Arc<Self>> {
             return &self.parent;
         }
-    }
-
-    impl Closable for TestNode {
-        type ClosedSet = PartialKeyedClosedSet<Self>;
     }
 
     impl Weighted for TestNode {

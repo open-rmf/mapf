@@ -14,37 +14,28 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds, type_alias_impl_trait)]
 
-pub mod progress;
+use crate::node::Key;
 
-pub mod planner;
-pub use planner::Planner;
+pub trait Edge<Key> {
+    fn endpoint_key(&self) -> &Key;
+}
 
-pub mod expander;
-pub use expander::Expander;
+pub trait Graph {
+    type Key: Key;
+    type Vertex;
+    type Edge: Edge<Self::Key>;
 
-pub mod graph;
-pub use graph::Graph;
+    type EdgeIter<'a>: IntoIterator<Item=&'a Self::Edge>
+    where
+        Self: 'a,
+        Self::Edge: 'a;
 
-pub mod heuristic;
-pub use heuristic::Heuristic;
+    fn vertex(&self, key: Self::Key) -> Option<&Self::Vertex>;
 
-pub mod node;
+    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>;
+}
 
-pub mod algorithm;
-pub use algorithm::{InitError, StepError, Algorithm};
-
-pub mod trace;
-pub use trace::Trace;
-
-pub mod tree;
-
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
-
-pub mod occupancy;
-
-mod util;
+pub type KeyOf<G> = <G as Graph>::Key;
+pub type VertexOf<G> = <G as Graph>::Vertex;
+pub type EdgeOf<G> = <G as Graph>::Edge;

@@ -14,37 +14,18 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds, type_alias_impl_trait)]
 
-pub mod progress;
+use crate::node::Cost;
 
-pub mod planner;
-pub use planner::Planner;
+pub trait Heuristic {
+    type Error: std::fmt::Debug;
+    type State;
+    type Goal;
+    type Cost: Cost;
 
-pub mod expander;
-pub use expander::Expander;
-
-pub mod graph;
-pub use graph::Graph;
-
-pub mod heuristic;
-pub use heuristic::Heuristic;
-
-pub mod node;
-
-pub mod algorithm;
-pub use algorithm::{InitError, StepError, Algorithm};
-
-pub mod trace;
-pub use trace::Trace;
-
-pub mod tree;
-
-pub mod motion;
-pub mod directed;
-
-pub mod a_star;
-
-pub mod occupancy;
-
-mod util;
+    fn estimate_cost(
+        &self,
+        from_state: &Self::State,
+        to_goal: Option<&Self::Goal>
+    ) -> Result<Option<Self::Cost>, Self::Error>;
+}

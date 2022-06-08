@@ -16,7 +16,7 @@
 */
 
 use super::simple::Graph;
-use crate::expander::{self, Initializable, Expandable, Solvable, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
+use crate::expander::{Closable, Initializable, Expandable, Solvable, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
 use crate::motion::{
     self, Extrapolator,
     extrapolator::{self, Reversible},
@@ -54,10 +54,6 @@ impl<C: NodeCost> node::Weighted for Node<C> {
     }
 }
 
-impl<C: NodeCost> node::Closable for Node<C> {
-    type ClosedSet = PartialKeyedClosedSet<Self>;
-}
-
 impl<C: NodeCost> node::PathSearch for Node<C> {
     fn parent(&self) -> &Option<Arc<Self>> {
         return &self.parent;
@@ -67,8 +63,8 @@ impl<C: NodeCost> node::PathSearch for Node<C> {
 impl<Cost: NodeCost> PartialKeyed for Node<Cost> {
     type Key = usize;
 
-    fn key(&self) -> Option<Self::Key> {
-        Some(self.vertex)
+    fn key(&self) -> Option<&Self::Key> {
+        Some(&self.vertex)
     }
 }
 
@@ -276,6 +272,10 @@ impl<P: Policy> crate::Expander for Expander<P> {
     type Node = NodeType<P>;
     type Start = usize;
     type Goal = usize;
+}
+
+impl<P: Policy> Closable<NodeType<P>> for Expander<P> {
+    type ClosedSet = PartialKeyedClosedSet<NodeType<P>>;
 }
 
 struct ReconstructMotion<C: NodeCost> {

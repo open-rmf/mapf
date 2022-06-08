@@ -183,14 +183,24 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return self.finish_time() - self.initial_time();
     }
 
+    /// Trajectories always have at least two values, so we can always get the
+    /// first waypoint.
+    pub fn initial(&self) -> &W {
+        &self.waypoints.first().unwrap().0
+    }
+
+    pub fn finish(&self) -> &W {
+        &self.waypoints.last().unwrap().0
+    }
+
     /// Get the time that the trajectory starts.
     pub fn initial_time(&self) -> TimePoint {
-        return *self.waypoints.first().unwrap().0.time();
+        *self.initial().time()
     }
 
     /// Get the time that the trajectory finishes.
     pub fn finish_time(&self) -> TimePoint {
-        return *self.waypoints.last().unwrap().0.time();
+        *self.finish().time()
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -360,6 +370,14 @@ pub trait CostCalculator<W: Waypoint> {
     type Cost: crate::node::Cost;
 
     fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
+}
+
+pub struct DurationCostCalculator;
+impl<W: Waypoint> CostCalculator<W> for DurationCostCalculator {
+    type Cost = i64;
+    fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost {
+        trajectory.duration().nanos
+    }
 }
 
 #[cfg(test)]

@@ -17,13 +17,38 @@
 
 use std::vec::Vec;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Graph<Vertex: Clone> {
     pub vertices: Vec<Vertex>,
     pub edges: Vec<Vec<usize>>,
+
+    /// A user may call edges_from_vertex with an invalid key, in which case we
+    /// will return a reference to this always-empty vector.
+    _placeholder: Vec<usize>,
 }
 
 impl<Vertex: Clone> Graph<Vertex> {
+
+    pub fn new(vertices: Vec<Vertex>, edges: Vec<Vec<usize>>) -> Self {
+        Self{vertices, edges, _placeholder: Vec::new()}
+    }
+
+    pub fn from_iters(
+        vertices: impl IntoIterator<Item=Vertex>,
+        input_edges: impl IntoIterator<Item=(usize, usize)>,
+    ) -> Self {
+        let mut edges = Vec::new();
+        for edge in input_edges {
+            if edges.len() <= edge.0 {
+                edges.resize(edge.0 + 1, Vec::new());
+            }
+
+            edges.get_mut(edge.0).unwrap().push(edge.1);
+        }
+
+        Self{vertices: Vec::from_iter(vertices), edges, _placeholder: Vec::new()}
+    }
+
     pub fn reverse(&self) -> Self {
         let mut r_edges = Vec::new();
         r_edges.resize(self.edges.len(), Vec::new());
@@ -36,6 +61,33 @@ impl<Vertex: Clone> Graph<Vertex> {
         Self{
             vertices: self.vertices.clone(),
             edges: r_edges,
+            _placeholder: Vec::new(),
         }
+    }
+}
+
+impl crate::graph::Edge<usize> for usize {
+    fn endpoint_key(&self) -> &usize {
+        self
+    }
+}
+
+impl<V: Clone> crate::Graph for Graph<V> {
+    type Key = usize;
+    type Vertex = V;
+    type Edge = usize;
+
+    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=&'a usize> + 'a;
+
+    fn vertex (&self, key: usize) -> Option<&V> {
+        self.vertices.get(key)
+    }
+
+    fn edges_from_vertex<'a>(&'a self, key: usize) -> Self::EdgeIter<'a> {
+        if let Some(to_vertices) = self.edges.get(key) {
+            return to_vertices.iter();
+        }
+
+        return self._placeholder.iter();
     }
 }

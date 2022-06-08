@@ -112,13 +112,9 @@ mod tests {
     impl PartialKeyed for CountingNode {
         type Key = u64;
 
-        fn key(&self) -> Option<Self::Key> {
-            Some(self.value)
+        fn key(&self) -> Option<&Self::Key> {
+            Some(&self.value)
         }
-    }
-
-    impl Closable for CountingNode {
-        type ClosedSet = node::PartialKeyedClosedSet<Self>;
     }
 
     impl PathSearch for CountingNode {
@@ -261,6 +257,10 @@ mod tests {
                 sequence: solution
             })
         }
+    }
+
+    impl expander::Closable<CountingNode> for CountingExpander {
+        type ClosedSet = node::PartialKeyedClosedSet<CountingNode>;
     }
 
     impl expander::Expander for CountingExpander {

@@ -39,10 +39,11 @@ type TreeCache<E> = MutexRefCell<HashMap<KeyOf<NodeOf<E>>, Arc<MutexRefCell<Tree
 type SolutionCache<E> = MutexRefCell<HashMap<(KeyOf<NodeOf<E>>, KeyOf<NodeOf<E>>), Option<SolutionOf<E>>>>;
 type ConnectionMap<E> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Option<Arc<NodeOf<ReverseOf<E>>>>)>;
 
-pub struct Garden<E: expander::Reversible>
+pub struct Garden<E: expander::Reversible + expander::Closable<E::Node>>
 where
-    NodeOf<E>: node::Weighted + node::Closable + node::Reversible + node::Keyed,
-    ReverseNodeOf<E>: node::Weighted + node::Closable + node::Keyed,
+    NodeOf<E>: node::Weighted + node::Reversible + node::Keyed,
+    ReverseNodeOf<E>: node::Weighted + node::Keyed,
+    ReverseOf<E>: expander::Closable<ReverseNodeOf<E>>
 {
     expander: Arc<E>,
     reverser: Arc<E::Reverse>,
@@ -51,11 +52,12 @@ where
     solutions: SolutionCache<E>,
 }
 
-impl<E: expander::Reversible> Garden<E>
+impl<E: expander::Reversible + expander::Closable<E::Node>> Garden<E>
 where
-    E::Node: node::Weighted + node::Closable + node::Reversible + node::Keyed,
+    ReverseOf<E>: expander::Closable<ReverseNodeOf<E>>,
+    E::Node: node::Weighted + node::Reversible + node::Keyed,
     E::Solution: node::Weighted + Clone,
-    ReverseNodeOf<E>: node::Weighted<Cost=CostOf<E>> + node::Closable + node::Keyed,
+    ReverseNodeOf<E>: node::Weighted<Cost=CostOf<E>> + node::Keyed,
 {
     pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E>> {
         let reverser = expander.reverse()?;
@@ -95,12 +97,12 @@ where
                     };
                 }
 
-                if let Some((f, r)) = self.grow_best_connection(forward.clone(), key_f.clone(), reverse, key_r.clone())? {
+                if let Some((f, r)) = self.grow_best_connection(forward.clone(), key_f.clone(), reverse.clone(), key_r.clone())? {
                     let solution = self.expander.make_bidirectional_solution(&f, &r).map_err(Error::Solve)?;
                     best_solution.consider(&solution);
-                    self.solutions.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut().insert((key_f.clone(), key_r), Some(solution));
+                    self.solutions.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut().insert((key_f.clone(), key_r.clone()), Some(solution));
                 } else {
-                    self.solutions.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut().insert((key_f.clone(), key_r), None);
+                    self.solutions.lock().map_err(|_| Error::PoisonedMutex)?.borrow_mut().insert((key_f.clone(), key_r.clone()), None);
                 }
             }
         }
@@ -150,11 +152,11 @@ where
 
         let mut connections = ConnectionMap::<E>::new();
         for node in forward_tree.closed().iter() {
-            connections.insert(node.key().unwrap(), (Some(node.clone()), None));
+            connections.insert(node.key().unwrap().clone(), (Some(node.clone()), None));
         }
 
         for node in reverse_tree.closed().iter() {
-            let connection = connections.entry(node.key().unwrap())
+            let connection = connections.entry(node.key().unwrap().clone())
                 .or_insert((None, Some(node.clone())));
 
             if let (Some(f), Some(r)) = connection {
@@ -171,7 +173,7 @@ where
         while !forward_tree.is_exhausted() || !reverse_tree.is_exhausted() {
             for node in forward_tree.grow() {
                 let node = node.map_err(Error::ForwardExpansion)?;
-                let connection = connections.entry(node.key().unwrap())
+                let connection = connections.entry(node.key().unwrap().clone())
                     .or_insert((Some(node), None));
 
                 if let (Some(f), Some(r)) = connection {
@@ -187,7 +189,7 @@ where
 
             for node in reverse_tree.grow() {
                 let node = node.map_err(Error::ReverseExpansion)?;
-                let connection = connections.entry(node.key().unwrap())
+                let connection = connections.entry(node.key().unwrap().clone())
                     .or_insert((None, Some(node)));
 
                 if let (Some(f), Some(r)) = connection {

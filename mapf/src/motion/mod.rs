@@ -29,6 +29,9 @@ pub use trajectory::Trajectory;
 pub mod extrapolator;
 pub use extrapolator::Extrapolator;
 
+pub mod graph_search;
+pub mod reach;
+
 use time_point::{TimePoint, Duration};
 
 /// The default translational threshold is 1mm
