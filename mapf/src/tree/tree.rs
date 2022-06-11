@@ -15,7 +15,7 @@
  *
 */
 
-use crate::expander::{Expander, Closable, ExpansionErrorOf};
+use crate::expander::{Expander, Expandable, Closable, ExpansionErrorOf};
 use crate::node::{Weighted, CostCmp, ClosedSet};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -72,7 +72,7 @@ pub struct Growth<'a, E: Expander<Node: Weighted> + Closable<E::Node>> {
     expected_cost: <E::Node as Weighted>::Cost,
 }
 
-impl<'a, N: Weighted, E: Expander<Node=N> + Closable<N>> Iterator for Growth<'a, E> {
+impl<'a, N: Weighted, E: Expander<Node=N> + Expandable + Closable<N>> Iterator for Growth<'a, E> {
     type Item = Result<Arc<N>, ExpansionErrorOf<E>>;
 
     fn next(&mut self) -> Option<Result<Arc<N>, ExpansionErrorOf<E>>> {

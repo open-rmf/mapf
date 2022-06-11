@@ -16,28 +16,25 @@
 */
 
 use crate::node;
-use crate::expander::{Expander, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
+use crate::expander::{Expander, Solvable, Initializable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use crate::trace::Trace;
 use std::sync::Arc;
-use derivative::Derivative;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub enum InitError<E: Expander, A: Algorithm<E>> {
+#[derive(Debug)]
+pub enum InitError<S, E: Solvable + Initializable<S>, A: Algorithm<E>> {
     Algorithm(A::InitError),
-    Expander(InitErrorOf<E>),
+    Expander(InitErrorOf<E, S>),
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub enum StepError<E: Expander, A: Algorithm<E>> {
+#[derive(Debug)]
+pub enum StepError<E: Solvable, A: Algorithm<E>> {
     Algorithm(A::StepError),
     Expansion(ExpansionErrorOf<E>),
     Solve(SolveErrorOf<E>),
 }
 
 #[derive(Debug, Clone)]
-pub enum Status<E: Expander> {
+pub enum Status<E: Solvable> {
     Incomplete,
     Impossible,
     Solved(E::Solution),
@@ -51,19 +48,20 @@ pub trait WeightSorted<E: Expander<Node: node::Weighted>> {
     fn top_cost_estimate(&self) -> Option<CostOf<E>>;
 }
 
-pub trait Algorithm<E: Expander>: Sized {
+pub trait Algorithm<E: Solvable>: Sized {
     type Memory: Memory;
 
     type InitError: std::fmt::Debug;
     type StepError: std::fmt::Debug;
 
-    fn initialize<T: Trace<E::Node>>(
+    fn initialize<S, T: Trace<E::Node>>(
         &self,
         expander: Arc<E>,
-        start: &E::Start,
+        start: &S,
         goal: E::Goal,
         trace: &mut T,
-    ) -> Result<Self::Memory, InitError<E, Self>>;
+    ) -> Result<Self::Memory, InitError<S, E, Self>>
+    where E: Initializable<S>;
 
     fn step<T: Trace<E::Node>>(
         &self,

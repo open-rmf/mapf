@@ -15,7 +15,6 @@
  *
 */
 
-use super::closed_set::ClosedSet;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::ops::Add;
@@ -147,3 +146,5 @@ impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
 }
 
 impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
+
+pub type KeyOf<N> = <N as PartialKeyed>::Key;

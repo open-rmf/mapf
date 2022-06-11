@@ -16,13 +16,12 @@
 */
 
 use std::sync::Arc;
-use std::ops::FnMut;
-use std::boxed::Box;
-
-use crate::progress::{Progress, Factory as ProgressFactory, BasicFactory};
-use crate::expander::{self, Expander, CostOf};
-use crate::algorithm::{self, Algorithm, Status, Memory, InitError, StepError};
-use crate::trace::{Trace, NoTrace};
+use crate::{
+    progress::{Factory as ProgressFactory, BasicFactory},
+    expander::{Initializable, Solvable},
+    algorithm::{Algorithm, InitError},
+    trace::{Trace, NoTrace},
+};
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
 /// Splitting the implementation of the Planner into algorithm and expander
@@ -31,7 +30,7 @@ use crate::trace::{Trace, NoTrace};
 /// The Planner::plan(start, goal) function will create a Progress object which
 /// manages the planning progress and allows you to tweak planning settings
 /// during runtime as needed.
-pub struct Planner<E: Expander, A: Algorithm<E>, F: ProgressFactory<E, A> = BasicFactory>   {
+pub struct Planner<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A> = BasicFactory>   {
 
     /// The object which determines the search pattern
     algorithm: Arc<A>,
@@ -43,7 +42,7 @@ pub struct Planner<E: Expander, A: Algorithm<E>, F: ProgressFactory<E, A> = Basi
     factory: F,
 }
 
-impl<E: Expander, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
+impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
 
     /// Construct a new planner with the given configuration and a set of
     /// default options.
@@ -63,12 +62,12 @@ impl<E: Expander, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
     }
 
     /// Begin planning from the start conditions to the goal conditions.
-    pub fn plan(
+    pub fn plan<S>(
         &self,
-        start: &E::Start,
+        start: &S,
         goal: E::Goal,
-    ) -> Result<F::Progress<NoTrace>, InitError<E, A>> {
-
+    ) -> Result<F::Progress<NoTrace>, InitError<S, E, A>>
+    where E: Initializable<S> {
         let mut trace = NoTrace::default();
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, goal, &mut trace
@@ -78,12 +77,13 @@ impl<E: Expander, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
     }
 
     /// Perform a planning job while tracking the behavior, usually for debugging purposes.
-    pub fn trace<T: Trace<E::Node>>(
+    pub fn trace<S, T: Trace<E::Node>>(
         &self,
-        start: &E::Start,
+        start: &S,
         goal: E::Goal,
         mut trace: T
-    ) -> Result<F::Progress<T>, InitError<E, A>> {
+    ) -> Result<F::Progress<T>, InitError<S, E, A>>
+    where E: Initializable<S> {
 
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, goal, &mut trace
@@ -99,8 +99,8 @@ mod tests {
 
     use super::*;
     use crate::node::{self, traits::*};
-    use crate::expander::{Initializable, Expandable, Solvable, Goal};
-    use crate::algorithm::WeightSorted;
+    use crate::expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf};
+    use crate::algorithm::{WeightSorted, Memory, Status, StepError};
 
     struct CountingNode {
         value: u64,
@@ -146,7 +146,7 @@ mod tests {
         value: u64
     }
 
-    impl expander::Goal<CountingNode> for CountingGoal {
+    impl Goal<CountingNode> for CountingGoal {
         fn is_satisfied(&self, node: &CountingNode) -> bool {
             return node.value == self.value;
         }
@@ -178,7 +178,7 @@ mod tests {
         }
     }
 
-    impl Initializable<u64, CountingNode, CountingGoal> for CountingExpander {
+    impl Initializable<u64> for CountingExpander {
         type InitError = ();
         type InitialNodes<'a> = CountingExpansion<'a>;
 
@@ -205,7 +205,7 @@ mod tests {
         }
     }
 
-    impl Expandable<CountingNode, CountingGoal> for CountingExpander {
+    impl Expandable for CountingExpander {
         type ExpansionError = ();
         type Expansion<'a> = CountingExpansion<'a>;
 
@@ -236,7 +236,7 @@ mod tests {
         }
     }
 
-    impl Solvable<CountingNode> for CountingExpander {
+    impl Solvable for CountingExpander {
         type SolveError = ();
         type Solution = CountingSolution;
 
@@ -259,48 +259,48 @@ mod tests {
         }
     }
 
-    impl expander::Closable<CountingNode> for CountingExpander {
+    impl Closable<CountingNode> for CountingExpander {
         type ClosedSet = node::PartialKeyedClosedSet<CountingNode>;
     }
 
-    impl expander::Expander for CountingExpander {
-        type Start = u64;
+    impl Expander for CountingExpander {
         type Goal = CountingGoal;
         type Node = CountingNode;
     }
 
-    struct TestAlgorithmStorage<Expander: expander::Expander> {
+    struct TestAlgorithmStorage<Expander: Solvable> {
         expander: Arc<Expander>,
         goal: Expander::Goal,
         queue: std::vec::Vec<Arc<Expander::Node>>,
     }
 
-    impl<E: Expander> Memory for TestAlgorithmStorage<E> {
+    impl<E: Solvable> Memory for TestAlgorithmStorage<E> {
         fn node_count(&self) -> usize {
             return self.queue.len();
         }
     }
 
-    impl<E: Expander<Node: Weighted>> WeightSorted<E> for TestAlgorithmStorage<E> {
+    impl<E: Expander<Node: Weighted> + Solvable> WeightSorted<E> for TestAlgorithmStorage<E> {
         fn top_cost_estimate(&self) -> Option<CostOf<E>> {
             self.queue.last().map(|v| v.cost())
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct TestAlgorithm;
-    impl<E: Expander> Algorithm<E> for TestAlgorithm {
+    impl<E: Solvable> Algorithm<E> for TestAlgorithm {
         type Memory = TestAlgorithmStorage<E>;
         type InitError = ();
         type StepError = ();
 
-        fn initialize<T: Trace<E::Node>>(
+        fn initialize<S, T: Trace<E::Node>>(
             &self,
             expander: Arc<E>,
-            start: &E::Start,
+            start: &S,
             goal: E::Goal,
             trace: &mut T,
-        ) -> Result<Self::Memory, InitError<E, Self>> {
+        ) -> Result<Self::Memory, InitError<S, E, Self>>
+        where E: Initializable<S> {
             let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
             for node in expander.start(start, Some(&goal)) {
                 let node = node.map_err(InitError::Expander)?;

@@ -15,7 +15,7 @@
  *
 */
 
-use super::simple::Graph;
+use super::simple::SimpleGraph;
 use crate::expander::{Closable, Initializable, Expandable, Solvable, InitErrorOf, ExpansionErrorOf};
 use crate::motion::{
     self, Extrapolator,
@@ -103,7 +103,7 @@ pub struct Start {
 impl Start {
     /// Convert the start value into a waypoint. If the start value has an
     /// invalid vertex, this will return None.
-    fn to_waypoint(&self, graph: &Graph<Point>) -> Option<Waypoint> {
+    fn to_waypoint(&self, graph: &SimpleGraph<Point>) -> Option<Waypoint> {
         if let Some(location) = graph.vertices.get(self.vertex) {
             return Some(Waypoint{
                 time: TimePoint::zero(),
@@ -162,7 +162,7 @@ type NodeType<P> = Node<<P as Policy>::Cost>;
 
 #[derive(Debug)]
 pub struct Expander<P: Policy> {
-    graph: Arc<Graph<Point>>,
+    graph: Arc<SimpleGraph<Point>>,
     extrapolator: Arc<DifferentialDriveLineFollow>,
     cost_calculator: Arc<P::CostCalculator>,
     heuristic: P::Heuristic,
@@ -363,7 +363,7 @@ impl<P: Policy> Closable<NodeType<P>> for Expander<P> {
 
 impl<P: Policy> Expander<P> {
     pub fn new(
-        graph: Arc<Graph<Point>>,
+        graph: Arc<SimpleGraph<Point>>,
         extrapolator: Arc<DifferentialDriveLineFollow>,
         cost_calculator: Arc<P::CostCalculator>,
         heuristic: P::Heuristic,
@@ -405,7 +405,7 @@ impl<P: Policy> Expander<P> {
 
 #[derive(Debug, Clone)]
 pub struct EuclideanHeuristic<P: Policy> {
-    pub graph: Arc<Graph<Point>>,
+    pub graph: Arc<SimpleGraph<Point>>,
     pub extrapolation: Arc<DifferentialDriveLineFollow>,
     pub cost_calculator: Arc<P::CostCalculator>,
 }
@@ -462,7 +462,7 @@ mod tests {
     use super::*;
     use crate::algorithm::Status;
 
-    fn make_test_graph() -> Graph<Point> {
+    fn make_test_graph() -> SimpleGraph<Point> {
         /*
          * 0-----1-----2-----3
          *           /       |
@@ -499,7 +499,7 @@ mod tests {
         add_bidir_edge(5, 7);
         add_bidir_edge(7, 8);
 
-        return Graph::new(vertices, edges);
+        return SimpleGraph::new(vertices, edges);
     }
 
     fn make_test_extrapolation() -> DifferentialDriveLineFollow {

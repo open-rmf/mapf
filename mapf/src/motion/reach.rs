@@ -15,6 +15,8 @@
  *
 */
 
-pub mod simple;
-// pub mod line_follow_se2;
-// pub mod line_follow_r2;
+
+
+pub trait Policy {
+
+}

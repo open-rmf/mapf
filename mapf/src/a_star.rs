@@ -16,7 +16,7 @@
 */
 
 use super::algorithm::{self, Status};
-use super::expander::{Expander, Closable, Goal, CostOf};
+use super::expander::{Expander, Initializable, Solvable, NodeOf, GoalOf, Closable, Goal, CostOf};
 use super::Trace;
 use super::node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
@@ -60,25 +60,27 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Algorithm;
 
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where
     N: Informed,
-    E: Expander<Node=N> + Closable<N>,
+    E: Expander<Node=N> + Closable<N> + Solvable,
 {
     type Memory = Memory<N, E>;
     type InitError = ();
     type StepError = ();
 
-    fn initialize<T: Trace<N>>(
+    fn initialize<S, T: Trace<N>>(
         &self,
         expander: Arc<E>,
-        start: &E::Start,
+        start: &S,
         goal: E::Goal,
         tracker: &mut T
-    ) -> Result<Self::Memory, algorithm::InitError<E, Self>> {
+    ) -> Result<Self::Memory, algorithm::InitError<S, E, Self>>
+    where E: Initializable<S>
+    {
 
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, Some(&goal)) {
