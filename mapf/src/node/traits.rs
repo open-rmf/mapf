@@ -21,6 +21,7 @@ use std::ops::Add;
 use std::cmp::Ord;
 use num::traits::Zero;
 use std::cmp::Ordering;
+use time_point::TimePoint;
 
 /// A trait for nodes that are used by path search algorithms. The expectation
 /// is that each node knows its parent node in the search.
@@ -67,6 +68,11 @@ pub trait Informed: Weighted {
     fn total_cost_estimate(&self) -> Self::Cost {
         self.cost() + self.remaining_cost_estimate()
     }
+}
+
+/// A trait for Nodes that have a time value
+pub trait Timed {
+    fn time(&self) -> &TimePoint;
 }
 
 /// Trait for nodes that can expand in reverse. HashOption is required for both

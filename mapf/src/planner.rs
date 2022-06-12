@@ -18,7 +18,7 @@
 use std::sync::Arc;
 use crate::{
     progress::{Factory as ProgressFactory, BasicFactory},
-    expander::{Initializable, Solvable},
+    expander::{Initializable, Solvable, InitErrorOf},
     algorithm::{Algorithm, InitError},
     trace::{Trace, NoTrace},
 };
@@ -66,7 +66,7 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
         &self,
         start: &S,
         goal: E::Goal,
-    ) -> Result<F::Progress<NoTrace>, InitError<S, E, A>>
+    ) -> Result<F::Progress<NoTrace>, InitError<A::InitError, InitErrorOf<E, S>>>
     where E: Initializable<S> {
         let mut trace = NoTrace::default();
         let memory = self.algorithm.initialize(
@@ -82,7 +82,7 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
         start: &S,
         goal: E::Goal,
         mut trace: T
-    ) -> Result<F::Progress<T>, InitError<S, E, A>>
+    ) -> Result<F::Progress<T>, InitError<A::InitError, InitErrorOf<E, S>>>
     where E: Initializable<S> {
 
         let memory = self.algorithm.initialize(
@@ -93,6 +93,12 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
     }
 }
 
+pub fn make_planner<E: Solvable, A: Algorithm<E>>(
+    expander: Arc<E>,
+    algorithm: Arc<A>,
+) -> Planner<E, A, BasicFactory> {
+    Planner::with_algorithm(algorithm, expander)
+}
 
 #[cfg(test)]
 mod tests {
@@ -299,7 +305,7 @@ mod tests {
             start: &S,
             goal: E::Goal,
             trace: &mut T,
-        ) -> Result<Self::Memory, InitError<S, E, Self>>
+        ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S>>>
         where E: Initializable<S> {
             let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
             for node in expander.start(start, Some(&goal)) {
@@ -315,7 +321,7 @@ mod tests {
             &self,
             memory: &mut Self::Memory,
             tracker: &mut T
-        ) -> Result<Status<E>, StepError<E, Self>> {
+        ) -> Result<Status<E>, StepError<Self::StepError, E::ExpansionError, E::SolveError>> {
             let top_opt = memory.queue.pop();
             if let Some(top) = top_opt {
                 if memory.goal.is_satisfied(&top) {

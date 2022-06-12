@@ -16,7 +16,7 @@
 */
 
 use super::algorithm::{self, Status};
-use super::expander::{Expander, Initializable, Solvable, NodeOf, GoalOf, Closable, Goal, CostOf};
+use super::expander::{Expander, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use super::Trace;
 use super::node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
@@ -78,7 +78,7 @@ where
         start: &S,
         goal: E::Goal,
         tracker: &mut T
-    ) -> Result<Self::Memory, algorithm::InitError<S, E, Self>>
+    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitErrorOf<E, S>>>
     where E: Initializable<S>
     {
 
@@ -101,7 +101,7 @@ where
         &self,
         storage: &mut Self::Memory,
         tracker: &mut T
-    ) -> Result<Status<E>, algorithm::StepError<E, Self>> {
+    ) -> Result<Status<E>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
 
         if let Some(top) = storage.queue.pop().map(|x| x.0.0) {
             if storage.goal.is_satisfied(&top) {

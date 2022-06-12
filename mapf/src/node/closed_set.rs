@@ -17,7 +17,7 @@
 
 use super::traits::*;
 use std::sync::Arc;
-use std::collections::hash_map::{self, HashMap, Entry};
+use std::collections::hash_map::{HashMap, Entry};
 
 /// The result of attempting to add a node to the Closed Set.
 pub enum CloseResult<N> {
@@ -45,6 +45,7 @@ impl<N> CloseResult<N> {
 
 /// The result of checking whether an equivalent node is already in the
 /// ClosedSet.
+// TODO(MXG): Consider returning an &Arc<N> to reduce reference counting overhead
 pub enum ClosedStatus<N> {
     Open,
     Closed(Arc<N>)
@@ -91,25 +92,12 @@ impl<N: Weighted + PartialKeyed> Default for PartialKeyedClosedSet<N> {
     }
 }
 
-pub struct PartialKeyedClosedSetIter<'a, N: Weighted + PartialKeyed> {
-    iter: hash_map::Iter<'a, N::Key, Arc<N>>,
-}
-
-impl<'a, N: Weighted + PartialKeyed + 'a> Iterator for PartialKeyedClosedSetIter<'a, N> {
-    type Item = &'a Arc<N>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(_, n)| n)
-    }
-}
-
 impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
-    type Iter<'a> where N: 'a = PartialKeyedClosedSetIter<'a, N>;
+    type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
         if let Some(key) = node.key() {
-            let entry = self.closed_set.entry(key.clone());
-            match entry {
+            match self.closed_set.entry(key.clone()) {
                 Entry::Occupied(mut occupied) => {
                     if occupied.get().cost() <= node.cost() {
                         return CloseResult::Prior(occupied.get().clone());
@@ -130,8 +118,7 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
 
     fn status(&self, node: &N) -> ClosedStatus<N> {
         if let Some(key) = node.key() {
-            let entry = self.closed_set.get(&key);
-            match entry {
+            match self.closed_set.get(key) {
                 Some(value) => {
                     return ClosedStatus::Closed(value.clone());
                 },
@@ -145,9 +132,87 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
     }
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
-        PartialKeyedClosedSetIter{iter: self.closed_set.iter()}
+        self.closed_set.iter().map(|(_, n)| n)
     }
 }
+
+pub struct TimeVariantPartialKeyedClosetSet<N: Weighted + PartialKeyed + Timed> {
+    closed_set: HashMap<N::Key, HashMap<i64, Arc<N>>>,
+    time_thresh: i64,
+}
+
+// Note: A user could alternatively incorporate the time value into the key of their node,
+// but this alternative closed set provides an easy way to use the same node type with the
+// same key type for either time variant or invariant scenarios.
+impl<N: Weighted + PartialKeyed + Timed> Default for TimeVariantPartialKeyedClosetSet<N> {
+    fn default() -> Self {
+        Self{closed_set: Default::default(), time_thresh: 100_000_000}
+    }
+}
+
+impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeyedClosetSet<N> {
+    type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
+
+    fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
+        if let Some(key) = node.key() {
+            let t_key = node.time().nanos_since_zero / self.time_thresh;
+            match self.closed_set.entry(key.clone()) {
+                Entry::Occupied(mut occupied) => {
+                    let t_map = occupied.get_mut();
+                    match t_map.entry(t_key) {
+                        Entry::Occupied(mut occupied) => {
+                            if occupied.get().cost() <= node.cost() {
+                                return CloseResult::Prior(occupied.get().clone());
+                            }
+
+                            occupied.insert(node.clone());
+                            return CloseResult::Closed;
+                        },
+                        Entry::Vacant(vacant) => {
+                            vacant.insert(node.clone());
+                            return CloseResult::Closed;
+                        }
+                    }
+                },
+                Entry::Vacant(vacant) => {
+                    let t_map = vacant.insert(Default::default());
+                    t_map.insert(t_key, node.clone());
+                    return CloseResult::Closed;
+                }
+            }
+        }
+
+        return CloseResult::Closed;
+    }
+
+    fn status(&self, node: &N) -> ClosedStatus<N> {
+        if let Some(key) = node.key() {
+            match self.closed_set.get(key) {
+                Some(t_map) => {
+                    let t_key = node.time().nanos_since_zero / self.time_thresh;
+                    match t_map.get(&t_key) {
+                        Some(value) => {
+                            return ClosedStatus::Closed(value.clone());
+                        },
+                        None => {
+                            return ClosedStatus::Open;
+                        }
+                    }
+                },
+                None => {
+                    return ClosedStatus::Open;
+                }
+            }
+        }
+
+        return ClosedStatus::Open;
+    }
+
+    fn iter<'a>(&'a self) -> Self::Iter<'a> {
+        self.closed_set.iter().flat_map(|(_, t_map)| t_map).map(|(_, n)| n)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

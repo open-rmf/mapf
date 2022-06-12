@@ -19,18 +19,20 @@ use crate::node;
 use crate::expander::{Expander, Solvable, Initializable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use crate::trace::Trace;
 use std::sync::Arc;
+use std::fmt::Debug;
 
 #[derive(Debug)]
-pub enum InitError<S, E: Solvable + Initializable<S>, A: Algorithm<E>> {
-    Algorithm(A::InitError),
-    Expander(InitErrorOf<E, S>),
+// pub enum InitError<S, E: Solvable + Initializable<S>, A: Algorithm<E>> {
+pub enum InitError<A: Debug, E: Debug> {
+    Algorithm(A),
+    Expander(E),
 }
 
 #[derive(Debug)]
-pub enum StepError<E: Solvable, A: Algorithm<E>> {
-    Algorithm(A::StepError),
-    Expansion(ExpansionErrorOf<E>),
-    Solve(SolveErrorOf<E>),
+pub enum StepError<A, E, S> {
+    Algorithm(A),
+    Expansion(E),
+    Solve(S),
 }
 
 #[derive(Debug, Clone)]
@@ -60,12 +62,12 @@ pub trait Algorithm<E: Solvable>: Sized {
         start: &S,
         goal: E::Goal,
         trace: &mut T,
-    ) -> Result<Self::Memory, InitError<S, E, Self>>
+    ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S>>>
     where E: Initializable<S>;
 
     fn step<T: Trace<E::Node>>(
         &self,
         storage: &mut Self::Memory,
         tracker: &mut T,
-    ) -> Result<Status<E>, StepError<E, Self>>;
+    ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>>;
 }

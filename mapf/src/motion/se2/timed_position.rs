@@ -16,7 +16,7 @@
 */
 
 use time_point::TimePoint;
-use crate::motion::{self, timed, Interpolation, InterpError, Extrapolator};
+use crate::motion::{self, timed, Interpolation, InterpError, Extrapolator, r2};
 use super::{Position, Point, Vector, Velocity};
 use arrayvec::ArrayVec;
 
@@ -51,6 +51,15 @@ impl Waypoint {
 impl motion::Waypoint for Waypoint {
     type Position = Position;
     type Velocity = Velocity;
+}
+
+impl From<Waypoint> for r2::timed_position::Waypoint {
+    fn from(se2_wp: Waypoint) -> Self {
+        r2::timed_position::Waypoint{
+            time: se2_wp.time,
+            position: se2_wp.position.translation.vector.into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

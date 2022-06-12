@@ -20,7 +20,7 @@ use std::ops::Fn;
 use std::boxed::Box;
 
 use crate::node::Weighted;
-use crate::expander::{Expander, Solvable, CostOf};
+use crate::expander::{Expander, Solvable, CostOf, ExpansionErrorOf, SolveErrorOf};
 use crate::algorithm::{Algorithm, WeightSorted, Status, Memory, StepError};
 use crate::trace::Trace;
 
@@ -170,7 +170,7 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinP
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Result<Status<E>, StepError<E, A>> {
+    pub fn solve(&mut self) -> Result<Status<E>, StepError<A::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
         loop {
             if self.options.need_to_interrupt(self) {
                 return Ok(Status::Incomplete);
@@ -185,7 +185,7 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinP
         }
     }
 
-    pub fn step(&mut self) -> Result<Status<E>, StepError<E, A>> {
+    pub fn step(&mut self) -> Result<Status<E>, StepError<A::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
         return self.algorithm.step(&mut self.memory, &mut self.trace);
     }
 

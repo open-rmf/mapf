@@ -19,7 +19,7 @@ use crate::{
     Heuristic,
     graph::{Graph, Edge, VertexOf, KeyOf},
     expander::{Expander as ExpanderTrait, Goal, Expandable, Closable, Solvable},
-    node::{self, Backtrackable, Agent, Cost, ClosedSet, Weighted, PartialKeyed, Informed, PathSearch},
+    node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Informed, PathSearch},
     motion::{
         Waypoint, Trajectory, Extrapolator,
         trajectory::CostCalculator
@@ -35,7 +35,7 @@ pub trait Key<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
     fn make_child(&self, target_key: &TargetKey, target_state: &TargetState) -> Self;
 }
 
-pub trait Policy: Sized + Debug {
+pub trait Policy: Sized {
     type Waypoint: Waypoint;
     type Goal: Goal<Self::Node>;
     type ClosedSet: ClosedSet<Self::Node>;
@@ -89,6 +89,12 @@ impl<C: Cost, K, W: Waypoint> Informed for BuiltinNode<C, K, W> {
 
     fn total_cost_estimate(&self) -> Self::Cost {
         self.total_cost_estimate
+    }
+}
+
+impl<C: Cost, K, W: Waypoint> Timed for BuiltinNode<C, K, W> {
+    fn time(&self) -> &time_point::TimePoint {
+        self.state.time()
     }
 }
 
@@ -152,7 +158,6 @@ impl<C: Cost, K: node::Key, W: Waypoint> MakeNode<W, BuiltinNode<C, K, W>> for M
     }
 }
 
-#[derive(Debug)]
 pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
     pub graph: Arc<P::Graph>,
     pub extrapolator: Arc<P::Extrapolator>,
@@ -188,10 +193,22 @@ impl<P: Policy> ExpanderTrait for Expander<P> {
     type Goal = P::Goal;
 }
 
-#[derive(Debug)]
 pub enum ExpansionError<P: Policy> {
     Extrapolator(ExtrapolatorErrorOf<P>),
     Heuristic(HeuristicErrorOf<P>),
+}
+
+impl<P: Policy> Debug for ExpansionError<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExpansionError::Extrapolator(e) => {
+                f.debug_tuple("graph_search::ExpansionError::Extrapolator").field(e).finish()
+            },
+            ExpansionError::Heuristic(e) => {
+                f.debug_tuple("graph_search::ExpansionError::Heuristic").field(e).finish()
+            }
+        }
+    }
 }
 
 impl<P: Policy> Closable for Expander<P> {

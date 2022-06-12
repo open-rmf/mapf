@@ -150,6 +150,18 @@ pub trait Chainable {
     {
         self.chain(Arc::new(Closure::new(closure)))
     }
+
+    fn chain_fn_no_err<Exp, F>(
+        self,
+        closure: F
+    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, GoalOf<Self::Base>, (), Exp, F>>
+    where
+        Self: Sized,
+        Exp: IntoIterator<Item=Result<Arc<NodeOf<Self::Base>>, ()>>,
+        F: Fn(&Arc<NodeOf<Self::Base>>, Option<&GoalOf<Self::Base>>) -> Exp,
+    {
+        self.chain(Arc::new(Closure::new(closure)))
+    }
 }
 
 impl<E: Expandable> Chainable for Arc<E> {
