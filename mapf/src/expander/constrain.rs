@@ -145,3 +145,61 @@ where
         self.base.make_bidirectional_solution(forward_solution_node, reverse_solution_node)
     }
 }
+
+pub struct ConstraintClosure<N, G: Goal<N>, Err: Debug, F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>> {
+    closure: F,
+    _ignore: std::marker::PhantomData<(N, G, Err)>,
+}
+
+impl<N, G, Err, F> ConstraintClosure<N, G, Err, F>
+where
+    G: Goal<N>,
+    Err: Debug,
+    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+{
+    pub fn new(closure: F) -> Self {
+        Self{closure, _ignore: Default::default()}
+    }
+}
+
+impl<N, G, Err, F> Constraint<N, G> for ConstraintClosure<N, G, Err, F>
+where
+    G: Goal<N>,
+    Err: Debug,
+    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+{
+    type ConstraintError = Err;
+    fn constrain(&self, node: Arc<N>, goal: Option<&G>) -> Result<Option<Arc<N>>, Self::ConstraintError> {
+        (self.closure)(node, goal)
+    }
+}
+
+pub trait Constrainable {
+    type Base: Expander;
+    fn constrain<C: Constraint<NodeOf<Self::Base>, GoalOf<Self::Base>>>(
+        self,
+        constrain_with: Arc<C>,
+    ) -> Constrain<Self::Base, C>;
+
+    fn constrain_fn<Err, F>(
+        self,
+        closure: F,
+    ) -> Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, GoalOf<Self::Base>, Err, F>>
+    where
+        Self: Sized,
+        Err: Debug,
+        F: Fn(Arc<NodeOf<Self::Base>>, Option<&GoalOf<Self::Base>>) -> Result<Option<Arc<NodeOf<Self::Base>>>, Err>,
+    {
+        self.constrain(Arc::new(ConstraintClosure::new(closure)))
+    }
+}
+
+impl<E: Expander> Constrainable for Arc<E> {
+    type Base = E;
+    fn constrain<C: Constraint<NodeOf<Self::Base>, GoalOf<Self::Base>>>(
+        self,
+        constrain_with: Arc<C>,
+    ) -> Constrain<Self::Base, C> {
+        Constrain{base: self, constrain_with}
+    }
+}
