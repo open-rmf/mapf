@@ -26,15 +26,15 @@ use std::cmp::Reverse;
 pub struct Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable<N>
+    E: Expander<Node=N> + Closable
 {
-    closed_set: <E as Closable<N>>::ClosedSet,
+    closed_set: <E as Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<NodeCmp<N>>>,
     expander: Arc<E>,
     goal: E::Goal,
 }
 
-impl<N: Informed, E: Expander<Node=N> + Closable<N>> Memory<N, E> {
+impl<N: Informed, E: Expander<Node=N> + Closable> Memory<N, E> {
     pub fn queue(&self) -> &BinaryHeap<Reverse<NodeCmp<N>>> {
         &self.queue
     }
@@ -43,7 +43,7 @@ impl<N: Informed, E: Expander<Node=N> + Closable<N>> Memory<N, E> {
 impl<N, E> algorithm::Memory for Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable<N>,
+    E: Expander<Node=N> + Closable,
 {
     fn node_count(&self) -> usize {
         return self.queue.len();
@@ -53,7 +53,7 @@ where
 impl<N, E> algorithm::WeightSorted<E> for Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable<N>,
+    E: Expander<Node=N> + Closable,
 {
     fn top_cost_estimate(&self) -> Option<CostOf<E>> {
         self.queue.peek().map(|x| x.0.0.total_cost_estimate())
@@ -66,7 +66,7 @@ pub struct Algorithm;
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where
     N: Informed,
-    E: Expander<Node=N> + Closable<N> + Solvable,
+    E: Expander<Node=N> + Closable + Solvable,
 {
     type Memory = Memory<N, E>;
     type InitError = ();

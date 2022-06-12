@@ -190,8 +190,8 @@ where
     type CostCalculator = C;
 }
 
-type TimeInvariantExpander<G, C, H> = Expander<TimeInvariantLinearSE2Policy<G, C, H>>;
-type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub type TimeInvariantExpander<G, C, H> = Expander<TimeInvariantLinearSE2Policy<G, C, H>>;
+pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
 #[derive(Debug)]
 pub enum InitErrorSE2<H: Heuristic> {
@@ -273,11 +273,7 @@ mod tests {
         Point,
         timed_position::DifferentialDriveLineFollow,
     };
-    use crate::{
-        motion,
-        Planner, a_star,
-        algorithm::Status,
-    };
+    use crate::{Planner, a_star, algorithm::Status};
 
     fn make_test_graph() -> SimpleGraph<Point> {
         /*

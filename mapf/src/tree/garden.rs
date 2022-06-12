@@ -17,7 +17,7 @@
 
 use super::Tree;
 use crate::node::{self, PartialKeyed, ClosedSet, KeyOf, Weighted};
-use crate::expander::{self, Expander, Initializable, CostOf, NodeOf, GoalOf, ReverseOf, ReverseNodeOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
+use crate::expander::{self, Expander, Initializable, BidirSolvable, CostOf, NodeOf, GoalOf, ReverseOf, ReverseNodeOf, SolutionOf, InitErrorOf, ExpansionErrorOf, ReversalErrorOf, BidirSolveErrorOf};
 use crate::util::Minimum;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,10 +26,11 @@ use std::cell::RefCell;
 type MutexRefCell<T> = Mutex<RefCell<T>>;
 
 #[derive(Debug)]
-pub enum InitError<S, E: expander::Reversible>
+pub enum InitError<S, E: BidirSolvable>
 where
     E::Node: node::Reversible,
     E: Initializable<S>,
+    ReverseOf<E>: Initializable<GoalOf<E>>,
 {
     Forward(InitErrorOf<E, S>),
     Reverse(InitErrorOf<ReverseOf<E>, GoalOf<E>>),
@@ -37,7 +38,7 @@ where
 }
 
 #[derive(Debug)]
-pub enum ExpansionError<E: expander::Reversible> {
+pub enum ExpansionError<E: BidirSolvable> {
     Forward(ExpansionErrorOf<E>),
     Reverse(ExpansionErrorOf<ReverseOf<E>>),
     Solve(BidirSolveErrorOf<E>),
@@ -45,24 +46,31 @@ pub enum ExpansionError<E: expander::Reversible> {
 }
 
 #[derive(Debug)]
-pub enum Error<S, E: expander::Reversible>
+pub enum Error<S, E: BidirSolvable>
 where
     E::Node: node::Reversible,
     E: Initializable<S>,
+    ReverseOf<E>: Initializable<GoalOf<E>>,
 {
     Init(InitError<S, E>),
     Expansion(ExpansionError<E>),
 }
 
-impl<S, E: expander::Reversible> From<InitError<S, E>> for Error<S, E>
-where E: Initializable<S> {
+impl<S, E: BidirSolvable> From<InitError<S, E>> for Error<S, E>
+where
+    E: Initializable<S>,
+    ReverseOf<E>: Initializable<GoalOf<E>>,
+{
     fn from(e: InitError<S, E>) -> Self {
         Error::Init(e)
     }
 }
 
-impl<S, E: expander::Reversible> From<ExpansionError<E>> for Error<S, E>
-where E: Initializable<S> {
+impl<S, E: BidirSolvable> From<ExpansionError<E>> for Error<S, E>
+where
+    E: Initializable<S>,
+    ReverseOf<E>: Initializable<GoalOf<E>>,
+{
     fn from(e: ExpansionError<E>) -> Self {
         Error::Expansion(e)
     }
@@ -73,11 +81,11 @@ type TreeCache<E> = MutexRefCell<HashMap<KeyOf<NodeOf<E>>, Arc<MutexRefCell<Tree
 type SolutionCache<E> = MutexRefCell<HashMap<(KeyOf<NodeOf<E>>, KeyOf<NodeOf<E>>), Option<SolutionOf<E>>>>;
 type ConnectionMap<E> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Option<Arc<NodeOf<ReverseOf<E>>>>)>;
 
-pub struct Garden<E: expander::Reversible + expander::Closable<E::Node>>
+pub struct Garden<E: BidirSolvable + expander::Closable>
 where
     NodeOf<E>: node::Weighted + node::Reversible + node::Keyed,
     ReverseNodeOf<E>: node::Weighted + node::Keyed,
-    ReverseOf<E>: expander::Closable<ReverseNodeOf<E>>
+    ReverseOf<E>: expander::Closable
 {
     expander: Arc<E>,
     reverser: Arc<E::Reverse>,
@@ -86,9 +94,9 @@ where
     solutions: SolutionCache<E>,
 }
 
-impl<E: expander::Reversible + expander::Closable<E::Node>> Garden<E>
+impl<E: BidirSolvable + expander::Closable> Garden<E>
 where
-    ReverseOf<E>: expander::Closable<ReverseNodeOf<E>>,
+    ReverseOf<E>: expander::Closable,
     E::Node: node::Weighted + node::Reversible + node::Keyed,
     E::Solution: node::Weighted + Clone,
     ReverseNodeOf<E>: node::Weighted<Cost=CostOf<E>> + node::Keyed,
@@ -105,7 +113,7 @@ where
     }
 
     pub fn solve<S>(&self, from: &S, to: &E::Goal) -> Result<Option<E::Solution>, Error<S, E>>
-    where E: Initializable<S>
+    where E: Initializable<S>, ReverseOf<E>: Initializable<GoalOf<E>>,
     {
         // TODO(MXG): It should be possible to parallelize some of this effort.
         // We should look into how to use async and runtimes here.

@@ -154,7 +154,7 @@ mod tests {
 
     struct CountingExpansion<'a> {
         next_node: Option<Arc<CountingNode>>,
-        _phantom: std::marker::PhantomData<&'a u8>,
+        _ignore: std::marker::PhantomData<&'a u8>,
     }
 
     impl<'a> Iterator for CountingExpansion<'a> {
@@ -196,12 +196,12 @@ mod tests {
                                 }
                             )
                         ),
-                        _phantom: Default::default(),
+                        _ignore: Default::default(),
                     };
                 }
             }
 
-            return CountingExpansion{next_node: None, _phantom: Default::default()};
+            return CountingExpansion{next_node: None, _ignore: Default::default()};
         }
     }
 
@@ -227,12 +227,12 @@ mod tests {
                                 }
                             )
                         ),
-                        _phantom: Default::default(),
+                        _ignore: Default::default(),
                     };
                 }
             }
 
-            return CountingExpansion{next_node: None, _phantom: Default::default()};
+            return CountingExpansion{next_node: None, _ignore: Default::default()};
         }
     }
 
@@ -259,7 +259,7 @@ mod tests {
         }
     }
 
-    impl Closable<CountingNode> for CountingExpander {
+    impl Closable for CountingExpander {
         type ClosedSet = node::PartialKeyedClosedSet<CountingNode>;
     }
 

@@ -120,13 +120,12 @@ impl<C, K: node::Key, W: Waypoint> PartialKeyed for BuiltinNode<C, K, W> {
 
 #[derive(Debug, Clone)]
 pub struct MakeBuiltinNode<W, N> {
-    _waypoint_type: std::marker::PhantomData<W>,
-    _node_type: std::marker::PhantomData<N>,
+    _ignore: std::marker::PhantomData<(W, N)>,
 }
 
 impl<W, N> Default for MakeBuiltinNode<W, N> {
     fn default() -> Self {
-        Self{_waypoint_type: Default::default(), _node_type: Default::default()}
+        Self{_ignore: Default::default()}
     }
 }
 
@@ -195,7 +194,7 @@ pub enum ExpansionError<P: Policy> {
     Heuristic(HeuristicErrorOf<P>),
 }
 
-impl<P: Policy> Closable<P::Node> for Expander<P> {
+impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
 }
 
@@ -376,9 +375,7 @@ mod tests {
 
     #[derive(Debug)]
     struct BadHeuristic<S, G, C> {
-        _s: std::marker::PhantomData<S>,
-        _g: std::marker::PhantomData<G>,
-        _c: std::marker::PhantomData<C>,
+        _ignore: std::marker::PhantomData<(S, G, C)>,
     }
 
 

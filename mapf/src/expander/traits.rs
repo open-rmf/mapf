@@ -73,20 +73,25 @@ pub trait Solvable: Expandable {
 /// A trait for nodes which can be inserted into a closed set. This trait is
 /// used to inform planners what concrete type should be used as the closed set
 /// for this node.
-pub trait Closable<N>: Sized {
-    type ClosedSet: node::ClosedSet<N>;
+pub trait Closable: Expander {
+    type ClosedSet: node::ClosedSet<Self::Node>;
 }
 
 /// The Reversible trait can be implemented by Expanders that support expanding
 /// in reverse from a goal. Bidirectional algorithms can take advantage of this
 /// trait.
-pub trait Reversible: Expander<Node: node::Reversible> + Solvable {
-    type Reverse: Expander<Node=<Self::Node as node::Reversible>::Reverse> + Initializable<Self::Goal> + Expandable;
+pub trait Reversible: Expander<Node: node::Reversible> {
+    type Reverse: Expander<Node=<Self::Node as node::Reversible>::Reverse> + Expandable;
     type ReversalError: std::fmt::Debug;
-    type BidirSolveError: std::fmt::Debug;
 
     /// Create a reverse expander for the algorithm to use.
     fn reverse(&self) -> Result<Arc<Self::Reverse>, Self::ReversalError>;
+}
+
+/// A trait for reversible expanders that can find solutions where forward
+/// nodes intersect with reverse nodes.
+pub trait BidirSolvable: Reversible  + Solvable {
+    type BidirSolveError: std::fmt::Debug;
 
     /// Make a solution from a (Forward, Reverse) expansion node pair.
     fn make_bidirectional_solution(
@@ -105,5 +110,6 @@ pub type SolveErrorOf<E> = <E as Solvable>::SolveError;
 pub type SolutionOf<E> = <E as Solvable>::Solution;
 pub type ReverseOf<E> = <E as Reversible>::Reverse;
 pub type ReverseNodeOf<E> = <ReverseOf<E> as Expander>::Node;
+pub type ReverseGoalOf<E> = <ReverseOf<E> as Expander>::Goal;
 pub type ReversalErrorOf<E> = <E as Reversible>::ReversalError;
-pub type BidirSolveErrorOf<E> = <E as Reversible>::BidirSolveError;
+pub type BidirSolveErrorOf<E> = <E as BidirSolvable>::BidirSolveError;
