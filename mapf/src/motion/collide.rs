@@ -16,36 +16,43 @@
 */
 
 use crate::{
-    motion::{Trajectory, TimePoint, r2, se2},
+    motion::{Trajectory, Interpolation, Motion, TimePoint, Duration, r2, se2},
     expander::Constraint,
     node::Agent,
 };
 use nalgebra::Vector2;
 use std::sync::Arc;
 
-fn compute_p0_v(
-    wp0: &r2::timed_position::Waypoint,
-    wp1: &r2::timed_position::Waypoint,
-) -> (Vector2<f64>, Vector2<f64>) {
-    let dp = wp1.position - wp0.position;
-    let dt = (wp1.time - wp0.time).as_secs_f64();
-    (wp0.position.coords, dp/dt)
-}
-
-fn time_within_range(
-    t: f64,
+fn compute_t_range(
     wp0_a: &r2::timed_position::Waypoint,
     wp1_a: &r2::timed_position::Waypoint,
     wp0_b: &r2::timed_position::Waypoint,
     wp1_b: &r2::timed_position::Waypoint,
-) -> bool {
-    if wp0_a.time.as_secs_f64() <= t && t <= wp1_a.time.as_secs_f64() {
-        if wp0_b.time.as_secs_f64() <= t && t <= wp1_b.time.as_secs_f64() {
-            return true;
-        }
+) -> (TimePoint, TimePoint) {
+    (wp0_a.time.max(wp0_b.time), wp1_a.time.min(wp1_b.time))
+}
+
+fn compute_p0_v(
+    wp0: &r2::timed_position::Waypoint,
+    wp1: &r2::timed_position::Waypoint,
+    t_range: &(TimePoint, TimePoint),
+) -> (Vector2<f64>, Vector2<f64>) {
+    let dp = wp1.position - wp0.position;
+    let dt = (wp1.time - wp0.time).as_secs_f64();
+    let p0 = wp0.interpolate(wp1).compute_position(&t_range.0).unwrap();
+    (p0.coords, dp/dt)
+}
+
+fn time_within_range(
+    t: f64,
+    t_range: &(TimePoint, TimePoint),
+) -> Option<TimePoint> {
+    let dt = (t_range.1 - t_range.0).as_secs_f64();
+    if t <= dt {
+        return Some(t_range.0 + Duration::from_secs_f64(t));
     }
 
-    return false;
+    return None;
 }
 
 fn detect_proximity(
@@ -57,6 +64,8 @@ fn detect_proximity(
     let mut wp1_a_opt = iter_a.next();
     let mut wp0_b_opt = iter_b.next();
     let mut wp1_b_opt = iter_b.next();
+
+    // println!(" =========================== ");
 
     while let (Some(wp0_a), Some(wp1_a), Some(wp0_b), Some(wp1_b)) = (wp0_a_opt, wp1_a_opt, wp0_b_opt, wp1_b_opt) {
         if wp1_a.time < wp0_b.time {
@@ -71,14 +80,29 @@ fn detect_proximity(
             continue;
         }
 
-        let (p0_a, v_a) = compute_p0_v(&wp0_a, &wp1_a);
-        let (p0_b, v_b) = compute_p0_v(&wp0_b, &wp1_b);
+        let t_range = compute_t_range(&wp0_a, &wp1_a, &wp0_b, &wp1_b);
+        let (p0_a, v_a) = compute_p0_v(&wp0_a, &wp1_a, &t_range);
+        let (p0_b, v_b) = compute_p0_v(&wp0_b, &wp1_b, &t_range);
         let dp0 = p0_b - p0_a;
         let dv = v_b - v_a;
 
         let a = dv.dot(&dv);
         let b = 2.0*dv.dot(&dp0);
         let c = dp0.dot(&dp0) - dist_squared;
+
+        // println!(" --- ");
+        // println!("{:?} -> {:?}", wp0_a, wp1_a);
+        // println!("{:?} -> {:?}", wp0_b, wp1_b);
+        // println!("p0_a: {p0_a:?}, v_a: {v_a:?}, p0_b: {p0_b:?}, v_b: {v_b:?}");
+        // println!("dp0: {dp0:?}, dv: {dv:?}");
+        // println!("a: {a}, b: {b}, c: {c}");
+        // println!(
+        //     "t_a: [{}, {}], t_b: [{}, {}]",
+        //     wp0_a.time.as_secs_f64(),
+        //     wp1_a.time.as_secs_f64(),
+        //     wp0_b.time.as_secs_f64(),
+        //     wp1_b.time.as_secs_f64(),
+        // );
 
         if a.abs() < 1e-8 {
             // The two motions have almost identical velocities or nearly
@@ -90,27 +114,48 @@ fn detect_proximity(
                 }
             } else {
                 let t = -c/b;
-                if time_within_range(t, &wp0_a, &wp1_a, &wp0_b, &wp1_b) {
-                    return Some(TimePoint::from_secs_f64(t));
+                if let Some(t) = time_within_range(t, &t_range) {
+                    // println!(" >> COLLISION TIME: {}", t.as_secs_f64());
+                    return Some(t);
                 }
             }
         } else {
             let mut radicand = b.powi(2) - 4.0*a*c;
-            assert!(radicand >= -1e-3);
-            if radicand < 0.0 {
-                radicand = 0.0;
-            }
+            // println!("radicand: {radicand}");
+            // if radicand < -1e-3 {
+                // println!("{:?} -> {:?}", wp0_a, wp1_a);
+                // println!("{:?} -> {:?}", wp0_b, wp1_b);
+                // println!("p0_a: {p0_a:?}, v_a: {v_a:?}, p0_b: {p0_b:?}, v_b: {v_b:?}");
+                // println!("dp0: {dp0:?}, dv: {dv:?}");
+                // println!("a: {a}, b: {b}, c: {c} => radicand: {radicand}");
+            //     assert!(radicand >= -1e-3);
+            // }
+            // if radicand < 0.0 {
+            //     radicand = 0.0;
+            // }
 
-            let sqrt_radicand = radicand.sqrt();
-            let t_m = (-b - sqrt_radicand)/(2.0*a);
-            if time_within_range(t_m, &wp0_a, &wp1_a, &wp0_b, &wp1_b) {
-                return Some(TimePoint::from_secs_f64(t_m));
-            }
+            if radicand >= 0.0 {
+                let sqrt_radicand = radicand.sqrt();
+                let t_m = (-b - sqrt_radicand)/(2.0*a);
+                // println!("t_m: {t_m}");
+                if let Some(t_m) = time_within_range(t_m, &t_range) {
+                    // println!(" >> COLLISION TIME: {}", t_m.as_secs_f64());
+                    return Some(t_m);
+                }
 
-            let t_p = (-b + sqrt_radicand)/(2.0*a);
-            if time_within_range(t_p, &wp0_a, &wp1_a, &wp0_b, &wp1_b) {
-                return Some(TimePoint::from_secs_f64(t_p));
+                let t_p = (-b + sqrt_radicand)/(2.0*a);
+                // println!("t_p: {t_p}");
+                if let Some(t_p) = time_within_range(t_p, &t_range) {
+                    // println!(" >> COLLISION TIME: {}", t_p.as_secs_f64());
+                    return Some(t_p);
+                }
             }
+        }
+
+        let tp0 = wp0_a.time.min(wp0_b.time);
+        let t0 = tp0.as_secs_f64();
+        if a*t0.powi(2) + b*t0 + c <= 0.0 {
+            return Some(tp0);
         }
 
         let mut advance_a = false;
@@ -134,6 +179,7 @@ fn detect_proximity(
         }
     }
 
+    println!(" >> NO COLLISION");
     return None;
 }
 

@@ -264,6 +264,15 @@ pub struct Solution<P: Policy> {
     motion: Option<Trajectory<P::Waypoint>>,
 }
 
+impl<P: Policy> Debug for Solution<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("motion::graph_search::Solution")
+        .field("cost", &self.cost)
+        .field("motion", &self.motion)
+        .finish()
+    }
+}
+
 impl<P: Policy> Solution<P> {
     pub fn cost(&self) -> &NodeCostOf<P> {
         &self.cost
