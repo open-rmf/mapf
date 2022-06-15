@@ -15,14 +15,8 @@
  *
 */
 
-pub mod traits;
-pub use traits::*;
 
-pub mod chain;
-pub use chain::{Chain, Chainable};
 
-pub mod closure;
-pub use closure::Closure;
+pub trait Policy {
 
-pub mod constrain;
-pub use constrain::{Constraint, Constrain, Constrainable};
+}

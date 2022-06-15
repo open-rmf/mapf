@@ -30,3 +30,20 @@ impl<N> Trace<N> for NoTrace {
     fn expanded_to(&mut self, _: &N) { }
     fn solution_found_from(&mut self, _: &N) { }
 }
+
+#[derive(Default)]
+pub struct TerminalTrace;
+
+impl<N: std::fmt::Debug> Trace<N> for TerminalTrace {
+    fn expanded_from(&mut self, node: &N) {
+        println!(" - Expanded from {:?}", node);
+    }
+
+    fn expanded_to(&mut self, node: &N) {
+        println!(" > Expanded to {:?}", node);
+    }
+
+    fn solution_found_from(&mut self, node: &N) {
+        println!("Solution found from {:?}", node);
+    }
+}

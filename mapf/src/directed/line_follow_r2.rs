@@ -15,7 +15,7 @@
  *
 */
 
-use super::simple::Graph;
+use super::simple::SimpleGraph;
 use crate::expander::{Closable, Initializable, Expandable, Solvable, NodeOf, InitErrorOf, ExpansionErrorOf, ReverseOf};
 use crate::motion::{
     self, Extrapolator,
@@ -109,7 +109,7 @@ impl<C: NodeCost> crate::expander::Goal<Node<C>> for usize {
 }
 
 pub struct Expander<P: Policy> {
-    graph: Arc<Graph<Position>>,
+    graph: Arc<SimpleGraph<Position>>,
     extrapolator: Arc<LineFollow>,
     cost_calculator: Arc<P::CostCalculator>,
     heuristic: Arc<P::Heuristic>,
@@ -118,7 +118,7 @@ pub struct Expander<P: Policy> {
 
 impl<P: Policy> Expander<P> {
     pub fn new(
-        graph: Arc<Graph<Position>>,
+        graph: Arc<SimpleGraph<Position>>,
         extrapolator: Arc<LineFollow>,
         cost_calculator: Arc<P::CostCalculator>,
         heuristic: Arc<P::Heuristic>,

@@ -18,7 +18,7 @@
 use std::vec::Vec;
 
 #[derive(Debug, Clone, Default)]
-pub struct Graph<Vertex: Clone> {
+pub struct SimpleGraph<Vertex: std::fmt::Debug + Clone> {
     pub vertices: Vec<Vertex>,
     pub edges: Vec<Vec<usize>>,
 
@@ -27,7 +27,7 @@ pub struct Graph<Vertex: Clone> {
     _placeholder: Vec<usize>,
 }
 
-impl<Vertex: Clone> Graph<Vertex> {
+impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
 
     pub fn new(vertices: Vec<Vertex>, edges: Vec<Vec<usize>>) -> Self {
         Self{vertices, edges, _placeholder: Vec::new()}
@@ -72,7 +72,7 @@ impl crate::graph::Edge<usize> for usize {
     }
 }
 
-impl<V: Clone> crate::Graph for Graph<V> {
+impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
     type Key = usize;
     type Vertex = V;
     type Edge = usize;

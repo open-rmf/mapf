@@ -21,16 +21,20 @@ pub trait Edge<Key> {
     fn endpoint_key(&self) -> &Key;
 }
 
-pub trait Graph {
+pub trait Graph: std::fmt::Debug {
     type Key: Key;
     type Vertex;
     type Edge: Edge<Self::Key>;
 
-    type EdgeIter<'a>: IntoIterator<Item=&'a Self::Edge>
-    where
-        Self: 'a,
-        Self::Edge: 'a;
+    type EdgeIter<'a>: IntoIterator<Item=&'a Self::Edge> where Self: 'a, Self::Edge: 'a;
 
+    // TODO(MXG): Consider if there's a way we can have this API accept a key by
+    // reference instead of by value. The current issue is that Node keys need a
+    // way to be mapped (reduced) into Graph keys. When I tried using Into<&Key>
+    // there was too much fuss from the borrow checker for me to get it working
+    // correctly. We also have to consider: What if the Node key does not contain
+    // a Graph key instance? In that case the Node key cannot provide a reference
+    // to a Graph key.
     fn vertex(&self, key: Self::Key) -> Option<&Self::Vertex>;
 
     fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>;

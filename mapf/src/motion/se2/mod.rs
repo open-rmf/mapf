@@ -28,3 +28,5 @@ pub struct Velocity {
 
 pub mod timed_position;
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+
+pub mod graph_search;

@@ -17,7 +17,7 @@
 
 use crate::node::Cost;
 
-pub trait Heuristic {
+pub trait Heuristic: std::fmt::Debug {
     type Error: std::fmt::Debug;
     type State;
     type Goal;

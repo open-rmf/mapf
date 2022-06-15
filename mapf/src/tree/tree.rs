@@ -15,7 +15,7 @@
  *
 */
 
-use crate::expander::{Expander, Closable, ExpansionErrorOf};
+use crate::expander::{Expander, Expandable, Closable, ExpansionErrorOf};
 use crate::node::{Weighted, CostCmp, ClosedSet};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -27,16 +27,16 @@ use num::Zero;
 ///
 /// For a bidirectional variant that leverages the tree while maintaining its
 /// search effort for efficient reuse, see the Garden class in the tree module.
-pub struct Tree<E: Expander<Node: Weighted> + Closable<E::Node>> {
-    closed_set: <E as Closable<E::Node>>::ClosedSet,
+pub struct Tree<E: Expander<Node: Weighted> + Closable> {
+    closed_set: <E as Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<CostCmp<E::Node>>>,
     expander: Arc<E>,
 }
 
-impl<E: Expander<Node: Weighted> + Closable<E::Node>> Tree<E> {
+impl<E: Expander<Node: Weighted> + Closable> Tree<E> {
 
     pub fn new(root: Arc<E::Node>, expander: Arc<E>) -> Self {
-        let mut closed_set = <E as Closable<E::Node>>::ClosedSet::default();
+        let mut closed_set = <E as Closable>::ClosedSet::default();
         closed_set.close(&root);
 
         let mut queue = BinaryHeap::new();
@@ -48,7 +48,7 @@ impl<E: Expander<Node: Weighted> + Closable<E::Node>> Tree<E> {
     /// Inspect the current closed set of the tree. Each item in this set
     /// contains a node that represents the shortest path from the tree's root
     /// to the node's state.
-    pub fn closed(&self) -> &<E as Closable<E::Node>>::ClosedSet {
+    pub fn closed(&self) -> &<E as Closable>::ClosedSet {
         &self.closed_set
     }
 
@@ -67,12 +67,12 @@ impl<E: Expander<Node: Weighted> + Closable<E::Node>> Tree<E> {
     }
 }
 
-pub struct Growth<'a, E: Expander<Node: Weighted> + Closable<E::Node>> {
+pub struct Growth<'a, E: Expander<Node: Weighted> + Closable> {
     tree: &'a mut Tree<E>,
     expected_cost: <E::Node as Weighted>::Cost,
 }
 
-impl<'a, N: Weighted, E: Expander<Node=N> + Closable<N>> Iterator for Growth<'a, E> {
+impl<'a, N: Weighted, E: Expander<Node=N> + Expandable + Closable> Iterator for Growth<'a, E> {
     type Item = Result<Arc<N>, ExpansionErrorOf<E>>;
 
     fn next(&mut self) -> Option<Result<Arc<N>, ExpansionErrorOf<E>>> {

@@ -21,4 +21,5 @@ pub use traits::*;
 pub mod closed_set;
 pub use closed_set::*;
 
-pub type KeyOf<N> = <N as PartialKeyed>::Key;
+pub mod backtrack;
+pub use backtrack::*;

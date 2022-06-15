@@ -20,7 +20,7 @@ use std::ops::Fn;
 use std::boxed::Box;
 
 use crate::node::Weighted;
-use crate::expander::{Expander, CostOf};
+use crate::expander::{Expander, Solvable, CostOf, ExpansionErrorOf, SolveErrorOf};
 use crate::algorithm::{Algorithm, WeightSorted, Status, Memory, StepError};
 use crate::trace::Trace;
 
@@ -28,7 +28,7 @@ pub trait Progress {
     type Options;
 }
 
-pub trait Factory<E: Expander, A: Algorithm<E>>: Default {
+pub trait Factory<E: Solvable, A: Algorithm<E>>: Default {
     type Progress<T: Trace<E::Node>>: Progress;
     fn new<T: Trace<E::Node>>(
         memory: A::Memory,
@@ -86,7 +86,7 @@ impl BasicOptions {
 
 impl<E, A, T> Options<BuiltinProgress<E, A, Self, T>> for BasicOptions
 where
-    E: Expander,
+    E: Solvable,
     A: Algorithm<E>,
     T: Trace<E::Node>,
 {
@@ -95,7 +95,7 @@ where
     }
 }
 
-pub struct WeightedSearchOptions<E: Expander<Node: Weighted>> {
+pub struct WeightedSearchOptions<E: Expander<Node: Weighted> + Solvable> {
 
     /// The maximum total cost estimate that the top node can reach before
     /// the solve attempt quits.
@@ -107,7 +107,7 @@ pub struct WeightedSearchOptions<E: Expander<Node: Weighted>> {
 
 impl<E, A, T> Options<BuiltinProgress<E, A, Self, T>> for WeightedSearchOptions<E>
 where
-    E: Expander<Node: Weighted>,
+    E: Expander<Node: Weighted> + Solvable,
     A: Algorithm<E>,
     A::Memory: WeightSorted<E>,
     T: Trace<E::Node>,
@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<E: Expander<Node: Weighted>> Default for WeightedSearchOptions<E> {
+impl<E: Expander<Node: Weighted> + Solvable> Default for WeightedSearchOptions<E> {
     fn default() -> Self {
         return Self {
             max_cost_estimate: None,
@@ -135,7 +135,7 @@ impl<E: Expander<Node: Weighted>> Default for WeightedSearchOptions<E> {
 }
 
 /// Progress manages the progress of a planning effort.
-pub struct BuiltinProgress<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> {
+pub struct BuiltinProgress<E: Solvable, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> {
     /// Storage container for the progress of the search algorithm
     memory: A::Memory,
 
@@ -151,7 +151,7 @@ pub struct BuiltinProgress<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Tr
 
 pub type BasicProgress<E, A, T> = BuiltinProgress<E, A, BasicOptions, T>;
 
-impl<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinProgress<E, A, O, T> {
+impl<E: Solvable, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinProgress<E, A, O, T> {
     /// Set the progression options for the planning.
     pub fn with_options(mut self, options: O) -> Self {
         self.options = options;
@@ -170,7 +170,7 @@ impl<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinP
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Result<Status<E>, StepError<E, A>> {
+    pub fn solve(&mut self) -> Result<Status<E>, StepError<A::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
         loop {
             if self.options.need_to_interrupt(self) {
                 return Ok(Status::Incomplete);
@@ -185,7 +185,7 @@ impl<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinP
         }
     }
 
-    pub fn step(&mut self) -> Result<Status<E>, StepError<E, A>> {
+    pub fn step(&mut self) -> Result<Status<E>, StepError<A::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
         return self.algorithm.step(&mut self.memory, &mut self.trace);
     }
 
@@ -194,11 +194,11 @@ impl<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> BuiltinP
     }
 }
 
-impl<E: Expander, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> Progress for BuiltinProgress<E, A, O, T> {
+impl<E: Solvable, A: Algorithm<E>, O: Options<Self>, T: Trace<E::Node>> Progress for BuiltinProgress<E, A, O, T> {
     type Options = O;
 }
 
-impl<E: Expander, A: Algorithm<E>, T: Trace<E::Node>> BuiltinProgress<E, A, BasicOptions, T> {
+impl<E: Solvable, A: Algorithm<E>, T: Trace<E::Node>> BuiltinProgress<E, A, BasicOptions, T> {
     /// Set the interrupter that can stop the progress. If the interrupter
     /// returns Stop, then the planning will be interrupted and left incomplete.
     pub fn with_interrupter(mut self, interrupter: Option<Interrupter>) -> Self {
@@ -214,7 +214,7 @@ impl<E: Expander, A: Algorithm<E>, T: Trace<E::Node>> BuiltinProgress<E, A, Basi
     }
 }
 
-impl<E: Expander<Node: Weighted>, A: Algorithm<E, Memory: WeightSorted<E>>, T: Trace<E::Node>>
+impl<E: Expander<Node: Weighted> + Solvable, A: Algorithm<E, Memory: WeightSorted<E>>, T: Trace<E::Node>>
 BuiltinProgress<E, A, WeightedSearchOptions<E>, T> {
     /// Set the max cost estimate that the planner will use to interrupt the
     /// planning progress. If the best possible cost estimate of the planner
@@ -244,7 +244,7 @@ BuiltinProgress<E, A, WeightedSearchOptions<E>, T> {
 pub struct BasicFactory;
 
 /// Progress factory implementation for algorithms that do not sort nodes by cost.
-impl<E: Expander, A: Algorithm<E>> Factory<E, A> for BasicFactory {
+impl<E: Solvable, A: Algorithm<E>> Factory<E, A> for BasicFactory {
     type Progress<T: Trace<E::Node>> = BuiltinProgress<E, A, BasicOptions, T>;
     fn new<T: Trace<E::Node>>(
         memory: A::Memory,
@@ -259,7 +259,7 @@ impl<E: Expander, A: Algorithm<E>> Factory<E, A> for BasicFactory {
 pub struct WeightedFactory;
 
 /// Progress factory implementation for algorithms that do sort by cost.
-impl<E: Expander<Node: Weighted>, A: Algorithm<E, Memory: WeightSorted<E>>> Factory<E, A> for WeightedFactory {
+impl<E: Expander<Node: Weighted> + Solvable, A: Algorithm<E, Memory: WeightSorted<E>>> Factory<E, A> for WeightedFactory {
     type Progress<T: Trace<E::Node>> = BuiltinProgress<E, A, WeightedSearchOptions<E>, T>;
     fn new<T: Trace<E::Node>>(
         memory: <A as Algorithm<E>>::Memory,

@@ -16,28 +16,27 @@
 */
 
 use crate::node;
-use crate::expander::{Expander, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
+use crate::expander::{Expander, Solvable, Initializable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use crate::trace::Trace;
 use std::sync::Arc;
-use derivative::Derivative;
+use std::fmt::Debug;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub enum InitError<E: Expander, A: Algorithm<E>> {
-    Algorithm(A::InitError),
-    Expander(InitErrorOf<E>),
+#[derive(Debug)]
+// pub enum InitError<S, E: Solvable + Initializable<S>, A: Algorithm<E>> {
+pub enum InitError<A: Debug, E: Debug> {
+    Algorithm(A),
+    Expander(E),
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub enum StepError<E: Expander, A: Algorithm<E>> {
-    Algorithm(A::StepError),
-    Expansion(ExpansionErrorOf<E>),
-    Solve(SolveErrorOf<E>),
+#[derive(Debug)]
+pub enum StepError<A, E, S> {
+    Algorithm(A),
+    Expansion(E),
+    Solve(S),
 }
 
 #[derive(Debug, Clone)]
-pub enum Status<E: Expander> {
+pub enum Status<E: Solvable> {
     Incomplete,
     Impossible,
     Solved(E::Solution),
@@ -51,23 +50,24 @@ pub trait WeightSorted<E: Expander<Node: node::Weighted>> {
     fn top_cost_estimate(&self) -> Option<CostOf<E>>;
 }
 
-pub trait Algorithm<E: Expander>: Sized {
+pub trait Algorithm<E: Solvable>: Sized {
     type Memory: Memory;
 
     type InitError: std::fmt::Debug;
     type StepError: std::fmt::Debug;
 
-    fn initialize<T: Trace<E::Node>>(
+    fn initialize<S, T: Trace<E::Node>>(
         &self,
         expander: Arc<E>,
-        start: &E::Start,
+        start: &S,
         goal: E::Goal,
         trace: &mut T,
-    ) -> Result<Self::Memory, InitError<E, Self>>;
+    ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S>>>
+    where E: Initializable<S>;
 
     fn step<T: Trace<E::Node>>(
         &self,
         storage: &mut Self::Memory,
         tracker: &mut T,
-    ) -> Result<Status<E>, StepError<E, Self>>;
+    ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>>;
 }

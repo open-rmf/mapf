@@ -18,8 +18,8 @@
 use crate::{
     Heuristic,
     graph::{Graph, Edge, VertexOf, KeyOf},
-    expander::{Goal, Expandable, Closable},
-    node::{self, Agent, Cost, ClosedSet, Weighted, PartialKeyed, Informed, PathSearch},
+    expander::{Expander as ExpanderTrait, Goal, Expandable, Closable, Solvable},
+    node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Informed, PathSearch},
     motion::{
         Waypoint, Trajectory, Extrapolator,
         trajectory::CostCalculator
@@ -35,34 +35,36 @@ pub trait Key<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
     fn make_child(&self, target_key: &TargetKey, target_state: &TargetState) -> Self;
 }
 
-pub trait Policy: Sized + Debug {
+pub trait Policy: Sized {
     type Waypoint: Waypoint;
     type Goal: Goal<Self::Node>;
     type ClosedSet: ClosedSet<Self::Node>;
     type Graph: Graph;
     type Key: Key<KeyOf<Self::Graph>, Self::Waypoint>;
-    type Node: Informed + PartialKeyed<Key=Self::Key> + Agent<State=Self::Waypoint>;
+    type Node: Informed + PartialKeyed<Key=Self::Key> + Agent<State=Self::Waypoint, Action=Trajectory<Self::Waypoint>>;
     type Extrapolator: Extrapolator<Self::Waypoint, VertexOf<Self::Graph>>;
     type Heuristic: Heuristic<State=<Self::Node as PartialKeyed>::Key, Goal=Self::Goal, Cost=NodeCostOf<Self>>;
     type CostCalculator: CostCalculator<Self::Waypoint, Cost=NodeCostOf<Self>>;
-    type MakeChildNode: MakeChildNode<Self::Waypoint, Self::Node>;
+    type MakeNode: MakeNode<Self::Waypoint, Self::Node>;
 }
 
 pub type NodeKeyOf<P> = <<P as Policy>::Node as PartialKeyed>::Key;
 pub type NodeCostOf<P> = <<P as Policy>::Node as Weighted>::Cost;
+pub type GraphKeyOf<P> = <<P as Policy>::Graph as Graph>::Key;
 
-pub trait MakeChildNode<W: Waypoint, N: Informed + PartialKeyed> {
-    fn make_child_node(
+pub trait MakeNode<W: Waypoint, N: Informed + PartialKeyed> {
+    fn make_node(
         &self,
         waypoint: W,
         key: N::Key,
         cost_from_parent: N::Cost,
         remaining_cost_estimate: N::Cost,
         motion_from_parent: Option<Trajectory<W>>,
-        parent: Arc<N>,
+        parent: Option<Arc<N>>,
     ) -> Arc<N>;
 }
 
+#[derive(Debug)]
 pub struct BuiltinNode<C, K, W: Waypoint> {
     cost: C,
     remaining_cost_estimate: C,
@@ -87,6 +89,12 @@ impl<C: Cost, K, W: Waypoint> Informed for BuiltinNode<C, K, W> {
 
     fn total_cost_estimate(&self) -> Self::Cost {
         self.total_cost_estimate
+    }
+}
+
+impl<C: Cost, K, W: Waypoint> Timed for BuiltinNode<C, K, W> {
+    fn time(&self) -> &time_point::TimePoint {
+        self.state.time()
     }
 }
 
@@ -116,22 +124,28 @@ impl<C, K: node::Key, W: Waypoint> PartialKeyed for BuiltinNode<C, K, W> {
     }
 }
 
-pub struct MakeChildBuiltinNode<W, N> {
-    _waypoint_type: std::marker::PhantomData<W>,
-    _node_type: std::marker::PhantomData<N>,
+#[derive(Debug, Clone)]
+pub struct MakeBuiltinNode<W, N> {
+    _ignore: std::marker::PhantomData<(W, N)>,
 }
 
-impl<C: Cost, K: node::Key, W: Waypoint> MakeChildNode<W, BuiltinNode<C, K, W>> for MakeChildBuiltinNode<W, BuiltinNode<C, K, W>> {
-    fn make_child_node(
+impl<W, N> Default for MakeBuiltinNode<W, N> {
+    fn default() -> Self {
+        Self{_ignore: Default::default()}
+    }
+}
+
+impl<C: Cost, K: node::Key, W: Waypoint> MakeNode<W, BuiltinNode<C, K, W>> for MakeBuiltinNode<W, BuiltinNode<C, K, W>> {
+    fn make_node(
         &self,
         waypoint: W,
         key: K,
         cost_from_parent: C,
         remaining_cost_estimate:C,
         motion: Option<Trajectory<W>>,
-        parent: Arc<BuiltinNode<C, K, W>>,
+        parent: Option<Arc<BuiltinNode<C, K, W>>>,
     ) -> Arc<BuiltinNode<C, K, W>> {
-        let cost = parent.cost() + cost_from_parent;
+        let cost = parent.as_ref().map(|p| p.cost()).unwrap_or(C::zero()) + cost_from_parent;
         Arc::new(BuiltinNode{
             cost,
             remaining_cost_estimate,
@@ -139,33 +153,33 @@ impl<C: Cost, K: node::Key, W: Waypoint> MakeChildNode<W, BuiltinNode<C, K, W>> 
             state: waypoint,
             key,
             motion_from_parent: motion,
-            parent: Some(parent),
+            parent,
         })
     }
 }
 
-pub struct Expander<P: Policy> where <<P as Policy>::Node as PartialKeyed>::Key: Key<<<P as Policy>::Graph as Graph>::Key, <P as Policy>::Waypoint> {
-    graph: Arc<P::Graph>,
-    extrapolator: Arc<P::Extrapolator>,
-    cost_calculator: Arc<P::CostCalculator>,
-    heuristic: Arc<P::Heuristic>,
-    node_spawner: P::MakeChildNode,
+pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
+    pub graph: Arc<P::Graph>,
+    pub extrapolator: Arc<P::Extrapolator>,
+    pub cost_calculator: Arc<P::CostCalculator>,
+    pub heuristic: Arc<P::Heuristic>,
+    pub node_spawner: P::MakeNode,
 }
 
-impl<P: Policy> Expander<P> {
-    fn make_node(
+impl<P: Policy> Expander<P> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
+    pub fn make_node(
         &self,
         state: P::Waypoint,
         key: NodeKeyOf<P>,
         remaining_cost_estimate: NodeCostOf<P>,
         motion_from_parent: Option<Trajectory<P::Waypoint>>,
-        parent: Arc<P::Node>,
+        parent: Option<Arc<P::Node>>,
     ) -> Arc<P::Node> {
         let cost_from_parent = motion_from_parent.as_ref().map(
             |t| self.cost_calculator.compute_cost(t)
         ).unwrap_or(NodeCostOf::<P>::zero());
 
-        self.node_spawner.make_child_node(
+        self.node_spawner.make_node(
             state, key, cost_from_parent, remaining_cost_estimate, motion_from_parent, parent
         )
     }
@@ -174,17 +188,34 @@ impl<P: Policy> Expander<P> {
 pub type ExtrapolatorErrorOf<P> = <<P as Policy>::Extrapolator as Extrapolator<<P as Policy>::Waypoint, VertexOf<<P as Policy>::Graph>>>::Error;
 pub type HeuristicErrorOf<P> = <<P as Policy>::Heuristic as Heuristic>::Error;
 
-#[derive(Debug)]
+impl<P: Policy> ExpanderTrait for Expander<P> {
+    type Node = P::Node;
+    type Goal = P::Goal;
+}
+
 pub enum ExpansionError<P: Policy> {
     Extrapolator(ExtrapolatorErrorOf<P>),
     Heuristic(HeuristicErrorOf<P>),
 }
 
-impl<P: Policy> Closable<P::Node> for Expander<P> {
+impl<P: Policy> Debug for ExpansionError<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExpansionError::Extrapolator(e) => {
+                f.debug_tuple("graph_search::ExpansionError::Extrapolator").field(e).finish()
+            },
+            ExpansionError::Heuristic(e) => {
+                f.debug_tuple("graph_search::ExpansionError::Heuristic").field(e).finish()
+            }
+        }
+    }
+}
+
+impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
 }
 
-impl<P: Policy> Expandable<P::Node, P::Goal> for Expander<P> {
+impl<P: Policy> Expandable for Expander<P> {
     type ExpansionError = ExpansionError<P>;
     type Expansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionError<P>>> + 'a;
 
@@ -220,11 +251,94 @@ impl<P: Policy> Expandable<P::Node, P::Goal> for Expander<P> {
                                 &to_key, goal
                             ).map_err(ExpansionError::Heuristic)?;
 
-                            Ok(h.map(|h| self.make_node(state, to_key, h, trajectory, parent.clone())))
+                            Ok(h.map(|h| self.make_node(state, to_key, h, trajectory, Some(parent.clone()))))
                         })
                     })
                     .filter_map(|r| r.transpose())
             })
+    }
+}
+
+pub struct Solution<P: Policy> {
+    cost: NodeCostOf<P>,
+    motion: Option<Trajectory<P::Waypoint>>,
+}
+
+impl<P: Policy> Debug for Solution<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("motion::graph_search::Solution")
+        .field("cost", &self.cost)
+        .field("motion", &self.motion)
+        .finish()
+    }
+}
+
+impl<P: Policy> Solution<P> {
+    pub fn cost(&self) -> &NodeCostOf<P> {
+        &self.cost
+    }
+
+    pub fn motion(&self) -> &Option<Trajectory<P::Waypoint>> {
+        &self.motion
+    }
+}
+
+impl<P: Policy> node::Weighted for Solution<P> {
+    type Cost = NodeCostOf<P>;
+    fn cost(&self) -> Self::Cost {
+        self.cost
+    }
+}
+
+pub struct ReconstructMotion<W: Waypoint, N: Agent<Action=Trajectory<W>>> {
+    node: Option<Arc<N>>,
+    index: usize,
+    shift: time_point::Duration,
+}
+
+impl<W: Waypoint, N: Agent<Action=Trajectory<W>>> ReconstructMotion<W, N> {
+    pub fn new(root: Arc<N>) -> Self {
+        Self{node: Some(root), index: 0, shift: time_point::Duration::zero()}
+    }
+
+    pub fn shifted(mut self, shift: time_point::Duration) -> Self {
+        self.shift += shift;
+        self
+    }
+}
+
+impl<W: Waypoint, N: Agent<Action=Trajectory<W>>> Iterator for ReconstructMotion<W, N> {
+    type Item = W;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(node) = &self.node {
+                if let Some(motion) = &node.action() {
+                    if self.index < motion.len() {
+                        self.index += 1;
+                        let mut wp = motion[self.index - 1].0.clone();
+                        wp.set_time(*wp.time() + self.shift);
+                        return Some(wp);
+                    }
+                }
+
+                self.node = node.parent().clone();
+                self.index = 0;
+                continue;
+            }
+
+            return None;
+        }
+    }
+}
+
+impl<P: Policy> Solvable for Expander<P> {
+    type Solution = Solution<P>;
+    type SolveError = ();
+
+    fn make_solution(&self, solution_node: &Arc<P::Node>) -> Result<Self::Solution, Self::SolveError> {
+        let motion = Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok();
+        let cost = motion.as_ref().map(|t| self.cost_calculator.compute_cost(t)).unwrap_or(NodeCostOf::<P>::zero());
+        Ok(Solution{cost, motion})
     }
 }
 
@@ -235,8 +349,10 @@ mod tests {
     use crate::node::PartialKeyedClosedSet;
     use crate::motion::{se2, trajectory::DurationCostCalculator};
     use crate::expander::Goal;
-    use crate::directed::simple::Graph as SimpleGraph;
+    use crate::directed::simple::SimpleGraph as SimpleGraph;
+    use std::fmt::Debug;
 
+    #[derive(Debug)]
     struct GoalSE2 {
         vertex: usize,
     }
@@ -283,14 +399,13 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct BadHeuristic<S, G, C> {
-        _s: std::marker::PhantomData<S>,
-        _g: std::marker::PhantomData<G>,
-        _c: std::marker::PhantomData<C>,
+        _ignore: std::marker::PhantomData<(S, G, C)>,
     }
 
 
-    impl<S, G, C: Cost> Heuristic for BadHeuristic<S, G, C> {
+    impl<S: Debug, G: Debug, C: Cost> Heuristic for BadHeuristic<S, G, C> {
         type Error = ();
         type State = S;
         type Goal = G;
@@ -316,7 +431,7 @@ mod tests {
         type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
         type Heuristic = BadHeuristic<StateKey, GoalSE2, i64>;
         type CostCalculator = DurationCostCalculator;
-        type MakeChildNode = MakeChildBuiltinNode<Self::Waypoint, Self::Node>;
+        type MakeNode = MakeBuiltinNode<Self::Waypoint, Self::Node>;
     }
 
     #[test]

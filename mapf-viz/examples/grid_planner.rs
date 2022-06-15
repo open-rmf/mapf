@@ -28,19 +28,25 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    Planner, node::{Weighted, Informed}, motion::Motion, trace::NoTrace,
-    expander::Solvable,
+    trace::NoTrace,
+    planner::make_planner,
+    node::{Weighted, Informed, PartialKeyed, Agent},
+    expander::{Chainable, Constrainable, Solvable},
     progress::BasicProgress,
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{
-        Trajectory,
+        Trajectory, Motion, r2,
+        collide::CircleCollisionConstraint,
+        trajectory::{CostCalculator, DurationCostCalculator},
+        graph_search::{MakeNode, MakeBuiltinNode},
         se2::{
-            Rotation,
-            timed_position::{Waypoint, DifferentialDriveLineFollow}
+            self, Rotation,
+            timed_position::{Waypoint, DifferentialDriveLineFollow},
+            graph_search::{DirectTravelHeuristic, DefaultTimeVariantExpander, StartSE2, GoalSE2},
         },
     },
-    directed::{line_follow_se2, simple},
+    directed::simple::SimpleGraph,
     occupancy::{Grid, SparseGrid, Cell, Point, Vector}
 };
 use mapf_viz::{
@@ -53,6 +59,54 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
+
+pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
+    value: Option<T>,
+    f: F,
+}
+
+impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
+    pub(crate) fn new(f: F) -> Self {
+        Self{value: None, f}
+    }
+
+    pub(crate) fn consider(&mut self, other: &T) -> bool {
+        if let Some(value) = &self.value {
+            if std::cmp::Ordering::Less == (self.f)(other, value) {
+                self.value = Some(other.clone());
+                return true;
+            }
+        } else {
+            self.value = Some(other.clone());
+            return true;
+        }
+
+        return false;
+    }
+
+    pub(crate) fn consider_take(&mut self, other: T) -> bool {
+        if let Some(value) = &self.value {
+            if std::cmp::Ordering::Less == (self.f)(&other, value) {
+                self.value = Some(other);
+                return true;
+            }
+        } else {
+            self.value = Some(other);
+            return true;
+        }
+
+        return false;
+    }
+
+    pub(crate) fn result(self) -> Option<T> {
+        self.value
+    }
+
+    pub(crate) fn has_value(&self) -> bool {
+        self.value.is_some()
+    }
+}
+
 
 fn draw_agent(
     frame: &mut canvas::Frame,
@@ -93,6 +147,28 @@ fn draw_agent(
             }
         }
     );
+}
+
+fn draw_trajectory(
+    frame: &mut canvas::Frame,
+    trajectory: &se2::LinearTrajectory,
+    color: iced::Color,
+) {
+    for [wp0, wp1] in trajectory.array_windows() {
+        let p0 = wp0.position.translation;
+        let p1 = wp1.position.translation;
+        frame.stroke(
+            &Path::line(
+                [p0.x as f32, p0.y as f32].into(),
+                [p1.x as f32, p1.y as f32].into(),
+            ),
+            Stroke{
+                color,
+                width: 3_f32,
+                ..Default::default()
+            }
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -379,6 +455,7 @@ struct SolutionVisual<Message> {
     pub agent_radius: f32,
     pub path_color: iced::Color,
     pub solution: Option<Trajectory<Waypoint>>,
+    pub obstacles: Vec<(f64, se2::LinearTrajectory)>,
     tick_start: Option<TimePoint>,
     now: Option<Duration>,
     _msg: std::marker::PhantomData<Message>,
@@ -386,11 +463,21 @@ struct SolutionVisual<Message> {
 
 impl SolutionVisual<Message> {
     fn new(cell_size: f64, agent_radius: f32, path_color: iced::Color) -> Self {
+
+        let t_obs = Trajectory::from_iter([
+            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(0.0), 10.0, 0.0, 180_f64.to_radians()),
+            // se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(10.0), -5.0, 0.0, 180_f64.to_radians()),
+            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(5.0), 0.0, 0.0, 180_f64.to_radians()),
+            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(8.0), 0.0, 0.0, -90_f64.to_radians()),
+            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(18.0), 0.0, -10.0, -90_f64.to_radians()),
+        ]).unwrap();
+
         Self{
             cell_size,
             agent_radius,
             path_color,
             solution: None,
+            obstacles: vec![(1.0, t_obs)],
             tick_start: None,
             now: None,
             _msg: Default::default(),
@@ -402,15 +489,36 @@ impl SolutionVisual<Message> {
         self.now = Some(Duration::zero());
     }
 
+    fn time_range(&self) -> Option<(TimePoint, TimePoint)> {
+        if let Some(solution) = &self.solution {
+            return Some((solution.initial_time(), solution.finish_time()));
+        } else {
+            let mut earliest = Minimum::new(|l: &TimePoint, r: &TimePoint| l.cmp(r));
+            let mut latest = Minimum::new(|l: &TimePoint, r: &TimePoint| r.cmp(l));
+
+            for (_, obs) in &self.obstacles {
+                earliest.consider(&obs.initial_time());
+                latest.consider(&obs.finish_time());
+            }
+
+            if let (Some(earliest), Some(latest)) = (earliest.result(), latest.result()) {
+                return Some((earliest, latest));
+            }
+        }
+
+        return None;
+    }
+
     fn tick(&mut self) -> bool {
 
-        if let Some(solution) = &self.solution {
+        if let Some((start, end)) = self.time_range() {
+            let duration = end - start;
             if let Some(start) = self.tick_start {
                 let dt = TimePoint::from_std_instant(std::time::Instant::now()) - start;
-                if dt > solution.duration() + Duration::from_secs(1) {
+                if dt > duration + Duration::from_secs(1) {
                     self.reset_time();
-                } else if dt > solution.duration() {
-                    self.now = Some(solution.duration());
+                } else if dt > duration {
+                    self.now = Some(duration);
                 } else {
                     self.now = Some(dt);
                 }
@@ -432,35 +540,41 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         _spatial_bounds: iced::Rectangle,
         _spatial_cursor: canvas::Cursor
     ) {
-        if let Some(trajectory) = &self.solution {
-            for [wp0, wp1] in trajectory.array_windows() {
-                let p0 = wp0.position.translation;
-                let p1 = wp1.position.translation;
-                frame.stroke(
-                    &Path::line(
-                        [p0.x as f32, p0.y as f32].into(),
-                        [p1.x as f32, p1.y as f32].into(),
-                    ),
-                    Stroke{
-                        color: self.path_color,
-                        width: 3_f32,
-                        ..Default::default()
-                    }
-                );
+        if let Some((t0, _)) = self.time_range() {
+            if let Some(trajectory) = &self.solution {
+                draw_trajectory(frame, trajectory, self.path_color);
             }
 
-            if let Some(now) = self.now {
-                let t0 = trajectory.initial_time();
-                if let Ok(p) = trajectory.motion().compute_position(&(t0 + now)) {
-                    draw_agent(
-                        frame,
-                        Point::from(p.translation.vector),
-                        Some(p.rotation.angle()),
-                        self.agent_radius,
-                        self.path_color
-                    );
-                } else {
-                    println!("Unable to compute the position??");
+            for (r, obs) in &self.obstacles {
+                let red = iced::Color::from_rgb(1.0, 0.0, 0.0);
+                draw_trajectory(frame, obs, red);
+
+                if let Some(now) = self.now {
+                    if let Ok(p) = obs.motion().compute_position(&(t0 + now)) {
+                        draw_agent(
+                            frame,
+                            Point::from(p.translation.vector),
+                            Some(p.rotation.angle()),
+                            *r as f32,
+                            red,
+                        );
+                    }
+                }
+            }
+
+            if let Some(trajectory) = &self.solution {
+                if let Some(now) = self.now {
+                    if let Ok(p) = trajectory.motion().compute_position(&(t0 + now)) {
+                        draw_agent(
+                            frame,
+                            Point::from(p.translation.vector),
+                            Some(p.rotation.angle()),
+                            self.agent_radius,
+                            self.path_color
+                        );
+                    } else {
+                        println!("Unable to compute the position??");
+                    }
                 }
             }
         }
@@ -518,11 +632,11 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<BasicProgress<line_follow_se2::SimpleExpander, a_star::Algorithm, NoTrace>>,
+    progress: Option<BasicProgress<DefaultTimeVariantExpander, a_star::Algorithm, NoTrace>>,
     step_progress: button::State,
-    expander: Option<Arc<line_follow_se2::SimpleExpander>>,
+    expander: Option<Arc<DefaultTimeVariantExpander>>,
     debug_on: bool,
-    debug_nodes: Vec<Arc<line_follow_se2::Node<i64>>>,
+    debug_nodes: Vec<Arc<se2::graph_search::Node>>,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
 }
@@ -605,7 +719,7 @@ impl App {
                 self.expander = None;
                 self.debug_nodes.clear();
             } else {
-                self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                // self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.debug_nodes.get(selection) {
                         if let Some(expander) = &self.expander {
@@ -679,21 +793,50 @@ impl App {
                     create_edge(i, j);
                 }
 
-                let graph = Arc::new(simple::Graph::new(vertices, edges));
-                let extrapolation = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                let cost_calculator = Arc::new(line_follow_se2::TimeCostCalculator);
-                let expander = Arc::new(line_follow_se2::SimpleExpander::new(
-                    graph.clone(), extrapolation.clone(), cost_calculator.clone(),
-                    line_follow_se2::EuclideanHeuristic{graph, extrapolation, cost_calculator}
+                let graph = Arc::new(SimpleGraph::new(vertices, edges));
+                let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
+                let cost_calculator = Arc::new(DurationCostCalculator);
+                let heuristic = Arc::new(DirectTravelHeuristic{
+                    graph: graph.clone(),
+                    cost_calculator: cost_calculator.clone(),
+                    extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
+                });
+
+                let expander = Arc::new(DefaultTimeVariantExpander{
+                    graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, node_spawner: Default::default(),
+                });
+
+                let expander = Arc::new(expander.chain_fn_no_err(
+                    move |parent, _| {
+                        let motion = Trajectory::hold(parent.state().clone(), parent.state().time + Duration::from_secs_f64(1.0)).ok().unwrap();
+                        let cost = cost_calculator.compute_cost(&motion);
+                        let spawner = MakeBuiltinNode::<se2::timed_position::Waypoint, se2::graph_search::Node>::default();
+                        [Ok(spawner.make_node(
+                            motion.finish().clone(),
+                            parent.key().unwrap().clone(),
+                            cost,
+                            parent.remaining_cost_estimate(),
+                            Some(motion),
+                            Some(parent.clone()),
+                        ))].into_iter()
+                    }
                 ));
 
-                let planner = Planner::<line_follow_se2::SimpleExpander, a_star::Algorithm>::new(expander.clone());
+                let constraint = Arc::new(CircleCollisionConstraint{
+                    obstacles: self.canvas.program.layers.3.obstacles.clone(),
+                    agent_radius: self.canvas.program.layers.2.agent_radius,
+                });
+
+                let expander = Arc::new(expander.constrain(constraint));
+
+                // let planner = Planner::<line_follow_se2::SimpleExpander, a_star::Algorithm>::new(expander.clone());
+                let planner = make_planner(expander, Arc::new(a_star::Algorithm));
                 let mut progress = planner.plan(
-                    &line_follow_se2::Start{
+                    &StartSE2{
                         vertex: 0,
                         orientation: Rotation::new(0_f64),
                     },
-                    line_follow_se2::Goal{
+                    GoalSE2{
                         vertex: 1,
                         orientation: None,
                     },
@@ -701,9 +844,9 @@ impl App {
 
                 self.debug_step_count = 0;
                 if self.debug_on {
-                    self.progress = Some(progress);
-                    self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
-                    self.expander = Some(expander);
+                    // self.progress = Some(progress);
+                    // self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                    // self.expander = Some(expander);
                 } else {
                     match progress.solve().unwrap() {
                         PlanningStatus::Solved(solution) => {

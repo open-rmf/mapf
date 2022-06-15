@@ -366,12 +366,13 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
     }
 }
 
-pub trait CostCalculator<W: Waypoint> {
+pub trait CostCalculator<W: Waypoint>: std::fmt::Debug {
     type Cost: crate::node::Cost;
 
     fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
 }
 
+#[derive(Debug)]
 pub struct DurationCostCalculator;
 impl<W: Waypoint> CostCalculator<W> for DurationCostCalculator {
     type Cost = i64;

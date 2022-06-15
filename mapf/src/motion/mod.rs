@@ -32,6 +32,8 @@ pub use extrapolator::Extrapolator;
 pub mod graph_search;
 pub mod reach;
 
+pub mod collide;
+
 use time_point::{TimePoint, Duration};
 
 /// The default translational threshold is 1mm
