@@ -148,10 +148,9 @@ impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_posit
             position: *p0,
         };
 
-        let motion = self.extrapolator.extrapolate(&wp0, p1)?;
-        let trajectory = r2::LinearTrajectory::from_iter(motion).ok();
-
-        let cost = trajectory.map(|t| self.cost_calculator.compute_cost(&t)).unwrap_or(C::Cost::zero());
+        let cost = self.extrapolator.make_trajectory(wp0, p1)?
+            .map(|t| self.cost_calculator.compute_cost(&t))
+            .unwrap_or(C::Cost::zero());
         Ok(Some(cost))
     }
 }
@@ -174,17 +173,15 @@ impl Reachable<Node, GoalSE2, se2::timed_position::Waypoint> for ReachForLinearS
             return false;
         })
         .filter_map(|n| goal.orientation.map(|g| (n, g.target)))
-        .map(|(n, target_orientation)| {
+        .filter_map(|(n, target_orientation)| {
             let to_target = se2::Position::from_parts(
                 n.state().position.translation, target_orientation
             );
 
-            let motion = self.extrapolator.extrapolate(n.state(), &to_target)?;
-            Ok(Trajectory::from_iter(
-                [n.state().clone()].into_iter().chain(motion.into_iter())
-            ).ok())
+            self.extrapolator.make_trajectory(
+                n.state().clone(), &to_target
+            ).transpose()
         })
-        .filter_map(|r| r.transpose())
     }
 }
 
@@ -311,13 +308,10 @@ where
                         return Ok((towards_key, wp0, None));
                     }
 
-                    let target = se2::Position::new(p0.coords, dx.y.atan2(dx.x));
-                    let waypoints = self.extrapolator.extrapolate(
-                        &wp0, &target
+                    let trajectory = self.extrapolator.make_trajectory(
+                        wp0.clone(),
+                        &se2::Position::new(p0.coords, dx.y.atan2(dx.x))
                     ).map_err(InitErrorSE2::Extrapolator)?;
-                    let trajectory = Trajectory::from_iter(
-                        [wp0.clone()].into_iter().chain(waypoints)
-                    ).ok();
 
                     Ok((towards_key, wp0, trajectory))
                 })

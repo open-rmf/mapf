@@ -259,14 +259,10 @@ where
                         self.graph.vertex((*key).clone()).map(|target| (key, target))
                     })
                     .map(move |(to_key, to_target)| {
-                        let waypoints = self.extrapolator.extrapolate(
-                            parent.state(),
+                        let trajectory = self.extrapolator.make_trajectory(
+                            parent.state().clone(),
                             to_target
                         ).map_err(ExpansionError::Extrapolator)?;
-
-                        let trajectory = Trajectory::from_iter(
-                            [parent.state().clone()].into_iter().chain(waypoints.into_iter())
-                        ).ok();
                         Ok((parent_key, to_key, trajectory))
                     })
                     .map(move |r| {

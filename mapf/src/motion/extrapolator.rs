@@ -43,15 +43,18 @@ pub trait Extrapolator<W: Waypoint, Target> {
     ///
     /// If no motion is needed to move from the start waypoint to the target,
     /// then Ok(None) will be returned instead of Ok(Trajectory<W>).
+    ///
+    /// Note that this function performs heap allocation whereas extrapolate()
+    /// typically does not (but that depends on the underlying implementation
+    /// of the Extrapolator).
     fn make_trajectory(
         &self,
-        from_waypoint: &W,
+        from_waypoint: W,
         to_target: &Target,
     ) -> Result<Option<Trajectory<W>>, Self::Error> {
-        let start = from_waypoint.clone();
-        let motion = self.extrapolate(from_waypoint, to_target)?;
+        let motion = self.extrapolate(&from_waypoint, to_target)?;
         Ok(Trajectory::from_iter(
-            [start].into_iter().chain(motion.into_iter())
+            [from_waypoint].into_iter().chain(motion.into_iter())
         ).ok())
     }
 }
