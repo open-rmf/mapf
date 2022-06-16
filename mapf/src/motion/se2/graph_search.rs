@@ -22,10 +22,11 @@ use crate::{
         se2, r2,
         graph_search::{Policy, BuiltinNode, Expander, MakeBuiltinNode, Key as GraphSearchKeyTrait},
         trajectory::{CostCalculator, DurationCostCalculator},
+        reach::Reachable,
     },
     expander::{Goal, Initializable},
     node::{
-        Agent, PartialKeyed,
+        Agent, PartialKeyed, Keyed,
         closed_set::{ClosedSet, PartialKeyedClosedSet, TimeVariantPartialKeyedClosetSet},
     },
     heuristic::Heuristic,
@@ -49,7 +50,7 @@ pub struct GoalSE2 {
 
 impl Goal<Node> for GoalSE2 {
     fn is_satisfied(&self, node: &Node) -> bool {
-        if node.key().map(|k| k.vertex() != self.vertex).unwrap_or(false) {
+        if node.partial_key().map(|k| k.vertex() != self.vertex).unwrap_or(false) {
             return false;
         }
 
@@ -59,6 +60,15 @@ impl Goal<Node> for GoalSE2 {
         }).unwrap_or(true)
     }
 }
+
+impl PartialKeyed for GoalSE2 {
+    type Key = usize;
+    fn partial_key(&self) -> Option<&Self::Key> {
+        Some(&self.vertex)
+    }
+}
+
+impl Keyed for GoalSE2 { }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {
@@ -107,17 +117,14 @@ pub struct DirectTravelHeuristic<G: Graph<Vertex=r2::Position, Key=usize>, C: Co
     pub extrapolator: r2::timed_position::LineFollow,
 }
 
-impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_position::Waypoint, Cost=i64>> Heuristic for DirectTravelHeuristic<G, C> {
+impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_position::Waypoint, Cost=i64>> Heuristic<KeySE2, GoalSE2, i64> for DirectTravelHeuristic<G, C> {
     type Error = <r2::timed_position::LineFollow as Extrapolator<r2::timed_position::Waypoint, r2::Position>>::Error;
-    type Cost = i64;
-    type State = KeySE2;
-    type Goal = GoalSE2;
 
     fn estimate_cost(
         &self,
         from_state: &KeySE2,
         to_goal: &GoalSE2
-    ) -> Result<Option<Self::Cost>, Self::Error> {
+    ) -> Result<Option<i64>, Self::Error> {
         let p0 = {
             // Should this actually be an error? The current state is off the
             // graph entirely.
@@ -149,6 +156,38 @@ impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_posit
     }
 }
 
+pub struct ReachForLinearSE2 {
+    extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+}
+
+impl Reachable<Node, GoalSE2, se2::timed_position::Waypoint> for ReachForLinearSE2 {
+    type ReachError = ();
+    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, ()>>;
+
+    fn reach_for<'a>(&'a self, parent: &'a Node, goal: &'a GoalSE2) -> Self::Reaching<'a> {
+        [parent].into_iter()
+        .filter(|n| {
+            if let Some(key) = n.partial_key() {
+                return key.vertex() == goal.vertex;
+            }
+
+            return false;
+        })
+        .filter_map(|n| goal.orientation.map(|g| (n, g.target)))
+        .map(|(n, target_orientation)| {
+            let to_target = se2::Position::from_parts(
+                n.state().position.translation, target_orientation
+            );
+
+            let motion = self.extrapolator.extrapolate(n.state(), &to_target)?;
+            Ok(Trajectory::from_iter(
+                [n.state().clone()].into_iter().chain(motion.into_iter())
+            ).ok())
+        })
+        .filter_map(|r| r.transpose())
+    }
+}
+
 #[derive(Debug)]
 pub struct StartSE2 {
     pub vertex: usize,
@@ -161,7 +200,7 @@ where
     S: ClosedSet<Node>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64>
         + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<State=KeySE2, Goal=GoalSE2, Cost=i64>,
+    H: Heuristic<KeySE2, GoalSE2, i64>,
 {
     _ignore: std::marker::PhantomData<(G, S, C, H)>,
 }
@@ -172,29 +211,66 @@ where
     S: ClosedSet<Node>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64>
         + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<State=KeySE2, Goal=GoalSE2, Cost=i64>,
+    H: Heuristic<KeySE2, GoalSE2, i64>,
 {
     type Waypoint = se2::timed_position::Waypoint;
-    type Goal = GoalSE2;
     type ClosedSet = S;
     type Graph = G;
     type Key = KeySE2;
     type Node = Node;
     type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
     type Heuristic = H;
+    type Reach = ReachForLinearSE2;
     type MakeNode = MakeBuiltinNode<se2::timed_position::Waypoint, Node>;
     type CostCalculator = C;
 }
 
 pub type TimeInvariantExpander<G, C, H> = Expander<LinearSE2Policy<G, PartialKeyedClosedSet<Node>, C, H>>;
 pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub fn make_default_time_invariant_expander(
+    graph: Arc<SimpleGraph<se2::Point>>,
+    extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+) -> Arc<DefaultTimeInvariantExpander> {
+    let cost_calculator = Arc::new(DurationCostCalculator);
+    let heuristic = Arc::new(DirectTravelHeuristic{
+        graph: graph.clone(),
+        cost_calculator: cost_calculator.clone(),
+        extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
+    });
+    let reacher = Arc::new(ReachForLinearSE2{
+        extrapolator: extrapolator.clone(),
+    });
+
+    Arc::new(DefaultTimeInvariantExpander{
+        graph, extrapolator, cost_calculator, heuristic, reacher, node_spawner: Default::default(),
+    })
+}
 
 pub type TimeVariantExpander<G, C, H> = Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node>, C, H>>;
 pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
+pub fn make_default_time_variant_expander(
+    graph: Arc<SimpleGraph<se2::Point>>,
+    extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+) -> Arc<DefaultTimeVariantExpander> {
+    let cost_calculator = Arc::new(DurationCostCalculator);
+    let heuristic = Arc::new(DirectTravelHeuristic{
+        graph: graph.clone(),
+        cost_calculator: cost_calculator.clone(),
+        extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
+    });
+    let reacher = Arc::new(ReachForLinearSE2{
+        extrapolator: extrapolator.clone(),
+    });
+
+    Arc::new(DefaultTimeVariantExpander{
+        graph, extrapolator, cost_calculator, heuristic, reacher, node_spawner: Default::default(),
+    })
+}
+
 
 #[derive(Debug)]
-pub enum InitErrorSE2<H: Heuristic> {
+pub enum InitErrorSE2<H: Heuristic<KeySE2, GoalSE2, i64>> {
     Extrapolator(<se2::timed_position::DifferentialDriveLineFollow as Extrapolator<se2::timed_position::Waypoint, r2::Position>>::Error),
     Heuristic(H::Error)
 }
@@ -204,7 +280,7 @@ where
     G: Graph<Vertex=r2::Position, Key=usize>,
     S: ClosedSet<Node>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64> + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<State=KeySE2, Goal=GoalSE2, Cost=i64>,
+    H: Heuristic<KeySE2, GoalSE2, i64>,
 {
     type InitError = InitErrorSE2<H>;
     type InitialNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node>, Self::InitError>> + 'a;
@@ -279,6 +355,7 @@ mod tests {
         planner::make_planner,
         expander::{Constrainable, Chainable},
         motion::{
+            self,
             graph_search::MakeNode,
             collide::CircleCollisionConstraint,
         },
@@ -332,20 +409,11 @@ mod tests {
 
     #[test]
     fn test_time_invariant_expander() {
-        let graph = Arc::new(make_test_graph());
-        let extrapolator = Arc::new(make_test_extrapolation());
-        let cost_calculator = Arc::new(DurationCostCalculator);
-        let heuristic = Arc::new(DirectTravelHeuristic{
-            graph: graph.clone(),
-            cost_calculator: cost_calculator.clone(),
-            extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
-        });
+        let expander = make_default_time_invariant_expander(
+            Arc::new(make_test_graph()),
+            Arc::new(make_test_extrapolation()),
+        );
 
-        let expander = Arc::new(DefaultTimeInvariantExpander{
-            graph, extrapolator, cost_calculator, heuristic, node_spawner: Default::default(),
-        });
-
-        // let planner = Planner::<DefaultTimeInvariantExpander, a_star::Algorithm>::new(expander);
         let planner = make_planner(expander, Arc::new(a_star::Algorithm));
         let mut progress = planner.plan(
             &StartSE2{
@@ -354,11 +422,11 @@ mod tests {
             },
             GoalSE2{
                 vertex: 8,
-                orientation: None
-                // orientation: Some(OrientationGoal{
-                //     target: se2::Rotation::new(90f64.to_radians()),
-                //     threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD
-                // })
+                // orientation: None
+                orientation: Some(OrientationGoal{
+                    target: se2::Rotation::new(90f64.to_radians()),
+                    threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD
+                })
             },
         ).unwrap();
 
@@ -386,18 +454,12 @@ mod tests {
 
     #[test]
     fn test_time_variant_expander() {
-        let graph = Arc::new(make_test_graph());
-        let extrapolator = Arc::new(make_test_extrapolation());
-        let cost_calculator = Arc::new(DurationCostCalculator);
-        let heuristic = Arc::new(DirectTravelHeuristic{
-            graph: graph.clone(),
-            cost_calculator: cost_calculator.clone(),
-            extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
-        });
+        let expander = make_default_time_variant_expander(
+            Arc::new(make_test_graph()),
+            Arc::new(make_test_extrapolation())
+        );
 
-        let expander = Arc::new(DefaultTimeVariantExpander{
-            graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, node_spawner: Default::default(),
-        });
+        let cost_calculator = expander.cost_calculator.clone();
 
         let expander = Arc::new(expander.chain_fn_no_err(
             move |parent, _| {
@@ -406,7 +468,7 @@ mod tests {
                 let spawner = MakeBuiltinNode::<se2::timed_position::Waypoint, Node>::default();
                 [Ok(spawner.make_node(
                     motion.finish().clone(),
-                    parent.key().unwrap().clone(),
+                    parent.partial_key().unwrap().clone(),
                     cost,
                     parent.remaining_cost_estimate(),
                     Some(motion),

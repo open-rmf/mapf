@@ -19,6 +19,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::ops::Add;
 use std::cmp::Ord;
+use std::fmt::Debug;
 use num::traits::Zero;
 use std::cmp::Ordering;
 use time_point::TimePoint;
@@ -88,8 +89,8 @@ pub trait Reversible: PartialKeyed {
 pub type ReverseOf<N> = <N as Reversible>::Reverse;
 
 /// The set of traits required for a Key
-pub trait Key: Hash + Eq + Clone { }
-impl<T: Hash + Eq + Clone> Key for T { }
+pub trait Key: Hash + Eq + Clone + Debug { }
+impl<T: Hash + Eq + Clone + Debug> Key for T { }
 
 /// A trait for nodes that can sometimes provide a unique key but other times
 /// cannot.
@@ -101,14 +102,19 @@ pub trait PartialKeyed {
     /// If the node cannot be uniquely identified by a key, this will return
     /// None.
     #[must_use]
-    fn key(&self) -> Option<&Self::Key>;
+    fn partial_key(&self) -> Option<&Self::Key>;
 }
 
 /// A trait for nodes that can always provide a unique key. The PartialKeyed
 /// trait must be implemented, and its implementation is what will be used. If
 /// PartialKeyed ever returns None, then generics which use the Keyed trait may
 /// panic.
-pub trait Keyed: PartialKeyed { }
+pub trait Keyed: PartialKeyed {
+    #[must_use]
+    fn key(&self) -> &Self::Key {
+        self.partial_key().unwrap()
+    }
+}
 
 pub struct CostCmp<N: Weighted>(pub Arc<N>);
 

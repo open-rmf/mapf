@@ -17,15 +17,12 @@
 
 use crate::node::Cost;
 
-pub trait Heuristic: std::fmt::Debug {
+pub trait Heuristic<Start, Goal, C: Cost>: std::fmt::Debug {
     type Error: std::fmt::Debug;
-    type State;
-    type Goal;
-    type Cost: Cost;
 
     fn estimate_cost(
         &self,
-        from_state: &Self::State,
-        to_goal: &Self::Goal
-    ) -> Result<Option<Self::Cost>, Self::Error>;
+        from_state: &Start,
+        to_goal: &Goal,
+    ) -> Result<Option<C>, Self::Error>;
 }

@@ -96,7 +96,7 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
     type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
-        if let Some(key) = node.key() {
+        if let Some(key) = node.partial_key() {
             match self.closed_set.entry(key.clone()) {
                 Entry::Occupied(mut occupied) => {
                     if occupied.get().cost() <= node.cost() {
@@ -117,7 +117,7 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
     }
 
     fn status(&self, node: &N) -> ClosedStatus<N> {
-        if let Some(key) = node.key() {
+        if let Some(key) = node.partial_key() {
             match self.closed_set.get(key) {
                 Some(value) => {
                     return ClosedStatus::Closed(value.clone());
@@ -154,7 +154,7 @@ impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeye
     type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
-        if let Some(key) = node.key() {
+        if let Some(key) = node.partial_key() {
             let t_key = node.time().nanos_since_zero / self.time_thresh;
             match self.closed_set.entry(key.clone()) {
                 Entry::Occupied(mut occupied) => {
@@ -186,7 +186,7 @@ impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeye
     }
 
     fn status(&self, node: &N) -> ClosedStatus<N> {
-        if let Some(key) = node.key() {
+        if let Some(key) = node.partial_key() {
             match self.closed_set.get(key) {
                 Some(t_map) => {
                     let t_key = node.time().nanos_since_zero / self.time_thresh;
@@ -229,7 +229,7 @@ mod tests {
     impl PartialKeyed for TestNode {
         type Key = usize;
 
-        fn key(&self) -> Option<&Self::Key> {
+        fn partial_key(&self) -> Option<&Self::Key> {
             Some(&self.graph_index)
         }
     }

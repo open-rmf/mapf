@@ -117,7 +117,7 @@ mod tests {
     impl PartialKeyed for CountingNode {
         type Key = u64;
 
-        fn key(&self) -> Option<&Self::Key> {
+        fn partial_key(&self) -> Option<&Self::Key> {
             Some(&self.value)
         }
     }

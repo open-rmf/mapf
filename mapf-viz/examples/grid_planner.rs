@@ -795,16 +795,8 @@ impl App {
 
                 let graph = Arc::new(SimpleGraph::new(vertices, edges));
                 let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                let cost_calculator = Arc::new(DurationCostCalculator);
-                let heuristic = Arc::new(DirectTravelHeuristic{
-                    graph: graph.clone(),
-                    cost_calculator: cost_calculator.clone(),
-                    extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
-                });
-
-                let expander = Arc::new(DefaultTimeVariantExpander{
-                    graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, node_spawner: Default::default(),
-                });
+                let expander = se2::graph_search::make_default_time_variant_expander(graph, extrapolator);
+                let cost_calculator = expander.cost_calculator.clone();
 
                 let expander = Arc::new(expander.chain_fn_no_err(
                     move |parent, _| {
@@ -813,7 +805,7 @@ impl App {
                         let spawner = MakeBuiltinNode::<se2::timed_position::Waypoint, se2::graph_search::Node>::default();
                         [Ok(spawner.make_node(
                             motion.finish().clone(),
-                            parent.key().unwrap().clone(),
+                            parent.partial_key().unwrap().clone(),
                             cost,
                             parent.remaining_cost_estimate(),
                             Some(motion),

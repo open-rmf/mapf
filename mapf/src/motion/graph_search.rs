@@ -19,10 +19,11 @@ use crate::{
     Heuristic,
     graph::{Graph, Edge, VertexOf, KeyOf},
     expander::{Expander as ExpanderTrait, Goal, Expandable, Closable, Solvable},
-    node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Informed, PathSearch},
+    node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Keyed, Informed, PathSearch},
     motion::{
         Waypoint, Trajectory, Extrapolator,
-        trajectory::CostCalculator
+        trajectory::CostCalculator,
+        reach::Reachable,
     }
 };
 use std::{
@@ -37,20 +38,29 @@ pub trait Key<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
 
 pub trait Policy: Sized {
     type Waypoint: Waypoint;
-    type Goal: Goal<Self::Node>;
     type ClosedSet: ClosedSet<Self::Node>;
     type Graph: Graph;
     type Key: Key<KeyOf<Self::Graph>, Self::Waypoint>;
     type Node: Informed + PartialKeyed<Key=Self::Key> + Agent<State=Self::Waypoint, Action=Trajectory<Self::Waypoint>>;
     type Extrapolator: Extrapolator<Self::Waypoint, VertexOf<Self::Graph>>;
-    type Heuristic: Heuristic<State=<Self::Node as PartialKeyed>::Key, Goal=Self::Goal, Cost=NodeCostOf<Self>>;
+    type Heuristic;
+    type Reach;
     type CostCalculator: CostCalculator<Self::Waypoint, Cost=NodeCostOf<Self>>;
     type MakeNode: MakeNode<Self::Waypoint, Self::Node>;
 }
 
-pub type NodeKeyOf<P> = <<P as Policy>::Node as PartialKeyed>::Key;
-pub type NodeCostOf<P> = <<P as Policy>::Node as Weighted>::Cost;
-pub type GraphKeyOf<P> = <<P as Policy>::Graph as Graph>::Key;
+pub type WaypointOf<P> = <P as Policy>::Waypoint;
+pub type NodeOf<P> = <P as Policy>::Node;
+pub type NodeKeyOf<P> = <NodeOf<P> as PartialKeyed>::Key;
+pub type NodeCostOf<P> = <NodeOf<P> as Weighted>::Cost;
+pub type GraphOf<P> = <P as Policy>::Graph;
+pub type GraphKeyOf<P> = <GraphOf<P> as Graph>::Key;
+pub type ExtrapolatorOf<P> = <P as Policy>::Extrapolator;
+pub type ExtrapolatorErrorOf<P> = <ExtrapolatorOf<P> as Extrapolator<WaypointOf<P>, VertexOf<GraphOf<P>>>>::Error;
+pub type HeuristicOf<P> = <P as Policy>::Heuristic;
+pub type HeuristicErrorOf<P, G> = <HeuristicOf<P> as Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>>::Error;
+pub type ReachOf<P> = <P as Policy>::Reach;
+pub type ReachErrorOf<P, G> = <ReachOf<P> as Reachable<NodeOf<P>, G, WaypointOf<P>>>::ReachError;
 
 pub trait MakeNode<W: Waypoint, N: Informed + PartialKeyed> {
     fn make_node(
@@ -119,10 +129,12 @@ impl<C, K, W: Waypoint> PathSearch for BuiltinNode<C, K, W> {
 
 impl<C, K: node::Key, W: Waypoint> PartialKeyed for BuiltinNode<C, K, W> {
     type Key = K;
-    fn key(&self) -> Option<&Self::Key> {
+    fn partial_key(&self) -> Option<&Self::Key> {
         Some(&self.key)
     }
 }
+
+impl<C, K: node::Key, W: Waypoint> Keyed for BuiltinNode<C, K, W> { }
 
 #[derive(Debug, Clone)]
 pub struct MakeBuiltinNode<W, N> {
@@ -163,6 +175,7 @@ pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoin
     pub extrapolator: Arc<P::Extrapolator>,
     pub cost_calculator: Arc<P::CostCalculator>,
     pub heuristic: Arc<P::Heuristic>,
+    pub reacher: Arc<P::Reach>,
     pub node_spawner: P::MakeNode,
 }
 
@@ -185,19 +198,25 @@ impl<P: Policy> Expander<P> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> 
     }
 }
 
-pub type ExtrapolatorErrorOf<P> = <<P as Policy>::Extrapolator as Extrapolator<<P as Policy>::Waypoint, VertexOf<<P as Policy>::Graph>>>::Error;
-pub type HeuristicErrorOf<P> = <<P as Policy>::Heuristic as Heuristic>::Error;
-
 impl<P: Policy> ExpanderTrait for Expander<P> {
     type Node = P::Node;
 }
 
-pub enum ExpansionError<P: Policy> {
+pub enum ExpansionError<P: Policy, G>
+where
+    P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
+    P::Reach: Reachable<P::Node, G, P::Waypoint>,
+{
     Extrapolator(ExtrapolatorErrorOf<P>),
-    Heuristic(HeuristicErrorOf<P>),
+    Heuristic(HeuristicErrorOf<P, G>),
+    Reach(ReachErrorOf<P, G>),
 }
 
-impl<P: Policy> Debug for ExpansionError<P> {
+impl<P: Policy, G> Debug for ExpansionError<P, G>
+where
+    P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
+    P::Reach: Reachable<P::Node, G, P::Waypoint>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExpansionError::Extrapolator(e) => {
@@ -205,6 +224,9 @@ impl<P: Policy> Debug for ExpansionError<P> {
             },
             ExpansionError::Heuristic(e) => {
                 f.debug_tuple("graph_search::ExpansionError::Heuristic").field(e).finish()
+            },
+            ExpansionError::Reach(e) => {
+                f.debug_tuple("graph_search::ExpansionError::Reach").field(e).finish()
             }
         }
     }
@@ -214,16 +236,21 @@ impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
 }
 
-impl<P: Policy> Expandable<P::Goal> for Expander<P> {
-    type ExpansionError = ExpansionError<P>;
-    type Expansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionError<P>>> + 'a;
+impl<P: Policy, G> Expandable<G> for Expander<P>
+where
+    G: Keyed<Key=GraphKeyOf<P>> + Goal<P::Node>,
+    P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
+    P::Reach: Reachable<P::Node, G, P::Waypoint>,
+{
+    type ExpansionError = ExpansionError<P, G>;
+    type Expansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionError<P, G>>> + 'a;
 
     fn expand<'a>(
         &'a self,
         parent: &'a std::sync::Arc<P::Node>,
-        goal: &'a P::Goal,
+        goal: &'a G,
     ) -> Self::Expansion<'a> {
-        [parent.key()].into_iter()
+        [parent.partial_key()].into_iter()
             .filter_map(|x| x)
             .flat_map(move |parent_key| {
                 self.graph.edges_from_vertex((*parent_key).clone().into()).into_iter()
@@ -255,6 +282,22 @@ impl<P: Policy> Expandable<P::Goal> for Expander<P> {
                     })
                     .filter_map(|r| r.transpose())
             })
+            .chain(
+                [parent.partial_key()].into_iter()
+                .filter_map(|x| x)
+                .flat_map(|parent_key| {
+                    self.reacher.reach_for(parent.as_ref(), goal).into_iter()
+                    .map(|r| {
+                        r.and_then(|trajectory| {
+                            // We assume the goal is reached, because otherwise
+                            // the Reachable trait was implemented incorrectly.
+                            let state = trajectory.finish().clone();
+                            let to_key = parent_key.make_child(goal.key(), &state);
+                            Ok(self.make_node(state, to_key, NodeCostOf::<P>::zero(), Some(trajectory), Some(parent.clone())))
+                        }).map_err(ExpansionError::Reach)
+                    })
+                })
+            )
     }
 }
 
@@ -346,7 +389,7 @@ mod tests {
 
     use super::*;
     use crate::node::PartialKeyedClosedSet;
-    use crate::motion::{se2, trajectory::DurationCostCalculator};
+    use crate::motion::{se2, trajectory::DurationCostCalculator, reach::NoReach};
     use crate::expander::Goal;
     use crate::directed::simple::SimpleGraph as SimpleGraph;
     use std::fmt::Debug;
@@ -364,6 +407,15 @@ mod tests {
             return key == self.vertex;
         }
     }
+
+    impl PartialKeyed for GoalSE2 {
+        type Key = usize;
+        fn partial_key(&self) -> Option<&Self::Key> {
+            Some(&self.vertex)
+        }
+    }
+
+    impl Keyed for GoalSE2 { }
 
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     pub enum Side {
@@ -399,22 +451,11 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct BadHeuristic<S, G, C> {
-        _ignore: std::marker::PhantomData<(S, G, C)>,
-    }
-
-
-    impl<S: Debug, G: Debug, C: Cost> Heuristic for BadHeuristic<S, G, C> {
+    struct BadHeuristic;
+    impl<S: Debug, G: Debug, C: Cost> Heuristic<S, G, C> for BadHeuristic {
         type Error = ();
-        type State = S;
-        type Goal = G;
-        type Cost = C;
-        fn estimate_cost(
-            &self,
-            from_state: &Self::State,
-            to_goal: &Self::Goal,
-        ) -> Result<Option<Self::Cost>, Self::Error> {
-            Ok(Some(Self::Cost::zero()))
+        fn estimate_cost(&self, _: &S, _: &G) -> Result<Option<C>, Self::Error> {
+            Ok(Some(C::zero()))
         }
     }
 
@@ -422,13 +463,13 @@ mod tests {
     struct PolicySE2;
     impl Policy for PolicySE2 {
         type Waypoint = se2::timed_position::Waypoint;
-        type Goal = GoalSE2;
         type ClosedSet = PartialKeyedClosedSet<NodeSE2>;
         type Key = StateKey;
         type Node = NodeSE2;
         type Graph = SimpleGraph<se2::Point>;
         type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
-        type Heuristic = BadHeuristic<StateKey, GoalSE2, i64>;
+        type Heuristic = BadHeuristic;
+        type Reach = NoReach;
         type CostCalculator = DurationCostCalculator;
         type MakeNode = MakeBuiltinNode<Self::Waypoint, Self::Node>;
     }

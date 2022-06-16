@@ -138,10 +138,10 @@ where
         // effort.
         for forward in self.expander.start(from, to) {
             let forward = forward.map_err(InitError::Forward)?;
-            let key_f = forward.key().unwrap();
+            let key_f = forward.key();
             for reverse in self.reverser.start(to, from) {
                 let reverse = reverse.map_err(InitError::Reverse)?;
-                let key_r = reverse.key().unwrap();
+                let key_r = reverse.key();
                 {
                     let guard = self.solutions.lock().map_err(|_| ExpansionError::PoisonedMutex)?;
                     if let Some(prior) = guard.borrow().get(&(key_f.clone(), key_r.clone())) {
@@ -210,11 +210,11 @@ where
 
         let mut connections = ConnectionMap::<E, S, G>::new();
         for node in forward_tree.closed().iter() {
-            connections.insert(node.key().unwrap().clone(), (Some(node.clone()), None));
+            connections.insert(node.key().clone(), (Some(node.clone()), None));
         }
 
         for node in reverse_tree.closed().iter() {
-            let connection = connections.entry(node.key().unwrap().clone())
+            let connection = connections.entry(node.key().clone())
                 .or_insert((None, Some(node.clone())));
 
             if let (Some(f), Some(r)) = connection {
@@ -231,7 +231,7 @@ where
         while !forward_tree.is_exhausted() || !reverse_tree.is_exhausted() {
             for node in forward_tree.grow() {
                 let node = node.map_err(ExpansionError::Forward)?;
-                let connection = connections.entry(node.key().unwrap().clone())
+                let connection = connections.entry(node.key().clone())
                     .or_insert((Some(node), None));
 
                 if let (Some(f), Some(r)) = connection {
@@ -247,7 +247,7 @@ where
 
             for node in reverse_tree.grow() {
                 let node = node.map_err(ExpansionError::Reverse)?;
-                let connection = connections.entry(node.key().unwrap().clone())
+                let connection = connections.entry(node.key().clone())
                     .or_insert((None, Some(node)));
 
                 if let (Some(f), Some(r)) = connection {
