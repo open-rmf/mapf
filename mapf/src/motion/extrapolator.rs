@@ -15,7 +15,7 @@
  *
 */
 
-use super::Waypoint;
+use crate::motion::{Waypoint, Trajectory};
 
 /// Can extrapolate the motion from a waypoint towards a target.
 pub trait Extrapolator<W: Waypoint, Target> {
@@ -36,6 +36,24 @@ pub trait Extrapolator<W: Waypoint, Target> {
         from_waypoint: &W,
         to_target: &Target,
     ) -> Result<Self::Extrapolation<'a>, Self::Error>;
+
+    /// Extrapolate a trajectory from a waypoint to the given target.
+    ///
+    /// If an extrapolation error happens, that will be forwarded to the result.
+    ///
+    /// If no motion is needed to move from the start waypoint to the target,
+    /// then Ok(None) will be returned instead of Ok(Trajectory<W>).
+    fn make_trajectory(
+        &self,
+        from_waypoint: &W,
+        to_target: &Target,
+    ) -> Result<Option<Trajectory<W>>, Self::Error> {
+        let start = from_waypoint.clone();
+        let motion = self.extrapolate(from_waypoint, to_target)?;
+        Ok(Trajectory::from_iter(
+            [start].into_iter().chain(motion.into_iter())
+        ).ok())
+    }
 }
 
 /// Trait to indicate that the extrapolation can be reversed and provide
