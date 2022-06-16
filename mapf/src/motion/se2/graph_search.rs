@@ -492,7 +492,10 @@ mod tests {
             },
             GoalSE2{
                 vertex: 8,
-                orientation: None
+                orientation: Some(OrientationGoal{
+                    target: se2::Rotation::new(-90_f64.to_radians()),
+                    threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD
+                })
             },
         ).unwrap();
 
