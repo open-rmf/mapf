@@ -16,7 +16,7 @@
 */
 
 use super::algorithm::{self, Status};
-use super::expander::{Expander, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
+use super::expander::{Expander, Expandable, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use super::Trace;
 use super::node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::BinaryHeap;
@@ -31,7 +31,6 @@ where
     closed_set: <E as Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<NodeCmp<N>>>,
     expander: Arc<E>,
-    goal: E::Goal,
 }
 
 impl<N: Informed, E: Expander<Node=N> + Closable> Memory<N, E> {
@@ -72,18 +71,16 @@ where
     type InitError = ();
     type StepError = ();
 
-    fn initialize<S, T: Trace<N>>(
+    fn initialize<S, G: Goal<E::Node>, T: Trace<N>>(
         &self,
         expander: Arc<E>,
         start: &S,
-        goal: E::Goal,
+        goal: &G,
         tracker: &mut T
-    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitErrorOf<E, S>>>
-    where E: Initializable<S>
-    {
-
+    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> {
         let mut queue = BinaryHeap::default();
-        for node in expander.start(start, Some(&goal)) {
+        for node in expander.start(start, goal) {
             let node = node.map_err(algorithm::InitError::Expander)?;
             tracker.expanded_to(&node);
             queue.push(Reverse(NodeCmp(node)));
@@ -93,30 +90,31 @@ where
             closed_set: E::ClosedSet::default(),
             queue,
             expander,
-            goal
         });
     }
 
-    fn step<T: Trace<N>>(
+    fn step<G: Goal<E::Node>, T: Trace<N>>(
         &self,
-        storage: &mut Self::Memory,
-        tracker: &mut T
-    ) -> Result<Status<E>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>> {
+        memory: &mut Self::Memory,
+        goal: &G,
+        tracker: &mut T,
+    ) -> Result<Status<E>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    where E: Expandable<G> {
 
-        if let Some(top) = storage.queue.pop().map(|x| x.0.0) {
-            if storage.goal.is_satisfied(&top) {
+        if let Some(top) = memory.queue.pop().map(|x| x.0.0) {
+            if goal.is_satisfied(&top) {
                 tracker.solution_found_from(&top);
-                let solution = storage.expander.make_solution(&top).map_err(algorithm::StepError::Solve)?;
+                let solution = memory.expander.make_solution(&top).map_err(algorithm::StepError::Solve)?;
                 return Ok(Status::Solved(solution));
             }
 
-            if let CloseResult::Closed = storage.closed_set.close(&top) {
+            if let CloseResult::Closed = memory.closed_set.close(&top) {
                 tracker.expanded_from(&top);
-                for next in storage.expander.expand(&top, Some(&storage.goal)) {
+                for next in memory.expander.expand(&top, goal) {
                     let next = next.map_err(algorithm::StepError::Expansion)?;
-                    if let ClosedStatus::Open = storage.closed_set.status(next.as_ref()) {
+                    if let ClosedStatus::Open = memory.closed_set.status(next.as_ref()) {
                         tracker.expanded_to(&next);
-                        storage.queue.push(Reverse(NodeCmp(next)));
+                        memory.queue.push(Reverse(NodeCmp(next)));
                     }
                 }
             }

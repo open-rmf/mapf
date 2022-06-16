@@ -18,7 +18,7 @@
 use std::sync::Arc;
 use crate::{
     progress::{Factory as ProgressFactory, BasicFactory},
-    expander::{Initializable, Solvable, InitErrorOf},
+    expander::{Goal, Initializable, Expandable, Solvable, InitErrorOf},
     algorithm::{Algorithm, InitError},
     trace::{Trace, NoTrace},
 };
@@ -62,34 +62,33 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
     }
 
     /// Begin planning from the start conditions to the goal conditions.
-    pub fn plan<S>(
+    pub fn plan<S, G: Goal<E::Node>>(
         &self,
         start: &S,
-        goal: E::Goal,
-    ) -> Result<F::Progress<NoTrace>, InitError<A::InitError, InitErrorOf<E, S>>>
-    where E: Initializable<S> {
+        goal: G,
+    ) -> Result<F::Progress<G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> {
         let mut trace = NoTrace::default();
         let memory = self.algorithm.initialize(
-            self.expander.clone(), &start, goal, &mut trace
+            self.expander.clone(), &start, &goal, &mut trace
         )?;
 
-        Ok(F::new(memory, self.algorithm.clone(), trace))
+        Ok(F::new(memory, self.algorithm.clone(), goal, trace))
     }
 
     /// Perform a planning job while tracking the behavior, usually for debugging purposes.
-    pub fn trace<S, T: Trace<E::Node>>(
+    pub fn trace<S, G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
         start: &S,
-        goal: E::Goal,
+        goal: G,
         mut trace: T
-    ) -> Result<F::Progress<T>, InitError<A::InitError, InitErrorOf<E, S>>>
-    where E: Initializable<S> {
-
+    ) -> Result<F::Progress<G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> + Expandable<G> {
         let memory = self.algorithm.initialize(
-            self.expander.clone(), &start, goal, &mut trace
+            self.expander.clone(), &start, &goal, &mut trace
         )?;
 
-        Ok(F::new(memory, self.algorithm.clone(), trace))
+        Ok(F::new(memory, self.algorithm.clone(), goal, trace))
     }
 }
 
@@ -105,7 +104,7 @@ mod tests {
 
     use super::*;
     use crate::node::{self, traits::*};
-    use crate::expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf};
+    use crate::expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf, ExpansionErrorOf};
     use crate::algorithm::{WeightSorted, Memory, Status, StepError};
 
     struct CountingNode {
@@ -184,58 +183,54 @@ mod tests {
         }
     }
 
-    impl Initializable<u64> for CountingExpander {
+    impl Initializable<u64, CountingGoal> for CountingExpander {
         type InitError = ();
         type InitialNodes<'a> = CountingExpansion<'a>;
 
-        fn start<'a>(&'a self, start: &u64, goal: Option<&CountingGoal>) -> Self::InitialNodes<'a> {
-            if let Some(goal) = goal {
-                if *start <= goal.value {
-                    return CountingExpansion {
-                        next_node: Some(
-                            Arc::new(
-                                CountingNode{
-                                    value: *start,
-                                    cost: 0u64,
-                                    remaining_cost_estimate: goal.value - start,
-                                    parent: None
-                                }
-                            )
-                        ),
-                        _ignore: Default::default(),
-                    };
-                }
+        fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialNodes<'a> {
+            if *start <= goal.value {
+                return CountingExpansion {
+                    next_node: Some(
+                        Arc::new(
+                            CountingNode{
+                                value: *start,
+                                cost: 0u64,
+                                remaining_cost_estimate: goal.value - start,
+                                parent: None
+                            }
+                        )
+                    ),
+                    _ignore: Default::default(),
+                };
             }
 
             return CountingExpansion{next_node: None, _ignore: Default::default()};
         }
     }
 
-    impl Expandable for CountingExpander {
+    impl Expandable<CountingGoal> for CountingExpander {
         type ExpansionError = ();
         type Expansion<'a> = CountingExpansion<'a>;
 
         fn expand<'a>(
             &'a self,
             parent: &Arc<CountingNode>,
-            goal: Option<&CountingGoal>,
+            goal: &CountingGoal,
         ) -> Self::Expansion<'a> {
-            if let Some(goal) = goal {
-                if parent.value <= goal.value {
-                    return CountingExpansion{
-                        next_node: Some(
-                            Arc::new(
-                                CountingNode{
-                                    value: parent.value+1,
-                                    cost: parent.cost+1,
-                                    remaining_cost_estimate: goal.value - parent.value,
-                                    parent: Some(parent.clone())
-                                }
-                            )
-                        ),
-                        _ignore: Default::default(),
-                    };
-                }
+            if parent.value <= goal.value {
+                return CountingExpansion{
+                    next_node: Some(
+                        Arc::new(
+                            CountingNode{
+                                value: parent.value+1,
+                                cost: parent.cost+1,
+                                remaining_cost_estimate: goal.value - parent.value,
+                                parent: Some(parent.clone())
+                            }
+                        )
+                    ),
+                    _ignore: Default::default(),
+                };
             }
 
             return CountingExpansion{next_node: None, _ignore: Default::default()};
@@ -270,23 +265,21 @@ mod tests {
     }
 
     impl Expander for CountingExpander {
-        type Goal = CountingGoal;
         type Node = CountingNode;
     }
 
-    struct TestAlgorithmStorage<Expander: Solvable> {
+    struct TestAlgorithmMemory<Expander: Solvable> {
         expander: Arc<Expander>,
-        goal: Expander::Goal,
         queue: std::vec::Vec<Arc<Expander::Node>>,
     }
 
-    impl<E: Solvable> Memory for TestAlgorithmStorage<E> {
+    impl<E: Solvable> Memory for TestAlgorithmMemory<E> {
         fn node_count(&self) -> usize {
             return self.queue.len();
         }
     }
 
-    impl<E: Expander<Node: Weighted> + Solvable> WeightSorted<E> for TestAlgorithmStorage<E> {
+    impl<E: Expander<Node: Weighted> + Solvable> WeightSorted<E> for TestAlgorithmMemory<E> {
         fn top_cost_estimate(&self) -> Option<CostOf<E>> {
             self.queue.last().map(|v| v.cost())
         }
@@ -295,43 +288,45 @@ mod tests {
     #[derive(Default, Debug)]
     struct TestAlgorithm;
     impl<E: Solvable> Algorithm<E> for TestAlgorithm {
-        type Memory = TestAlgorithmStorage<E>;
+        type Memory = TestAlgorithmMemory<E>;
         type InitError = ();
         type StepError = ();
 
-        fn initialize<S, T: Trace<E::Node>>(
+        fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
             &self,
             expander: Arc<E>,
             start: &S,
-            goal: E::Goal,
+            goal: &G,
             trace: &mut T,
-        ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S>>>
-        where E: Initializable<S> {
+        ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S, G>>>
+        where E: Initializable<S, G> {
             let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
-            for node in expander.start(start, Some(&goal)) {
+            for node in expander.start(start, goal) {
                 let node = node.map_err(InitError::Expander)?;
                 trace.expanded_to(&node);
                 queue.push(node);
             }
 
-            Ok(Self::Memory{expander, goal, queue})
+            Ok(Self::Memory{expander, queue})
         }
 
-        fn step<T: Trace<E::Node>>(
+        fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
             &self,
             memory: &mut Self::Memory,
+            goal: &G,
             tracker: &mut T
-        ) -> Result<Status<E>, StepError<Self::StepError, E::ExpansionError, E::SolveError>> {
+        ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>>
+        where E: Expandable<G> {
             let top_opt = memory.queue.pop();
             if let Some(top) = top_opt {
-                if memory.goal.is_satisfied(&top) {
+                if goal.is_satisfied(&top) {
                     tracker.solution_found_from(&top);
                     return memory.expander.make_solution(&top)
                         .map(Status::Solved)
                         .map_err(StepError::Solve);
                 }
 
-                for node in memory.expander.expand(&top, Some(&memory.goal)) {
+                for node in memory.expander.expand(&top, goal) {
                     let node = node.map_err(StepError::Expansion)?;
                     memory.queue.push(node);
                 }

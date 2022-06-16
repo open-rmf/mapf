@@ -15,7 +15,7 @@
  *
 */
 
-use crate::expander::{Expander, Expandable, Closable, ExpansionErrorOf};
+use crate::expander::{Aimless, Closable};
 use crate::node::{Weighted, CostCmp, ClosedSet};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -27,13 +27,13 @@ use num::Zero;
 ///
 /// For a bidirectional variant that leverages the tree while maintaining its
 /// search effort for efficient reuse, see the Garden class in the tree module.
-pub struct Tree<E: Expander<Node: Weighted> + Closable> {
+pub struct Tree<E: Aimless<Node: Weighted> + Closable> {
     closed_set: <E as Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<CostCmp<E::Node>>>,
     expander: Arc<E>,
 }
 
-impl<E: Expander<Node: Weighted> + Closable> Tree<E> {
+impl<E: Aimless<Node: Weighted> + Closable> Tree<E> {
 
     pub fn new(root: Arc<E::Node>, expander: Arc<E>) -> Self {
         let mut closed_set = <E as Closable>::ClosedSet::default();
@@ -67,15 +67,15 @@ impl<E: Expander<Node: Weighted> + Closable> Tree<E> {
     }
 }
 
-pub struct Growth<'a, E: Expander<Node: Weighted> + Closable> {
+pub struct Growth<'a, E: Aimless<Node: Weighted> + Closable> {
     tree: &'a mut Tree<E>,
     expected_cost: <E::Node as Weighted>::Cost,
 }
 
-impl<'a, N: Weighted, E: Expander<Node=N> + Expandable + Closable> Iterator for Growth<'a, E> {
-    type Item = Result<Arc<N>, ExpansionErrorOf<E>>;
+impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> {
+    type Item = Result<Arc<N>, E::AimlessError>;
 
-    fn next(&mut self) -> Option<Result<Arc<N>, ExpansionErrorOf<E>>> {
+    fn next(&mut self) -> Option<Result<Arc<N>, E::AimlessError>> {
         while !self.tree.queue.is_empty() {
             if let Some(top) = self.tree.queue.peek() {
                 // First check if the cost is tied for the expected cost.
@@ -83,7 +83,7 @@ impl<'a, N: Weighted, E: Expander<Node=N> + Expandable + Closable> Iterator for 
                 if top.0.0.cost().eq(&self.expected_cost) {
                     if let Some(top) = self.tree.queue.pop().map(|n| n.0.0) {
                         if self.tree.closed_set.close(&top).accepted() {
-                            for child in self.tree.expander.expand(&top, None) {
+                            for child in self.tree.expander.aimless_expand(&top) {
                                 match child {
                                     Ok(child) => {
                                         if self.tree.closed_set.status(&child).is_open() {

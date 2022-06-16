@@ -85,6 +85,8 @@ pub trait Reversible: PartialKeyed {
     type Reverse: PartialKeyed<Key=<Self as PartialKeyed>::Key>;
 }
 
+pub type ReverseOf<N> = <N as Reversible>::Reverse;
+
 /// The set of traits required for a Key
 pub trait Key: Hash + Eq + Clone { }
 impl<T: Hash + Eq + Clone> Key for T { }

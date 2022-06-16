@@ -116,40 +116,36 @@ impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_posit
     fn estimate_cost(
         &self,
         from_state: &KeySE2,
-        to_goal: Option<&GoalSE2>
+        to_goal: &GoalSE2
     ) -> Result<Option<Self::Cost>, Self::Error> {
-        if let Some(to_goal) = to_goal {
-            let p0 = {
-                // Should this actually be an error? The current state is off the
-                // graph entirely.
-                if let Some(p) = self.graph.vertex(from_state.vertex()) {
-                    p
-                } else {
-                    return Ok(None);
-                }
-            };
+        let p0 = {
+            // Should this actually be an error? The current state is off the
+            // graph entirely.
+            if let Some(p) = self.graph.vertex(from_state.vertex()) {
+                p
+            } else {
+                return Ok(None);
+            }
+        };
 
-            let p1 = {
-                if let Some(p) = self.graph.vertex(to_goal.vertex) {
-                    p
-                } else {
-                    return Ok(None);
-                }
-            };
+        let p1 = {
+            if let Some(p) = self.graph.vertex(to_goal.vertex) {
+                p
+            } else {
+                return Ok(None);
+            }
+        };
 
-            let wp0 = r2::timed_position::Waypoint{
-                time: TimePoint::zero(),
-                position: *p0,
-            };
+        let wp0 = r2::timed_position::Waypoint{
+            time: TimePoint::zero(),
+            position: *p0,
+        };
 
-            let motion = self.extrapolator.extrapolate(&wp0, p1)?;
-            let trajectory = r2::LinearTrajectory::from_iter(motion).ok();
+        let motion = self.extrapolator.extrapolate(&wp0, p1)?;
+        let trajectory = r2::LinearTrajectory::from_iter(motion).ok();
 
-            let cost = trajectory.map(|t| self.cost_calculator.compute_cost(&t)).unwrap_or(C::Cost::zero());
-            return Ok(Some(cost));
-        }
-
-        Ok(Some(C::Cost::zero()))
+        let cost = trajectory.map(|t| self.cost_calculator.compute_cost(&t)).unwrap_or(C::Cost::zero());
+        Ok(Some(cost))
     }
 }
 
@@ -203,7 +199,7 @@ pub enum InitErrorSE2<H: Heuristic> {
     Heuristic(H::Error)
 }
 
-impl<G, S, C, H> Initializable<StartSE2> for Expander<LinearSE2Policy<G, S, C, H>>
+impl<G, S, C, H> Initializable<StartSE2, GoalSE2> for Expander<LinearSE2Policy<G, S, C, H>>
 where
     G: Graph<Vertex=r2::Position, Key=usize>,
     S: ClosedSet<Node>,
@@ -216,7 +212,7 @@ where
     fn start<'a>(
         &'a self,
         start: &'a StartSE2,
-        goal: Option<&'a GoalSE2>,
+        goal: &'a GoalSE2,
     ) -> Self::InitialNodes<'a> {
         [self.graph.vertex(start.vertex)].into_iter()
         .filter_map(|x| x)

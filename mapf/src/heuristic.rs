@@ -26,6 +26,6 @@ pub trait Heuristic: std::fmt::Debug {
     fn estimate_cost(
         &self,
         from_state: &Self::State,
-        to_goal: Option<&Self::Goal>
+        to_goal: &Self::Goal
     ) -> Result<Option<Self::Cost>, Self::Error>;
 }

@@ -21,7 +21,7 @@ use crate::expander::{
 use std::sync::Arc;
 use std::fmt::Debug;
 
-pub struct Chain<E: Expandable, C: Expandable<Node=E::Node, Goal=E::Goal>> {
+pub struct Chain<E: Expander, C: Expander<Node=E::Node>> {
     base: Arc<E>,
     chain_with: Arc<C>,
 }
@@ -44,46 +44,43 @@ impl<E: Debug, C: Debug> Debug for ChainErr<E, C> {
     }
 }
 
-impl<E: Expandable, C: Expandable<Node=E::Node, Goal=E::Goal>> Expander for Chain<E, C> {
+impl<E: Expander, C: Expander<Node=E::Node>> Expander for Chain<E, C> {
     type Node = E::Node;
-    type Goal = E::Goal;
 }
 
-impl<E: Expandable, C: Expandable<Node=E::Node, Goal=E::Goal>> Expandable for Chain<E, C> {
+impl<E: Expandable<G>, C: Expandable<G, Node=E::Node>, G: Goal<E::Node>> Expandable<G> for Chain<E, C> {
     type ExpansionError = ChainErr<E::ExpansionError, C::ExpansionError>;
-    type Expansion<'a> where Self: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::ExpansionError>> + 'a;
+    type Expansion<'a> where Self: 'a, G: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::ExpansionError>> + 'a;
 
     fn expand<'a>(
         &'a self,
         parent: &'a Arc<Self::Node>,
-        goal: Option<&'a Self::Goal>,
+        goal: &'a G,
     ) -> Self::Expansion<'a> {
         self.base.expand(parent, goal).into_iter().map(|r| r.map_err(ChainErr::Base))
         .chain(self.chain_with.expand(parent, goal).into_iter().map(|r| r.map_err(ChainErr::Next)))
     }
 }
 
-impl<E, C, S> Initializable<S> for Chain<E, C>
+impl<E, C, S, G> Initializable<S, G> for Chain<E, C>
 where
-    E: Expandable + Initializable<S>,
-    C: Expandable<Node=E::Node, Goal=E::Goal>,
+    E: Initializable<S, G> + Expandable<G>,
+    C: Expandable<G, Node=E::Node>,
+    G: Goal<E::Node>,
 {
     type InitError = E::InitError;
-    type InitialNodes<'a> where Self: 'a, S: 'a = E::InitialNodes<'a>;
+    type InitialNodes<'a> where Self: 'a, S: 'a, G: 'a = E::InitialNodes<'a>;
 
     fn start<'a>(
         &'a self,
         start: &'a S,
-        goal: Option<&'a Self::Goal>,
+        goal: &'a G,
     ) -> Self::InitialNodes<'a> {
         self.base.start(start, goal)
     }
 }
 
-impl<E, C> Solvable for Chain<E, C>
-where
-    E: Solvable,
-    C: Expandable<Node=E::Node, Goal=E::Goal>,
+impl<E: Solvable, C: Expander<Node=E::Node>> Solvable for Chain<E, C>
 {
     type Solution = E::Solution;
     type SolveError = E::SolveError;
@@ -92,81 +89,82 @@ where
     }
 }
 
-impl<E, C> Closable for Chain<E, C>
-where
-    E: Closable + Expandable,
-    C: Expandable<Node=E::Node, Goal=E::Goal>,
-{
+impl<E: Closable, C: Expander<Node=E::Node>> Closable for Chain<E, C> {
     type ClosedSet = E::ClosedSet;
 }
 
-impl<E, C> Reversible for Chain<E, C>
+impl<E, C, S, G> Reversible<S, G> for Chain<E, C>
 where
-    E: Expandable + Reversible,
-    C: Expandable<Node=E::Node, Goal=E::Goal> + Reversible<Reverse: Expander<Node=ReverseNodeOf<E>, Goal=ReverseGoalOf<E>>>,
+    E: Reversible<S, G>,
+    C: Expander<Node=E::Node> + Reversible<S, G>,
+    S: Goal<ReverseNodeOf<E, S, G>>,
+    G: Goal<E::Node>,
 {
     type ReversalError = ChainErr<E::ReversalError, C::ReversalError>;
     type Reverse = Chain<E::Reverse, C::Reverse>;
 
-    fn reverse(&self) -> Result<Arc<<Self as Reversible>::Reverse>, Self::ReversalError> {
+    fn reverse(&self) -> Result<Arc<ReverseOf<Self, S, G>>, Self::ReversalError> {
         let base = self.base.reverse().map_err(ChainErr::Base)?;
         let chain_with = self.chain_with.reverse().map_err(ChainErr::Next)?;
         Ok(Arc::new(Chain{base, chain_with}))
     }
 }
 
-impl<E, C> BidirSolvable for Chain<E, C>
+impl<E: BidirSolvable<S, G>, C, S, G> BidirSolvable<S, G> for Chain<E, C>
 where
-    E: BidirSolvable,
-    C: Expandable<Node=E::Node, Goal=E::Goal> + Reversible<Reverse: Expander<Node=ReverseNodeOf<E>, Goal=ReverseGoalOf<E>>>,
+    C: Expander<Node=E::Node> + Reversible<S, G>,
+    S: Goal<ReverseNodeOf<E, S, G>>,
+    G: Goal<E::Node>,
 {
     type BidirSolveError = E::BidirSolveError;
 
     fn make_bidirectional_solution(
         &self,
         forward_solution_node: &Arc<Self::Node>,
-        reverse_solution_node: &Arc<ReverseNodeOf<Self>>
+        reverse_solution_node: &Arc<ReverseNodeOf<Self, S, G>>
     ) -> Result<Self::Solution, Self::BidirSolveError> {
         self.base.make_bidirectional_solution(forward_solution_node, reverse_solution_node)
     }
 }
 
 pub trait Chainable {
-    type Base: Expandable;
-    fn chain<C: Expandable<Node=NodeOf<Self::Base>, Goal=GoalOf<Self::Base>>>(
+    type Base: Expander;
+    fn chain<C: Expander<Node=NodeOf<Self::Base>>>(
         self,
         chain_with: Arc<C>
     ) -> Chain<Self::Base, C>;
 
-    fn chain_fn<Err, Exp, F>(
+    fn chain_fn<G, Err, Exp, F>(
         self,
         closure: F
-    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, GoalOf<Self::Base>, Err, Exp, F>>
+    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, G, Err, Exp, F>>
     where
         Self: Sized,
+        G: Goal<NodeOf<Self::Base>>,
         Err: Debug,
         Exp: IntoIterator<Item=Result<Arc<NodeOf<Self::Base>>, Err>>,
-        F: Fn(&Arc<NodeOf<Self::Base>>, Option<&GoalOf<Self::Base>>) -> Exp,
+        F: Fn(&Arc<NodeOf<Self::Base>>, &G) -> Exp,
     {
         self.chain(Arc::new(Closure::new(closure)))
     }
 
-    fn chain_fn_no_err<Exp, F>(
+    fn chain_fn_no_err<G, Exp, F>(
         self,
         closure: F
-    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, GoalOf<Self::Base>, (), Exp, F>>
+    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, G, (), Exp, F>>
     where
         Self: Sized,
+        G: Goal<NodeOf<Self::Base>>,
         Exp: IntoIterator<Item=Result<Arc<NodeOf<Self::Base>>, ()>>,
-        F: Fn(&Arc<NodeOf<Self::Base>>, Option<&GoalOf<Self::Base>>) -> Exp,
+        F: Fn(&Arc<NodeOf<Self::Base>>, &G) -> Exp,
     {
         self.chain(Arc::new(Closure::new(closure)))
     }
 }
 
-impl<E: Expandable> Chainable for Arc<E> {
+impl<E: Expander> Chainable for Arc<E> {
     type Base = E;
-    fn chain<C: Expandable<Node=NodeOf<Self::Base>, Goal=GoalOf<Self::Base>>>(
+    fn chain<C: Expander<Node=E::Node>>(
         self,
         chain_with: Arc<C>
     ) -> Chain<Self::Base, C> {

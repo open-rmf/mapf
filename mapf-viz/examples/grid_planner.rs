@@ -632,7 +632,7 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<BasicProgress<DefaultTimeVariantExpander, a_star::Algorithm, NoTrace>>,
+    progress: Option<BasicProgress<DefaultTimeVariantExpander, a_star::Algorithm, GoalSE2, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<DefaultTimeVariantExpander>>,
     debug_on: bool,

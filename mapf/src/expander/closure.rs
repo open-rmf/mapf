@@ -19,7 +19,7 @@ use crate::expander::traits::*;
 use std::sync::Arc;
 use std::fmt::Debug;
 
-pub struct Closure<N, G: Goal<N>, Err: Debug, Exp: IntoIterator<Item=Result<Arc<N>, Err>>, F: Fn(&Arc<N>, Option<&G>) -> Exp> {
+pub struct Closure<N, G: Goal<N>, Err: Debug, Exp: IntoIterator<Item=Result<Arc<N>, Err>>, F: Fn(&Arc<N>, &G) -> Exp> {
     closure: F,
     _ignore: std::marker::PhantomData<(N, G, Err, Exp)>,
 }
@@ -29,7 +29,7 @@ where
     G: Goal<N>,
     Err: Debug,
     Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
-    F: Fn(&Arc<N>, Option<&G>) -> Exp
+    F: Fn(&Arc<N>, &G) -> Exp
 {
     pub fn new(closure: F) -> Self {
         Self{closure, _ignore: Default::default()}
@@ -41,18 +41,17 @@ where
     G: Goal<N>,
     Err: Debug,
     Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
-    F: Fn(&Arc<N>, Option<&G>) -> Exp,
+    F: Fn(&Arc<N>, &G) -> Exp,
 {
     type Node = N;
-    type Goal = G;
 }
 
-impl<N, G, Err, Exp, F> Expandable for Closure<N, G, Err, Exp, F>
+impl<N, G, Err, Exp, F> Expandable<G> for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
     Err: Debug,
     Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
-    F: Fn(&Arc<N>, Option<&G>) -> Exp
+    F: Fn(&Arc<N>, &G) -> Exp
 {
     type ExpansionError = Err;
     type Expansion<'a> where Self: 'a = Exp;
@@ -60,7 +59,7 @@ where
     fn expand<'a>(
         &'a self,
         parent: &'a Arc<Self::Node>,
-        goal: Option<&'a Self::Goal>,
+        goal: &'a G,
     ) -> Self::Expansion<'a> {
         (self.closure)(parent, goal)
     }

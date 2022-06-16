@@ -16,7 +16,7 @@
 */
 
 use crate::node;
-use crate::expander::{Expander, Solvable, Initializable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
+use crate::expander::{Goal, Expander, Initializable, Expandable, Solvable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
 use crate::trace::Trace;
 use std::sync::Arc;
 use std::fmt::Debug;
@@ -56,18 +56,20 @@ pub trait Algorithm<E: Solvable>: Sized {
     type InitError: std::fmt::Debug;
     type StepError: std::fmt::Debug;
 
-    fn initialize<S, T: Trace<E::Node>>(
+    fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
         expander: Arc<E>,
         start: &S,
-        goal: E::Goal,
+        goal: &G,
         trace: &mut T,
-    ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S>>>
-    where E: Initializable<S>;
+    ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G>;
 
-    fn step<T: Trace<E::Node>>(
+    fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
-        storage: &mut Self::Memory,
+        memory: &mut Self::Memory,
+        goal: &G,
         tracker: &mut T,
-    ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E>, SolveErrorOf<E>>>;
+    ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    where E: Expandable<G>;
 }

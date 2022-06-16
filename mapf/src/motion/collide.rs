@@ -207,7 +207,7 @@ impl<N, G> Constraint<N, G> for CircleCollisionConstraint
 where N: Agent<Action=Trajectory<se2::timed_position::Waypoint>>
 {
     type ConstraintError = ();
-    fn constrain(&self, node: Arc<N>, _: Option<&G>) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
+    fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
         if let Some(trajectory) = node.action() {
             for (r_obs, t_obs) in &self.obstacles {
                 if detect_collision_circles_se2(

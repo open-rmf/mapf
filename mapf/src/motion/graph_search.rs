@@ -190,7 +190,6 @@ pub type HeuristicErrorOf<P> = <<P as Policy>::Heuristic as Heuristic>::Error;
 
 impl<P: Policy> ExpanderTrait for Expander<P> {
     type Node = P::Node;
-    type Goal = P::Goal;
 }
 
 pub enum ExpansionError<P: Policy> {
@@ -215,14 +214,14 @@ impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
 }
 
-impl<P: Policy> Expandable for Expander<P> {
+impl<P: Policy> Expandable<P::Goal> for Expander<P> {
     type ExpansionError = ExpansionError<P>;
     type Expansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionError<P>>> + 'a;
 
     fn expand<'a>(
         &'a self,
         parent: &'a std::sync::Arc<P::Node>,
-        goal: Option<&'a P::Goal>,
+        goal: &'a P::Goal,
     ) -> Self::Expansion<'a> {
         [parent.key()].into_iter()
             .filter_map(|x| x)
@@ -413,7 +412,7 @@ mod tests {
         fn estimate_cost(
             &self,
             from_state: &Self::State,
-            to_goal: Option<&Self::Goal>
+            to_goal: &Self::Goal,
         ) -> Result<Option<Self::Cost>, Self::Error> {
             Ok(Some(Self::Cost::zero()))
         }
