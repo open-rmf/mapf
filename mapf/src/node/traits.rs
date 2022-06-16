@@ -34,12 +34,10 @@ pub trait PathSearch {
 /// A trait for nodes that represent an agent that is taking actions which change
 /// its state. This is expected to be used with the PathSearch trait where the
 /// path represents a sequence of actions take by the agent.
-pub trait Agent: PathSearch {
-    type State;
-    fn state(&self) -> &Self::State;
+pub trait Agent<State, Action>: PathSearch {
+    fn state(&self) -> &State;
 
-    type Action;
-    fn action(&self) -> &Option<Self::Action>;
+    fn action(&self) -> &Option<Action>;
 }
 
 /// A trait that describes what is needed to define a cost.
@@ -162,3 +160,4 @@ impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
 impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
 
 pub type KeyOf<N> = <N as PartialKeyed>::Key;
+pub type CostOf<N> = <N as Weighted>::Cost;

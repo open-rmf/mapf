@@ -174,12 +174,12 @@ pub trait Constrainable {
     fn constrain<C>(
         self,
         constrain_with: Arc<C>,
-    ) -> Constrain<Self::Base, C>;
+    ) -> Arc<Constrain<Self::Base, C>>;
 
     fn constrain_fn<G, Err, F>(
         self,
         closure: F,
-    ) -> Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, G, Err, F>>
+    ) -> Arc<Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, G, Err, F>>>
     where
         Self: Sized,
         Err: Debug,
@@ -195,7 +195,7 @@ impl<E: Expander> Constrainable for Arc<E> {
     fn constrain<C>(
         self,
         constrain_with: Arc<C>,
-    ) -> Constrain<Self::Base, C> {
-        Constrain{base: self, constrain_with}
+    ) -> Arc<Constrain<Self::Base, C>> {
+        Arc::new(Constrain{base: self, constrain_with})
     }
 }

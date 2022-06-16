@@ -204,7 +204,7 @@ pub struct CircleCollisionConstraint {
 }
 
 impl<N, G> Constraint<N, G> for CircleCollisionConstraint
-where N: Agent<Action=Trajectory<se2::timed_position::Waypoint>>
+where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
 {
     type ConstraintError = ();
     fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {

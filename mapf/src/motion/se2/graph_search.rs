@@ -23,8 +23,10 @@ use crate::{
         graph_search::{Policy, BuiltinNode, Expander, MakeBuiltinNode, Key as GraphSearchKeyTrait},
         trajectory::{CostCalculator, DurationCostCalculator},
         reach::Reachable,
+        movable::StartingPoint,
+        hold::Hold,
     },
-    expander::{Goal, Initializable},
+    expander::{Goal, Initializable, Chain, Chainable},
     node::{
         Agent, PartialKeyed, Keyed,
         closed_set::{ClosedSet, PartialKeyedClosedSet, TimeVariantPartialKeyedClosetSet},
@@ -218,7 +220,6 @@ where
     type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
     type Heuristic = H;
     type Reach = ReachForLinearSE2;
-    type MakeNode = MakeBuiltinNode<se2::timed_position::Waypoint, Node>;
     type CostCalculator = C;
 }
 
@@ -239,11 +240,15 @@ pub fn make_default_time_invariant_expander(
     });
 
     Arc::new(DefaultTimeInvariantExpander{
-        graph, extrapolator, cost_calculator, heuristic, reacher, node_spawner: Default::default(),
+        graph, extrapolator, cost_calculator, heuristic, reacher,
     })
 }
 
-pub type TimeVariantExpander<G, C, H> = Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node>, C, H>>;
+pub type TimeVariantExpander<G, C, H> =
+    Chain<
+        Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node>, C, H>>,
+        Hold<se2::timed_position::Waypoint, C, Node>,
+    >;
 pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
 pub fn make_default_time_variant_expander(
@@ -260,9 +265,17 @@ pub fn make_default_time_variant_expander(
         extrapolator: extrapolator.clone(),
     });
 
-    Arc::new(DefaultTimeVariantExpander{
-        graph, extrapolator, cost_calculator, heuristic, reacher, node_spawner: Default::default(),
-    })
+    Arc::new(Expander::<
+        LinearSE2Policy<SimpleGraph<se2::Point>,
+        TimeVariantPartialKeyedClosetSet<Node>,
+        DurationCostCalculator,
+        DirectTravelHeuristic<SimpleGraph<se2::Point>,
+        DurationCostCalculator>>
+    >{
+        graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher,
+    }).chain(
+        Arc::new(Hold::new(cost_calculator))
+    )
 }
 
 
@@ -327,7 +340,7 @@ where
                             &key, goal,
                         ).map_err(InitErrorSE2::Heuristic)?;
 
-                        Ok(h.map(|h| self.make_node(state, key, h, trajectory, None)))
+                        Ok(h.map(|h| self.start_from(state, Some(key), h, trajectory)))
                     })
                 })
                 .filter_map(|r| r.transpose())
@@ -350,8 +363,8 @@ mod tests {
         expander::{Constrainable, Chainable},
         motion::{
             self,
-            graph_search::MakeNode,
             collide::CircleCollisionConstraint,
+            hold::Hold,
         },
         node::Informed,
     };
@@ -453,30 +466,12 @@ mod tests {
             Arc::new(make_test_extrapolation())
         );
 
-        let cost_calculator = expander.cost_calculator.clone();
-
-        let expander = Arc::new(expander.chain_fn_no_err(
-            move |parent, _| {
-                let motion = Trajectory::hold(parent.state().clone(), parent.state().time + Duration::from_secs_f64(1.0)).ok().unwrap();
-                let cost = cost_calculator.compute_cost(&motion);
-                let spawner = MakeBuiltinNode::<se2::timed_position::Waypoint, Node>::default();
-                [Ok(spawner.make_node(
-                    motion.finish().clone(),
-                    parent.partial_key().unwrap().clone(),
-                    cost,
-                    parent.remaining_cost_estimate(),
-                    Some(motion),
-                    Some(parent.clone()),
-                ))].into_iter()
-            }
-        ));
-
         let constraint = Arc::new(CircleCollisionConstraint{
             obstacles: vec![(0.5, make_test_trajectory())],
             agent_radius: 1.0,
         });
 
-        let expander = Arc::new(expander.constrain(constraint));
+        let expander = expander.constrain(constraint);
 
         let planner = make_planner(expander, Arc::new(a_star::Algorithm));
         let mut progress = planner.plan(

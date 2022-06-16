@@ -32,7 +32,8 @@ pub use extrapolator::Extrapolator;
 pub mod graph_search;
 
 pub mod reach;
-
+pub mod hold;
+pub mod movable;
 
 pub mod collide;
 

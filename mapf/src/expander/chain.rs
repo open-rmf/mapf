@@ -132,12 +132,12 @@ pub trait Chainable {
     fn chain<C: Expander<Node=NodeOf<Self::Base>>>(
         self,
         chain_with: Arc<C>
-    ) -> Chain<Self::Base, C>;
+    ) -> Arc<Chain<Self::Base, C>>;
 
     fn chain_fn<G, Err, Exp, F>(
         self,
         closure: F
-    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, G, Err, Exp, F>>
+    ) -> Arc<Chain<Self::Base, Closure<NodeOf<Self::Base>, G, Err, Exp, F>>>
     where
         Self: Sized,
         G: Goal<NodeOf<Self::Base>>,
@@ -151,7 +151,7 @@ pub trait Chainable {
     fn chain_fn_no_err<G, Exp, F>(
         self,
         closure: F
-    ) -> Chain<Self::Base, Closure<NodeOf<Self::Base>, G, (), Exp, F>>
+    ) -> Arc<Chain<Self::Base, Closure<NodeOf<Self::Base>, G, (), Exp, F>>>
     where
         Self: Sized,
         G: Goal<NodeOf<Self::Base>>,
@@ -167,7 +167,7 @@ impl<E: Expander> Chainable for Arc<E> {
     fn chain<C: Expander<Node=E::Node>>(
         self,
         chain_with: Arc<C>
-    ) -> Chain<Self::Base, C> {
-        Chain{base: self, chain_with}
+    ) -> Arc<Chain<Self::Base, C>> {
+        Arc::new(Chain{base: self, chain_with})
     }
 }

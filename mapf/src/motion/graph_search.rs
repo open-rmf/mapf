@@ -24,6 +24,7 @@ use crate::{
         Waypoint, Trajectory, Extrapolator,
         trajectory::CostCalculator,
         reach::Reachable,
+        movable::{Movable, ArcMovable, StartingPoint},
     }
 };
 use std::{
@@ -41,12 +42,11 @@ pub trait Policy: Sized {
     type ClosedSet: ClosedSet<Self::Node>;
     type Graph: Graph;
     type Key: Key<KeyOf<Self::Graph>, Self::Waypoint>;
-    type Node: Informed + PartialKeyed<Key=Self::Key> + Agent<State=Self::Waypoint, Action=Trajectory<Self::Waypoint>>;
+    type Node: Informed + Movable<Self::Waypoint, Key=Self::Key>;
     type Extrapolator: Extrapolator<Self::Waypoint, VertexOf<Self::Graph>>;
     type Heuristic;
     type Reach;
     type CostCalculator: CostCalculator<Self::Waypoint, Cost=NodeCostOf<Self>>;
-    type MakeNode: MakeNode<Self::Waypoint, Self::Node>;
 }
 
 pub type WaypointOf<P> = <P as Policy>::Waypoint;
@@ -62,25 +62,13 @@ pub type HeuristicErrorOf<P, G> = <HeuristicOf<P> as Heuristic<NodeKeyOf<P>, G, 
 pub type ReachOf<P> = <P as Policy>::Reach;
 pub type ReachErrorOf<P, G> = <ReachOf<P> as Reachable<NodeOf<P>, G, WaypointOf<P>>>::ReachError;
 
-pub trait MakeNode<W: Waypoint, N: Informed + PartialKeyed> {
-    fn make_node(
-        &self,
-        waypoint: W,
-        key: N::Key,
-        cost_from_parent: N::Cost,
-        remaining_cost_estimate: N::Cost,
-        motion_from_parent: Option<Trajectory<W>>,
-        parent: Option<Arc<N>>,
-    ) -> Arc<N>;
-}
-
 #[derive(Debug)]
 pub struct BuiltinNode<C, K, W: Waypoint> {
     cost: C,
     remaining_cost_estimate: C,
     total_cost_estimate: C,
     state: W,
-    key: K,
+    key: Option<K>,
     motion_from_parent: Option<Trajectory<W>>,
     parent: Option<Arc<Self>>,
 }
@@ -108,15 +96,12 @@ impl<C: Cost, K, W: Waypoint> Timed for BuiltinNode<C, K, W> {
     }
 }
 
-impl<C, K, W: Waypoint> Agent for BuiltinNode<C, K, W> {
-    type State = W;
-    type Action = Trajectory<W>;
-
-    fn state(&self) -> &Self::State {
+impl<C, K, W: Waypoint> Agent<W, Trajectory<W>> for BuiltinNode<C, K, W> {
+    fn state(&self) -> &W {
         &self.state
     }
 
-    fn action(&self) -> &Option<Self::Action> {
+    fn action(&self) -> &Option<Trajectory<W>> {
         &self.motion_from_parent
     }
 }
@@ -130,11 +115,54 @@ impl<C, K, W: Waypoint> PathSearch for BuiltinNode<C, K, W> {
 impl<C, K: node::Key, W: Waypoint> PartialKeyed for BuiltinNode<C, K, W> {
     type Key = K;
     fn partial_key(&self) -> Option<&Self::Key> {
-        Some(&self.key)
+        self.key.as_ref()
     }
 }
 
-impl<C, K: node::Key, W: Waypoint> Keyed for BuiltinNode<C, K, W> { }
+impl<C: Cost, K: node::Key, W: Waypoint> Movable<W> for BuiltinNode<C, K, W> {
+    fn move_from(
+        parent: Arc<Self>,
+        key: Option<K>,
+        cost_from_parent: C,
+        remaining_cost_estimate: C,
+        motion_from_parent: Option<Trajectory<W>>,
+    ) -> Self {
+        let cost = parent.cost + cost_from_parent;
+        let state = motion_from_parent.as_ref().map(
+            |t| t.finish().clone()
+        ).unwrap_or(parent.state().clone());
+
+        BuiltinNode{
+            cost,
+            remaining_cost_estimate,
+            total_cost_estimate: cost + remaining_cost_estimate,
+            state,
+            key,
+            motion_from_parent,
+            parent: Some(parent)
+        }
+    }
+}
+
+impl<C: Cost, K: node::Key, W: Waypoint> StartingPoint<C, K, W> for BuiltinNode<C, K, W> {
+    fn start_from(
+        state: W,
+        key: Option<K>,
+        initial_cost: C,
+        remaining_cost_estimate: C,
+        initial_motion: Option<Trajectory<W>>,
+    ) -> Self {
+        BuiltinNode{
+            cost: initial_cost,
+            remaining_cost_estimate,
+            total_cost_estimate: initial_cost + remaining_cost_estimate,
+            state,
+            key,
+            motion_from_parent: initial_motion,
+            parent: None
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MakeBuiltinNode<W, N> {
@@ -147,54 +175,51 @@ impl<W, N> Default for MakeBuiltinNode<W, N> {
     }
 }
 
-impl<C: Cost, K: node::Key, W: Waypoint> MakeNode<W, BuiltinNode<C, K, W>> for MakeBuiltinNode<W, BuiltinNode<C, K, W>> {
-    fn make_node(
-        &self,
-        waypoint: W,
-        key: K,
-        cost_from_parent: C,
-        remaining_cost_estimate:C,
-        motion: Option<Trajectory<W>>,
-        parent: Option<Arc<BuiltinNode<C, K, W>>>,
-    ) -> Arc<BuiltinNode<C, K, W>> {
-        let cost = parent.as_ref().map(|p| p.cost()).unwrap_or(C::zero()) + cost_from_parent;
-        Arc::new(BuiltinNode{
-            cost,
-            remaining_cost_estimate,
-            total_cost_estimate: cost + remaining_cost_estimate,
-            state: waypoint,
-            key,
-            motion_from_parent: motion,
-            parent,
-        })
-    }
-}
-
 pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
     pub graph: Arc<P::Graph>,
     pub extrapolator: Arc<P::Extrapolator>,
     pub cost_calculator: Arc<P::CostCalculator>,
     pub heuristic: Arc<P::Heuristic>,
     pub reacher: Arc<P::Reach>,
-    pub node_spawner: P::MakeNode,
 }
 
-impl<P: Policy> Expander<P> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
-    pub fn make_node(
+impl<P: Policy> Expander<P>
+where
+    NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint>,
+{
+    pub fn make_child_node(
         &self,
-        state: P::Waypoint,
-        key: NodeKeyOf<P>,
+        key: Option<NodeKeyOf<P>>,
         remaining_cost_estimate: NodeCostOf<P>,
         motion_from_parent: Option<Trajectory<P::Waypoint>>,
-        parent: Option<Arc<P::Node>>,
+        parent: Arc<P::Node>,
     ) -> Arc<P::Node> {
         let cost_from_parent = motion_from_parent.as_ref().map(
             |t| self.cost_calculator.compute_cost(t)
         ).unwrap_or(NodeCostOf::<P>::zero());
 
-        self.node_spawner.make_node(
-            state, key, cost_from_parent, remaining_cost_estimate, motion_from_parent, parent
+        parent.moved_with(
+            key, cost_from_parent, remaining_cost_estimate, motion_from_parent
         )
+    }
+
+    pub fn start_from(
+        &self,
+        state: WaypointOf<P>,
+        key: Option<NodeKeyOf<P>>,
+        remaining_cost_estimate: NodeCostOf<P>,
+        initial_motion: Option<Trajectory<P::Waypoint>>,
+    ) -> Arc<P::Node>
+    where
+        P::Node: StartingPoint<NodeCostOf<P>, P::Key, P::Waypoint>,
+    {
+        let initial_cost = initial_motion.as_ref().map(
+            |t| self.cost_calculator.compute_cost(t)
+        ).unwrap_or(NodeCostOf::<P>::zero());
+
+        Arc::new(<P::Node as StartingPoint<NodeCostOf<P>, P::Key, P::Waypoint>>::start_from(
+            state, key, initial_cost, remaining_cost_estimate, initial_motion
+        ))
     }
 }
 
@@ -267,13 +292,15 @@ where
                     })
                     .map(move |r| {
                         r.and_then(|(parent_key, to_key, trajectory)| {
-                            let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state()).clone();
-                            let to_key = parent_key.make_child(&to_key, &state);
+                            let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());
+                            let to_key = parent_key.make_child(&to_key, state);
                             let h = self.heuristic.estimate_cost(
                                 &to_key, goal
                             ).map_err(ExpansionError::Heuristic)?;
 
-                            Ok(h.map(|h| self.make_node(state, to_key, h, trajectory, Some(parent.clone()))))
+                            Ok(h.map(|h| self.make_child_node(
+                                Some(to_key), h, trajectory, parent.clone())
+                            ))
                         })
                     })
                     .filter_map(|r| r.transpose())
@@ -287,9 +314,10 @@ where
                         r.and_then(|trajectory| {
                             // We assume the goal is reached, because otherwise
                             // the Reachable trait was implemented incorrectly.
-                            let state = trajectory.finish().clone();
-                            let to_key = parent_key.make_child(goal.key(), &state);
-                            Ok(self.make_node(state, to_key, NodeCostOf::<P>::zero(), Some(trajectory), Some(parent.clone())))
+                            let to_key = parent_key.make_child(goal.key(), trajectory.finish());
+                            Ok(self.make_child_node(
+                                Some(to_key), NodeCostOf::<P>::zero(), Some(trajectory), parent.clone()
+                            ))
                         }).map_err(ExpansionError::Reach)
                     })
                 })
@@ -328,15 +356,16 @@ impl<P: Policy> node::Weighted for Solution<P> {
     }
 }
 
-pub struct ReconstructMotion<W: Waypoint, N: Agent<Action=Trajectory<W>>> {
+pub struct ReconstructMotion<N, W> {
     node: Option<Arc<N>>,
     index: usize,
     shift: time_point::Duration,
+    _ignore: std::marker::PhantomData<W>,
 }
 
-impl<W: Waypoint, N: Agent<Action=Trajectory<W>>> ReconstructMotion<W, N> {
+impl<W: Waypoint, N: Agent<W, Trajectory<W>>> ReconstructMotion<N, W> {
     pub fn new(root: Arc<N>) -> Self {
-        Self{node: Some(root), index: 0, shift: time_point::Duration::zero()}
+        Self{node: Some(root), index: 0, shift: time_point::Duration::zero(), _ignore: Default::default()}
     }
 
     pub fn shifted(mut self, shift: time_point::Duration) -> Self {
@@ -345,7 +374,7 @@ impl<W: Waypoint, N: Agent<Action=Trajectory<W>>> ReconstructMotion<W, N> {
     }
 }
 
-impl<W: Waypoint, N: Agent<Action=Trajectory<W>>> Iterator for ReconstructMotion<W, N> {
+impl<W: Waypoint, N: Agent<W, Trajectory<W>>> Iterator for ReconstructMotion<N, W> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -399,8 +428,12 @@ mod tests {
 
     impl Goal<NodeSE2> for GoalSE2 {
         fn is_satisfied(&self, node: &NodeSE2) -> bool {
-            let key: usize = node.key.clone().into();
-            return key == self.vertex;
+            if let Some(key) = &node.key {
+                let key: usize = key.clone().into();
+                return key == self.vertex;
+            }
+
+            return false;
         }
     }
 
@@ -467,7 +500,6 @@ mod tests {
         type Heuristic = BadHeuristic;
         type Reach = NoReach;
         type CostCalculator = DurationCostCalculator;
-        type MakeNode = MakeBuiltinNode<Self::Waypoint, Self::Node>;
     }
 
     #[test]
