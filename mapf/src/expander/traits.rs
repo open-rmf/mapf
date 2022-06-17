@@ -99,7 +99,7 @@ where
     type ReversalError: std::fmt::Debug;
 
     /// Create a reverse expander for the algorithm to use.
-    fn reverse(&self) -> Result<Arc<Self::Reverse>, Self::ReversalError>;
+    fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
 }
 
 /// A trait for reversible expanders that can find solutions where forward

@@ -29,12 +29,12 @@ pub trait Constraint<N, G> {
 pub trait ReversibleConstraint<N: node::Reversible, S: Goal<N::Reverse>> {
     type ReversalError: std::fmt::Debug;
     type Reverse: Constraint<N::Reverse, S>;
-    fn reverse(&self) -> Result<Arc<Self::Reverse>, Self::ReversalError>;
+    fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
 }
 
 pub struct Constrain<E: Expander, C> {
-    base: Arc<E>,
-    constrain_with: Arc<C>,
+    base: E,
+    constrain_with: C,
 }
 
 pub enum ConstrainErr<E: Debug, C: Debug> {
@@ -115,10 +115,10 @@ where
     type ReversalError = ConstrainErr<E::ReversalError, C::ReversalError>;
     type Reverse = Constrain<E::Reverse, C::Reverse>;
 
-    fn reverse(&self) -> Result<Arc<ReverseOf<Self, S, G>>, Self::ReversalError> {
+    fn reverse(&self) -> Result<ReverseOf<Self, S, G>, Self::ReversalError> {
         let base = self.base.reverse().map_err(ConstrainErr::Base)?;
         let constrain_with = self.constrain_with.reverse().map_err(ConstrainErr::Constraint)?;
-        Ok(Arc::new(Constrain{base, constrain_with}))
+        Ok(Constrain{base, constrain_with})
     }
 }
 
@@ -173,29 +173,29 @@ pub trait Constrainable {
     type Base: Expander;
     fn constrain<C>(
         self,
-        constrain_with: Arc<C>,
-    ) -> Arc<Constrain<Self::Base, C>>;
+        constrain_with: C,
+    ) -> Constrain<Self::Base, C>;
 
     fn constrain_fn<G, Err, F>(
         self,
         closure: F,
-    ) -> Arc<Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, G, Err, F>>>
+    ) -> Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, G, Err, F>>
     where
         Self: Sized,
         Err: Debug,
         G: Goal<NodeOf<Self::Base>>,
         F: Fn(Arc<NodeOf<Self::Base>>, &G) -> Result<Option<Arc<NodeOf<Self::Base>>>, Err>,
     {
-        self.constrain(Arc::new(ConstraintClosure::new(closure)))
+        self.constrain(ConstraintClosure::new(closure))
     }
 }
 
-impl<E: Expander> Constrainable for Arc<E> {
+impl<E: Expander> Constrainable for E {
     type Base = E;
     fn constrain<C>(
         self,
-        constrain_with: Arc<C>,
-    ) -> Arc<Constrain<Self::Base, C>> {
-        Arc::new(Constrain{base: self, constrain_with})
+        constrain_with: C,
+    ) -> Constrain<Self::Base, C> {
+        Constrain{base: self, constrain_with}
     }
 }

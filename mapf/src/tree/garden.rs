@@ -119,6 +119,7 @@ where
 {
     pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E, S, G>> {
         let reverser = expander.reverse()?;
+        let reverser = Arc::new(reverser);
         Ok(Self{
             expander,
             reverser,

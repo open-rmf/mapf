@@ -254,7 +254,7 @@ pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point
 pub fn make_default_time_variant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
-) -> Arc<DefaultTimeVariantExpander> {
+) -> DefaultTimeVariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(DirectTravelHeuristic{
         graph: graph.clone(),
@@ -265,7 +265,7 @@ pub fn make_default_time_variant_expander(
         extrapolator: extrapolator.clone(),
     });
 
-    Arc::new(Expander::<
+    Expander::<
         LinearSE2Policy<SimpleGraph<se2::Point>,
         TimeVariantPartialKeyedClosetSet<Node>,
         DurationCostCalculator,
@@ -273,11 +273,10 @@ pub fn make_default_time_variant_expander(
         DurationCostCalculator>>
     >{
         graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher,
-    }).chain(
-        Arc::new(Hold::new(cost_calculator))
+    }.chain(
+        Hold::new(cost_calculator)
     )
 }
-
 
 #[derive(Debug)]
 pub enum InitErrorSE2<H: Heuristic<KeySE2, GoalSE2, i64>> {
@@ -466,12 +465,14 @@ mod tests {
             Arc::new(make_test_extrapolation())
         );
 
-        let constraint = Arc::new(CircleCollisionConstraint{
-            obstacles: vec![(0.5, make_test_trajectory())],
-            agent_radius: 1.0,
-        });
-
-        let expander = expander.constrain(constraint);
+        let expander = Arc::new(
+            expander.constrain(
+                CircleCollisionConstraint{
+                    obstacles: vec![(0.5, make_test_trajectory())],
+                    agent_radius: 1.0,
+                }
+            )
+        );
 
         let planner = make_planner(expander, Arc::new(a_star::Algorithm));
         let mut progress = planner.plan(

@@ -31,19 +31,17 @@ use mapf::{
     trace::NoTrace,
     planner::make_planner,
     node::{Weighted, Informed, PartialKeyed, Agent},
-    expander::{Chainable, Constrainable, Solvable},
+    expander::{Constrain, Constrainable, Solvable},
     progress::BasicProgress,
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{
-        Trajectory, Motion, r2,
+        Trajectory, Motion,
         collide::CircleCollisionConstraint,
-        trajectory::{CostCalculator, DurationCostCalculator},
-        graph_search::{MakeNode, MakeBuiltinNode},
         se2::{
             self, Rotation,
             timed_position::{Waypoint, DifferentialDriveLineFollow},
-            graph_search::{DirectTravelHeuristic, DefaultTimeVariantExpander, StartSE2, GoalSE2},
+            graph_search::{DefaultTimeVariantExpander, StartSE2, GoalSE2},
         },
     },
     directed::simple::SimpleGraph,
@@ -623,6 +621,8 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
+type ObsAvoidance = Constrain<DefaultTimeVariantExpander, CircleCollisionConstraint>;
+
 struct App {
     robot_size_slider: slider::State,
     max_robot_radius: f32,
@@ -632,9 +632,9 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<BasicProgress<DefaultTimeVariantExpander, a_star::Algorithm, GoalSE2, NoTrace>>,
+    progress: Option<BasicProgress<ObsAvoidance, a_star::Algorithm, GoalSE2, NoTrace>>,
     step_progress: button::State,
-    expander: Option<Arc<DefaultTimeVariantExpander>>,
+    expander: Option<Arc<ObsAvoidance>>,
     debug_on: bool,
     debug_nodes: Vec<Arc<se2::graph_search::Node>>,
     debug_step_count: u64,
@@ -719,7 +719,10 @@ impl App {
                 self.expander = None;
                 self.debug_nodes.clear();
             } else {
-                // self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
+                self.debug_nodes = self.progress.as_ref().unwrap().memory()
+                    .queue().clone().into_iter_sorted()
+                    .map(|n| n.0.0.clone()).collect();
+
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.debug_nodes.get(selection) {
                         if let Some(expander) = &self.expander {
@@ -796,33 +799,17 @@ impl App {
                 let graph = Arc::new(SimpleGraph::new(vertices, edges));
                 let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
                 let expander = se2::graph_search::make_default_time_variant_expander(graph, extrapolator);
-                let cost_calculator = expander.cost_calculator.clone();
 
-                let expander = Arc::new(expander.chain_fn_no_err(
-                    move |parent, _| {
-                        let motion = Trajectory::hold(parent.state().clone(), parent.state().time + Duration::from_secs_f64(1.0)).ok().unwrap();
-                        let cost = cost_calculator.compute_cost(&motion);
-                        let spawner = MakeBuiltinNode::<se2::timed_position::Waypoint, se2::graph_search::Node>::default();
-                        [Ok(spawner.make_node(
-                            motion.finish().clone(),
-                            parent.partial_key().unwrap().clone(),
-                            cost,
-                            parent.remaining_cost_estimate(),
-                            Some(motion),
-                            Some(parent.clone()),
-                        ))].into_iter()
-                    }
-                ));
+                let expander = Arc::new(
+                    expander.constrain(
+                        CircleCollisionConstraint{
+                            obstacles: self.canvas.program.layers.3.obstacles.clone(),
+                            agent_radius: self.canvas.program.layers.2.agent_radius,
+                        }
+                    )
+                );
 
-                let constraint = Arc::new(CircleCollisionConstraint{
-                    obstacles: self.canvas.program.layers.3.obstacles.clone(),
-                    agent_radius: self.canvas.program.layers.2.agent_radius,
-                });
-
-                let expander = Arc::new(expander.constrain(constraint));
-
-                // let planner = Planner::<line_follow_se2::SimpleExpander, a_star::Algorithm>::new(expander.clone());
-                let planner = make_planner(expander, Arc::new(a_star::Algorithm));
+                let planner = make_planner(expander.clone(), Arc::new(a_star::Algorithm));
                 let mut progress = planner.plan(
                     &StartSE2{
                         vertex: 0,
@@ -836,9 +823,12 @@ impl App {
 
                 self.debug_step_count = 0;
                 if self.debug_on {
-                    // self.progress = Some(progress);
-                    // self.debug_nodes = self.progress.as_ref().unwrap().memory().queue().clone().into_iter_sorted().map(|n| n.0.0.clone()).collect();
-                    // self.expander = Some(expander);
+                    self.progress = Some(progress);
+                    self.debug_nodes = self.progress.as_ref().unwrap().memory()
+                        .queue().clone().into_iter_sorted()
+                        .map(|n| n.0.0.clone()).collect();
+
+                    self.expander = Some(expander);
                 } else {
                     match progress.solve().unwrap() {
                         PlanningStatus::Solved(solution) => {

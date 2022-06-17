@@ -136,8 +136,14 @@ impl<N: Weighted> PartialEq for CostCmp<N> {
 
 impl<N: Weighted> Eq for CostCmp<N> { }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TotalCostEstimateCmp<N: Informed>(pub Arc<N>);
+
+impl<N: Informed> Clone for TotalCostEstimateCmp<N> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<N: Informed> Ord for TotalCostEstimateCmp<N> {
     fn cmp(&self, other: &Self) -> Ordering {
