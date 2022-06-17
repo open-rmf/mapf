@@ -36,13 +36,9 @@ pub struct Tree<E: Aimless<Node: Weighted> + Closable> {
 impl<E: Aimless<Node: Weighted> + Closable> Tree<E> {
 
     pub fn new(root: Arc<E::Node>, expander: Arc<E>) -> Self {
-        let mut closed_set = <E as Closable>::ClosedSet::default();
-        closed_set.close(&root);
-
         let mut queue = BinaryHeap::new();
         queue.push(Reverse(CostCmp(root)));
-
-        Self{closed_set, queue, expander}
+        Self{closed_set: Default::default(), queue, expander}
     }
 
     /// Inspect the current closed set of the tree. Each item in this set
@@ -110,5 +106,93 @@ impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> 
         }
 
         return None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        node::PartialKeyed,
+        expander::Initializable,
+        motion::r2::{
+            Position, timed_position::LineFollow,
+            graph_search::make_default_expander,
+        },
+        directed::simple::SimpleGraph,
+    };
+    use std::collections::HashSet;
+
+    fn make_test_graph() -> SimpleGraph<Position> {
+        /*
+         * 0-----1-----2-----3
+         *           /       |
+         *         /         |
+         *       4-----5     6
+         *             |
+         *             |
+         *             7-----8
+        */
+
+        let mut vertices = Vec::<Position>::new();
+        vertices.push(Position::new(0.0, 0.0)); // 0
+        vertices.push(Position::new(1.0, 0.0)); // 1
+        vertices.push(Position::new(2.0, 0.0)); // 2
+        vertices.push(Position::new(3.0, 0.0)); // 3
+        vertices.push(Position::new(1.0, -1.0)); // 4
+        vertices.push(Position::new(2.0, -1.0)); // 5
+        vertices.push(Position::new(3.0, -1.0)); // 6
+        vertices.push(Position::new(2.0, -2.0)); // 7
+        vertices.push(Position::new(3.0, -2.0)); // 8
+
+        let mut edges = Vec::<Vec::<usize>>::new();
+        edges.resize(9, Vec::new());
+        let mut add_bidir_edge = |v0: usize, v1: usize| {
+            edges.get_mut(v0).unwrap().push(v1);
+            edges.get_mut(v1).unwrap().push(v0);
+        };
+        add_bidir_edge(0, 1);
+        add_bidir_edge(1, 2);
+        add_bidir_edge(2, 3);
+        add_bidir_edge(2, 4);
+        add_bidir_edge(3, 6);
+        add_bidir_edge(4, 5);
+        add_bidir_edge(5, 7);
+        add_bidir_edge(7, 8);
+
+        return SimpleGraph::new(vertices, edges);
+    }
+
+    fn make_test_extrapolation() -> LineFollow{
+        return LineFollow::new(1.0f64).unwrap();
+    }
+
+    #[test]
+    fn test_r2_tree_expansion() {
+        let expander = Arc::new(make_default_expander(
+            Arc::new(make_test_graph()),
+            Arc::new(make_test_extrapolation())
+        ));
+
+        let mut visited: HashSet<usize> = HashSet::default();
+        for start in expander.start(&0, &0) {
+            let start = start.unwrap();
+            let mut tree = Tree::new(
+                start, expander.clone()
+            );
+
+            while !tree.is_exhausted() {
+                for node in tree.grow() {
+                    assert!(node.is_ok());
+                    if let Ok(n) = node {
+                        assert!(visited.insert(*n.partial_key().unwrap()));
+                    }
+                }
+            }
+        }
+
+        for i in 0..=8 {
+            assert!(visited.contains(&i));
+        }
     }
 }

@@ -83,6 +83,8 @@ pub fn make_default_expander(
     }
 }
 
+pub type DefaultNode = Node<i64, usize>;
+
 #[derive(Debug)]
 pub enum InitErrorR2<K, H> {
     MissingStartVertex(K),
