@@ -20,3 +20,6 @@ pub type Velocity = nalgebra::Vector2<f64>;
 
 pub mod timed_position;
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+
+pub mod graph_search;
+pub mod direct_travel;

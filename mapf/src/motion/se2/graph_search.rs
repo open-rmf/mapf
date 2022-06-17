@@ -18,12 +18,11 @@
 use crate::{
     graph::{Graph, Edge},
     motion::{
-        Extrapolator, TimePoint, Trajectory,
-        se2, r2,
-        graph_search::{Policy, BuiltinNode, Expander, MakeBuiltinNode, Key as GraphSearchKeyTrait},
+        Extrapolator, TimePoint,
+        se2, r2::{self, direct_travel::DirectTravelHeuristic},
+        graph_search::{Policy, BuiltinNode, Expander, StateKey},
         trajectory::{CostCalculator, DurationCostCalculator},
         reach::Reachable,
-        movable::StartingPoint,
         hold::Hold,
     },
     expander::{Goal, Initializable, Chain, Chainable},
@@ -36,7 +35,6 @@ use crate::{
 };
 use std::sync::Arc;
 use std::fmt::Debug;
-use num::Zero;
 
 #[derive(Debug, Clone, Copy)]
 pub struct OrientationGoal {
@@ -100,7 +98,7 @@ impl From<KeySE2> for usize {
     }
 }
 
-impl GraphSearchKeyTrait<usize, se2::timed_position::Waypoint> for KeySE2 {
+impl StateKey<usize, se2::timed_position::Waypoint> for KeySE2 {
     fn make_child(&self, target_key: &usize, _: &se2::timed_position::Waypoint) -> Self {
         Self{
             from_vertex: self.to_vertex,
@@ -111,51 +109,6 @@ impl GraphSearchKeyTrait<usize, se2::timed_position::Waypoint> for KeySE2 {
 }
 
 pub type Node = BuiltinNode<i64, KeySE2, se2::timed_position::Waypoint>;
-
-#[derive(Debug)]
-pub struct DirectTravelHeuristic<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_position::Waypoint>> {
-    pub graph: Arc<G>,
-    pub cost_calculator: Arc<C>,
-    pub extrapolator: r2::timed_position::LineFollow,
-}
-
-impl<G: Graph<Vertex=r2::Position, Key=usize>, C: CostCalculator<r2::timed_position::Waypoint, Cost=i64>> Heuristic<KeySE2, GoalSE2, i64> for DirectTravelHeuristic<G, C> {
-    type Error = <r2::timed_position::LineFollow as Extrapolator<r2::timed_position::Waypoint, r2::Position>>::Error;
-
-    fn estimate_cost(
-        &self,
-        from_state: &KeySE2,
-        to_goal: &GoalSE2
-    ) -> Result<Option<i64>, Self::Error> {
-        let p0 = {
-            // Should this actually be an error? The current state is off the
-            // graph entirely.
-            if let Some(p) = self.graph.vertex(from_state.vertex()) {
-                p
-            } else {
-                return Ok(None);
-            }
-        };
-
-        let p1 = {
-            if let Some(p) = self.graph.vertex(to_goal.vertex) {
-                p
-            } else {
-                return Ok(None);
-            }
-        };
-
-        let wp0 = r2::timed_position::Waypoint{
-            time: TimePoint::zero(),
-            position: *p0,
-        };
-
-        let cost = self.extrapolator.make_trajectory(wp0, p1)?
-            .map(|t| self.cost_calculator.compute_cost(&t))
-            .unwrap_or(C::Cost::zero());
-        Ok(Some(cost))
-    }
-}
 
 pub struct ReachForLinearSE2 {
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
@@ -215,7 +168,7 @@ where
     type Waypoint = se2::timed_position::Waypoint;
     type ClosedSet = S;
     type Graph = G;
-    type Key = KeySE2;
+    type StateKey = KeySE2;
     type Node = Node;
     type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
     type Heuristic = H;
@@ -228,7 +181,7 @@ pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::P
 pub fn make_default_time_invariant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
-) -> Arc<DefaultTimeInvariantExpander> {
+) -> DefaultTimeInvariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(DirectTravelHeuristic{
         graph: graph.clone(),
@@ -239,9 +192,9 @@ pub fn make_default_time_invariant_expander(
         extrapolator: extrapolator.clone(),
     });
 
-    Arc::new(DefaultTimeInvariantExpander{
+    DefaultTimeInvariantExpander{
         graph, extrapolator, cost_calculator, heuristic, reacher,
-    })
+    }
 }
 
 pub type TimeVariantExpander<G, C, H> =
@@ -352,22 +305,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use se2::{
-        Point,
-        timed_position::DifferentialDriveLineFollow,
-    };
+    use se2::{Point, timed_position::DifferentialDriveLineFollow};
     use crate::{
         a_star, algorithm::Status,
         planner::make_planner,
-        expander::{Constrainable, Chainable},
-        motion::{
-            self,
-            collide::CircleCollisionConstraint,
-            hold::Hold,
-        },
-        node::Informed,
+        expander::Constrainable,
+        motion::{self, collide::CircleCollisionConstraint},
     };
-    use time_point::Duration;
 
     fn make_test_graph() -> SimpleGraph<Point> {
         /*
@@ -420,7 +364,7 @@ mod tests {
             Arc::new(make_test_extrapolation()),
         );
 
-        let planner = make_planner(expander, Arc::new(a_star::Algorithm));
+        let planner = make_planner(Arc::new(expander), Arc::new(a_star::Algorithm));
         let mut progress = planner.plan(
             &StartSE2{
                 vertex: 0,

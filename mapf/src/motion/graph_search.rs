@@ -18,7 +18,7 @@
 use crate::{
     Heuristic,
     graph::{Graph, Edge, VertexOf, KeyOf},
-    expander::{Expander as ExpanderTrait, Goal, Expandable, Closable, Solvable},
+    expander::{Expander as ExpanderTrait, Aimless, Goal, Expandable, Closable, Solvable},
     node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Keyed, Informed, PathSearch},
     motion::{
         Waypoint, Trajectory, Extrapolator,
@@ -33,16 +33,30 @@ use std::{
 };
 use num::Zero;
 
-pub trait Key<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
+/// A StateKey is a key type that uniquely defines the state that the node
+/// represents. Two StateKeys that evaluate as equal must represent the same
+/// state of an agent.
+pub trait StateKey<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
     fn make_child(&self, target_key: &TargetKey, target_state: &TargetState) -> Self;
+}
+
+/// If the type of the target key is identical to the type of the state key, then
+/// we can just return a clone of the target key when making a child key.
+///
+/// For example if the state key and target key are both usize type then the
+/// child key will simply be the same usize as the target key.
+impl<K: node::Key, S> StateKey<K, S> for K {
+    fn make_child(&self, target_key: &K, target_state: &S) -> Self {
+        target_key.clone()
+    }
 }
 
 pub trait Policy: Sized {
     type Waypoint: Waypoint;
     type ClosedSet: ClosedSet<Self::Node>;
     type Graph: Graph;
-    type Key: Key<KeyOf<Self::Graph>, Self::Waypoint>;
-    type Node: Informed + Movable<Self::Waypoint, Key=Self::Key>;
+    type StateKey: StateKey<KeyOf<Self::Graph>, Self::Waypoint>;
+    type Node: Informed + Movable<Self::Waypoint, Key=Self::StateKey>;
     type Extrapolator: Extrapolator<Self::Waypoint, VertexOf<Self::Graph>>;
     type Heuristic;
     type Reach;
@@ -164,18 +178,7 @@ impl<C: Cost, K: node::Key, W: Waypoint> StartingPoint<C, K, W> for BuiltinNode<
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct MakeBuiltinNode<W, N> {
-    _ignore: std::marker::PhantomData<(W, N)>,
-}
-
-impl<W, N> Default for MakeBuiltinNode<W, N> {
-    fn default() -> Self {
-        Self{_ignore: Default::default()}
-    }
-}
-
-pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint> {
+pub struct Expander<P: Policy> where NodeKeyOf<P>: StateKey<GraphKeyOf<P>, P::Waypoint> {
     pub graph: Arc<P::Graph>,
     pub extrapolator: Arc<P::Extrapolator>,
     pub cost_calculator: Arc<P::CostCalculator>,
@@ -183,9 +186,15 @@ pub struct Expander<P: Policy> where NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoin
     pub reacher: Arc<P::Reach>,
 }
 
+struct MotionInfo<P: Policy> {
+    parent_key: NodeKeyOf<P>,
+    to_key: NodeKeyOf<P>,
+    trajectory: Option<Trajectory<P::Waypoint>>,
+}
+
 impl<P: Policy> Expander<P>
 where
-    NodeKeyOf<P>: Key<GraphKeyOf<P>, P::Waypoint>,
+    NodeKeyOf<P>: StateKey<GraphKeyOf<P>, P::Waypoint>,
 {
     pub fn make_child_node(
         &self,
@@ -211,15 +220,38 @@ where
         initial_motion: Option<Trajectory<P::Waypoint>>,
     ) -> Arc<P::Node>
     where
-        P::Node: StartingPoint<NodeCostOf<P>, P::Key, P::Waypoint>,
+        P::Node: StartingPoint<NodeCostOf<P>, P::StateKey, P::Waypoint>,
     {
         let initial_cost = initial_motion.as_ref().map(
             |t| self.cost_calculator.compute_cost(t)
         ).unwrap_or(NodeCostOf::<P>::zero());
 
-        Arc::new(<P::Node as StartingPoint<NodeCostOf<P>, P::Key, P::Waypoint>>::start_from(
+        Arc::new(<P::Node as StartingPoint<NodeCostOf<P>, P::StateKey, P::Waypoint>>::start_from(
             state, key, initial_cost, remaining_cost_estimate, initial_motion
         ))
+    }
+
+    fn motions_from<'a>(&'a self, parent: &'a Arc<P::Node>, parent_key: &'a NodeKeyOf<P>)
+    -> impl Iterator<Item=Result<MotionInfo<P>, ExtrapolatorErrorOf<P>>> + 'a {
+        self.graph.edges_from_vertex(parent_key.clone().into()).into_iter()
+            .filter_map(|edge| -> Option<(&KeyOf<P::Graph>, &VertexOf<P::Graph>)> {
+                let key = edge.endpoint_key();
+                self.graph.vertex((*key).clone()).map(|target| (key, target))
+            })
+            .map(move |(to_key, to_target)| {
+                let trajectory = self.extrapolator.make_trajectory(
+                    parent.state().clone(),
+                    to_target
+                )?;
+
+                let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());
+                let to_key = parent_key.make_child(&to_key, state);
+                Ok(MotionInfo{
+                    parent_key: parent_key.clone(),
+                    to_key,
+                    trajectory
+                })
+            })
     }
 }
 
@@ -276,52 +308,66 @@ where
         goal: &'a G,
     ) -> Self::Expansion<'a> {
         [parent.partial_key()].into_iter()
-            .filter_map(|x| x)
-            .flat_map(move |parent_key| {
-                self.graph.edges_from_vertex((*parent_key).clone().into()).into_iter()
-                    .filter_map(|edge| -> Option<(&KeyOf<P::Graph>, &VertexOf<P::Graph>)> {
-                        let key = edge.endpoint_key();
-                        self.graph.vertex((*key).clone()).map(|target| (key, target))
-                    })
-                    .map(move |(to_key, to_target)| {
-                        let trajectory = self.extrapolator.make_trajectory(
-                            parent.state().clone(),
-                            to_target
-                        ).map_err(ExpansionError::Extrapolator)?;
-                        Ok((parent_key, to_key, trajectory))
-                    })
-                    .map(move |r| {
-                        r.and_then(|(parent_key, to_key, trajectory)| {
-                            let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());
-                            let to_key = parent_key.make_child(&to_key, state);
-                            let h = self.heuristic.estimate_cost(
-                                &to_key, goal
-                            ).map_err(ExpansionError::Heuristic)?;
+        .filter_map(|x| x)
+        .flat_map(move |parent_key| {
+            self.motions_from(parent, parent_key)
+            .map(|r| r.map_err(ExpansionError::Extrapolator))
+            .map(move |r| {
+                r.and_then(|MotionInfo{parent_key, to_key, trajectory}| {
+                    let h = self.heuristic.estimate_cost(
+                        &to_key, goal
+                    ).map_err(ExpansionError::Heuristic)?;
 
-                            Ok(h.map(|h| self.make_child_node(
-                                Some(to_key), h, trajectory, parent.clone())
-                            ))
-                        })
-                    })
-                    .filter_map(|r| r.transpose())
-            })
-            .chain(
-                [parent.partial_key()].into_iter()
-                .filter_map(|x| x)
-                .flat_map(|parent_key| {
-                    self.reacher.reach_for(parent.as_ref(), goal).into_iter()
-                    .map(|r| {
-                        r.and_then(|trajectory| {
-                            // We assume the goal is reached, because otherwise
-                            // the Reachable trait was implemented incorrectly.
-                            let to_key = parent_key.make_child(goal.key(), trajectory.finish());
-                            Ok(self.make_child_node(
-                                Some(to_key), NodeCostOf::<P>::zero(), Some(trajectory), parent.clone()
-                            ))
-                        }).map_err(ExpansionError::Reach)
-                    })
+                    Ok(h.map(|h| self.make_child_node(
+                        Some(to_key), h, trajectory, parent.clone())
+                    ))
                 })
-            )
+            })
+            .filter_map(|r| r.transpose())
+        })
+        .chain(
+            [parent.partial_key()].into_iter()
+            .filter_map(|x| x)
+            .flat_map(|parent_key| {
+                self.reacher.reach_for(parent.as_ref(), goal).into_iter()
+                .map(|r| {
+                    r.and_then(|trajectory| {
+                        // We assume the goal is reached, because otherwise
+                        // the Reachable trait was implemented incorrectly.
+                        let to_key = parent_key.make_child(goal.key(), trajectory.finish());
+                        Ok(self.make_child_node(
+                            Some(to_key), NodeCostOf::<P>::zero(), Some(trajectory), parent.clone()
+                        ))
+                    }).map_err(ExpansionError::Reach)
+                })
+            })
+        )
+    }
+}
+
+impl<P: Policy> Aimless for Expander<P> {
+    type AimlessError = ExtrapolatorErrorOf<P>;
+    type AimlessExpansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<P::Node>, Self::AimlessError>> + 'a;
+
+    fn aimless_expand<'a>(
+        &'a self,
+        parent: &'a Arc<Self::Node>,
+    ) -> Self::AimlessExpansion<'a> {
+        [parent.partial_key()].into_iter()
+        .filter_map(|x| x)
+        .flat_map(move |parent_key| {
+            self.motions_from(parent, parent_key)
+            .map(move |r| {
+                r.and_then(|MotionInfo{parent_key, to_key, trajectory}| {
+                    Ok(self.make_child_node(
+                        Some(to_key),
+                        NodeCostOf::<P>::zero(),
+                        trajectory,
+                        parent.clone()
+                    ))
+                })
+            })
+        })
     }
 }
 
@@ -406,104 +452,5 @@ impl<P: Policy> Solvable for Expander<P> {
         let motion = Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok();
         let cost = motion.as_ref().map(|t| self.cost_calculator.compute_cost(t)).unwrap_or(NodeCostOf::<P>::zero());
         Ok(Solution{cost, motion})
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use crate::node::PartialKeyedClosedSet;
-    use crate::motion::{se2, trajectory::DurationCostCalculator, reach::NoReach};
-    use crate::expander::Goal;
-    use crate::directed::simple::SimpleGraph as SimpleGraph;
-    use std::fmt::Debug;
-
-    #[derive(Debug)]
-    struct GoalSE2 {
-        vertex: usize,
-    }
-
-    type NodeSE2 = BuiltinNode<i64, StateKey, se2::timed_position::Waypoint>;
-
-    impl Goal<NodeSE2> for GoalSE2 {
-        fn is_satisfied(&self, node: &NodeSE2) -> bool {
-            if let Some(key) = &node.key {
-                let key: usize = key.clone().into();
-                return key == self.vertex;
-            }
-
-            return false;
-        }
-    }
-
-    impl PartialKeyed for GoalSE2 {
-        type Key = usize;
-        fn partial_key(&self) -> Option<&Self::Key> {
-            Some(&self.vertex)
-        }
-    }
-
-    impl Keyed for GoalSE2 { }
-
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    pub enum Side {
-        Beginning,
-        Finish
-    }
-
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    struct StateKey {
-        from_vertex: usize,
-        to_vertex: usize,
-        side: Side,
-    }
-
-    impl Into<usize> for StateKey {
-        fn into(self) -> usize {
-            if self.side == Side::Beginning {
-                self.from_vertex
-            } else {
-                self.to_vertex
-            }
-        }
-    }
-
-    impl Key<usize, se2::timed_position::Waypoint> for StateKey {
-        fn make_child(&self, target_key: &usize, _: &se2::timed_position::Waypoint) -> Self {
-            StateKey{
-                from_vertex: self.to_vertex,
-                to_vertex: *target_key,
-                side: Side::Finish,
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    struct BadHeuristic;
-    impl<S: Debug, G: Debug, C: Cost> Heuristic<S, G, C> for BadHeuristic {
-        type Error = ();
-        fn estimate_cost(&self, _: &S, _: &G) -> Result<Option<C>, Self::Error> {
-            Ok(Some(C::zero()))
-        }
-    }
-
-    #[derive(Debug)]
-    struct PolicySE2;
-    impl Policy for PolicySE2 {
-        type Waypoint = se2::timed_position::Waypoint;
-        type ClosedSet = PartialKeyedClosedSet<NodeSE2>;
-        type Key = StateKey;
-        type Node = NodeSE2;
-        type Graph = SimpleGraph<se2::Point>;
-        type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
-        type Heuristic = BadHeuristic;
-        type Reach = NoReach;
-        type CostCalculator = DurationCostCalculator;
-    }
-
-    #[test]
-    fn make_test_expander() {
-
     }
 }
