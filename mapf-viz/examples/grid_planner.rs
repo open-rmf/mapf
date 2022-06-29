@@ -31,8 +31,8 @@ use mapf::{
     trace::NoTrace,
     planner::make_planner,
     node::{Weighted, Informed, PartialKeyed, Agent},
-    expander::{Constrain, Constrainable, Solvable},
-    progress::BasicProgress,
+    expander::{Constrain, Constrainable, Solvable, SolutionOf},
+    progress::{Progress, BasicOptions},
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{
@@ -41,7 +41,7 @@ use mapf::{
         se2::{
             self, Rotation,
             timed_position::{Waypoint, DifferentialDriveLineFollow},
-            graph_search::{DefaultTimeVariantExpander, StartSE2, GoalSE2},
+            graph_search::{DefaultTimeVariantExpander, StartSE2, GoalSE2, LinearSE2Policy},
         },
     },
     directed::simple::SimpleGraph,
@@ -632,7 +632,7 @@ struct App {
     canvas: SpatialCanvas<Message, GridLayers>,
     scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<BasicProgress<ObsAvoidance, a_star::Algorithm, GoalSE2, NoTrace>>,
+    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<ObsAvoidance>>,
     debug_on: bool,
