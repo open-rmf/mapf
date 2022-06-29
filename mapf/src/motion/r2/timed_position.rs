@@ -16,7 +16,10 @@
 */
 
 use time_point::{TimePoint, Duration};
-use crate::motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator};
+use crate::{
+    motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator},
+    error::NoError,
+};
 use super::{Position, Velocity};
 use arrayvec::ArrayVec;
 
@@ -130,7 +133,7 @@ impl LineFollow {
 
 impl Extrapolator<Waypoint, Position> for LineFollow {
     type Extrapolation<'a> = ArrayVec<Waypoint, 1>;
-    type Error = ();
+    type Error = NoError;
 
     fn extrapolate<'a>(
         &'a self,

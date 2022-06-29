@@ -15,13 +15,18 @@
  *
 */
 
-use super::algorithm::{self, Status};
-use super::expander::{Expander, Expandable, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
-use super::Trace;
-use super::node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus};
-use std::collections::BinaryHeap;
-use std::sync::Arc;
-use std::cmp::Reverse;
+use crate::{
+    Trace,
+    algorithm::{self, Status},
+    expander::{Expander, Expandable, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf},
+    node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus},
+    error::NoError,
+};
+use std::{
+    collections::BinaryHeap,
+    sync::Arc,
+    cmp::Reverse,
+};
 
 pub struct Memory<N, E>
 where
@@ -68,8 +73,8 @@ where
     E: Expander<Node=N> + Closable + Solvable,
 {
     type Memory = Memory<N, E>;
-    type InitError = ();
-    type StepError = ();
+    type InitError = NoError;
+    type StepError = NoError;
 
     fn initialize<S, G: Goal<E::Node>, T: Trace<N>>(
         &self,
@@ -98,7 +103,7 @@ where
         memory: &mut Self::Memory,
         goal: &G,
         tracker: &mut T,
-    ) -> Result<Status<E>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    ) -> Result<Status<E::Solution>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
     where E: Expandable<G> {
 
         if let Some(top) = memory.queue.pop().map(|x| x.0.0) {

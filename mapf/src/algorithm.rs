@@ -15,46 +15,58 @@
  *
 */
 
-use crate::node;
-use crate::expander::{Goal, Expander, Initializable, Expandable, Solvable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf};
-use crate::trace::Trace;
-use std::sync::Arc;
-use std::fmt::Debug;
+use crate::{
+    node,
+    expander::{Goal, Expander, Initializable, Expandable, Solvable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf},
+    trace::Trace,
+    error::Error,
+};
+use std::{
+    sync::Arc,
+    fmt::Debug,
+};
+use thiserror::Error as ThisError;
 
-#[derive(Debug)]
-// pub enum InitError<S, E: Solvable + Initializable<S>, A: Algorithm<E>> {
-pub enum InitError<A: Debug, E: Debug> {
+#[derive(ThisError, Debug)]
+pub enum InitError<A: Error, E: Error> {
+    #[error("An error occurred while initializing the algorithm:\n{0}")]
     Algorithm(A),
+    #[error("An error occurred while constructing the initial nodes:\n{0}")]
     Expander(E),
 }
 
-#[derive(Debug)]
-pub enum StepError<A, E, S> {
+#[derive(ThisError, Debug)]
+pub enum StepError<A: Error, E: Error, S: Error> {
+    #[error("An error occurred in the algorithm:\n{0}")]
     Algorithm(A),
+    #[error("An error occurred during expansion:\n{0}")]
     Expansion(E),
+    #[error("An error occurred while constructing the solution:\n{0}")]
     Solve(S),
 }
 
 #[derive(Debug, Clone)]
-pub enum Status<E: Solvable> {
+pub enum Status<Solution> {
     Incomplete,
     Impossible,
-    Solved(E::Solution),
+    Solved(Solution),
 }
 
 pub trait Memory {
     fn node_count(&self) -> usize;
 }
 
-pub trait WeightSorted<E: Expander<Node: node::Weighted>> {
+/// A trait to attach to the Memory of an Algorithm that sorts its nodes
+/// according to a cost/weight.
+pub trait WeightSorted<E: Expander<Node: node::Weighted>>: Memory {
     fn top_cost_estimate(&self) -> Option<CostOf<E>>;
 }
 
 pub trait Algorithm<E: Solvable>: Sized {
     type Memory: Memory;
 
-    type InitError: std::fmt::Debug;
-    type StepError: std::fmt::Debug;
+    type InitError: Error;
+    type StepError: Error;
 
     fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
@@ -70,6 +82,6 @@ pub trait Algorithm<E: Solvable>: Sized {
         memory: &mut Self::Memory,
         goal: &G,
         tracker: &mut T,
-    ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
     where E: Expandable<G>;
 }

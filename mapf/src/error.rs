@@ -15,17 +15,13 @@
  *
 */
 
-use crate::{
-    node::Cost,
-    error::Error,
-};
+use thiserror::Error as ThisError;
+use std::error::Error as StdError;
 
-pub trait Heuristic<Start, Goal, C: Cost>: std::fmt::Debug {
-    type Error: Error;
+pub trait Error: StdError + Send + Sync + 'static { }
+impl<T: StdError + Send + Sync + 'static> Error for T { }
 
-    fn estimate_cost(
-        &self,
-        from_state: &Start,
-        to_goal: &Goal,
-    ) -> Result<Option<C>, Self::Error>;
-}
+/// Use this enum for situations where you are required to provide an Error
+/// type but there is no possibility of an error being produced.
+#[derive(ThisError, Debug)]
+pub enum NoError { }

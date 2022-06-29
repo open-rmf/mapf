@@ -46,5 +46,7 @@ pub mod directed;
 pub mod a_star;
 
 pub mod occupancy;
+pub mod error;
 
 mod util;
+

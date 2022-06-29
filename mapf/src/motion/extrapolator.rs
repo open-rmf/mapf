@@ -15,12 +15,15 @@
  *
 */
 
-use crate::motion::{Waypoint, Trajectory};
+use crate::{
+    motion::{Waypoint, Trajectory},
+    error::Error,
+};
 
 /// Can extrapolate the motion from a waypoint towards a target.
 pub trait Extrapolator<W: Waypoint, Target> {
     /// The type of error that can happen while extrapolating.
-    type Error: std::fmt::Debug;
+    type Error: Error;
 
     /// An iterator that produces a sequence of waypoints representing a motion
     /// through time.

@@ -15,13 +15,17 @@
  *
 */
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    cell::RefCell,
+};
 use crate::{
-    progress::{Factory as ProgressFactory, BasicFactory},
+    progress::{self, Progress, Options, BasicOptions},
     expander::{Goal, Initializable, Expandable, Solvable, InitErrorOf},
     algorithm::{Algorithm, InitError},
     trace::{Trace, NoTrace},
 };
+use anyhow;
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
 /// Splitting the implementation of the Planner into algorithm and expander
@@ -30,7 +34,7 @@ use crate::{
 /// The Planner::plan(start, goal) function will create a Progress object which
 /// manages the planning progress and allows you to tweak planning settings
 /// during runtime as needed.
-pub struct Planner<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A> = BasicFactory>   {
+pub struct Planner<E: Solvable, A: Algorithm<E>, O: Options<E, A> = BasicOptions>   {
 
     /// The object which determines the search pattern
     algorithm: Arc<A>,
@@ -39,26 +43,40 @@ pub struct Planner<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A> = Basi
     expander: Arc<E>,
 
     /// The factory for generating progress objects
-    factory: F,
+    default_options: O,
 }
 
-impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
+impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
 
     /// Construct a new planner with the given configuration and a set of
     /// default options.
     pub fn new(expander: Arc<E>) -> Self
-    where A: Default {
+    where A: Default, O: Default {
         Self{
             algorithm: Arc::new(A::default()),
             expander,
-            factory: Default::default(),
+            default_options: Default::default(),
         }
     }
 
     /// If the algorithm being used is configurable, this function can be used
     /// to configure its settings while constructing the planner.
-    pub fn with_algorithm(algorithm: Arc<A>, expander: Arc<E> ) -> Self {
-        Self{algorithm, expander, factory: Default::default()}
+    pub fn from_algorithm(expander: Arc<E>, algorithm: Arc<A>) -> Self
+    where O: Default {
+        Self{algorithm, expander, default_options: Default::default()}
+    }
+
+    /// If you want custom default options, this function can be used to set
+    /// those options while constructing the planner.
+    pub fn from_options(expander: Arc<E>, default_options: O) -> Self
+    where A: Default {
+        Self{algorithm: Arc::new(A::default()), expander, default_options}
+    }
+
+    /// If every part of the planner should be customized, use this to construct
+    /// it.
+    pub fn from_parts(expander: Arc<E>, algorithm: Arc<A>, default_options: O) -> Self {
+        Self{algorithm, expander, default_options}
     }
 
     /// Begin planning from the start conditions to the goal conditions.
@@ -66,14 +84,24 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
         &self,
         start: &S,
         goal: G,
-    ) -> Result<F::Progress<G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> {
+    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> + Expandable<G> {
+        self.plan_with_options(start, goal, self.default_options.clone())
+    }
+
+    pub fn plan_with_options<S, G: Goal<E::Node>>(
+        &self,
+        start: &S,
+        goal: G,
+        options: O,
+    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> + Expandable<G> {
         let mut trace = NoTrace::default();
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, &goal, &mut trace
         )?;
 
-        Ok(F::new(memory, self.algorithm.clone(), goal, trace))
+        Ok(Progress::new(memory, self.algorithm.clone(), options, goal, trace))
     }
 
     /// Perform a planning job while tracking the behavior, usually for debugging purposes.
@@ -81,31 +109,95 @@ impl<E: Solvable, A: Algorithm<E>, F: ProgressFactory<E, A>> Planner<E, A, F> {
         &self,
         start: &S,
         goal: G,
-        mut trace: T
-    ) -> Result<F::Progress<G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+        trace: T,
+    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
+    where E: Initializable<S, G> + Expandable<G> {
+        self.trace_with_options(start, goal, self.default_options.clone(), trace)
+    }
+
+    pub fn trace_with_options<S, G: Goal<E::Node>, T: Trace<E::Node>>(
+        &self,
+        start: &S,
+        goal: G,
+        options: O,
+        mut trace: T,
+    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
     where E: Initializable<S, G> + Expandable<G> {
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, &goal, &mut trace
         )?;
 
-        Ok(F::new(memory, self.algorithm.clone(), goal, trace))
+        Ok(Progress::new(memory, self.algorithm.clone(), options, goal, trace))
+    }
+
+    pub fn into_abstract<S, G>(self) -> Abstract<S, G, E::Solution>
+    where
+        E: Initializable<S, G> + Expandable<G> + 'static,
+        A: 'static,
+        O: 'static,
+        G: Goal<E::Node> + 'static,
+    {
+        Abstract{implementation: Box::new(RefCell::new(self))}
     }
 }
 
 pub fn make_planner<E: Solvable, A: Algorithm<E>>(
     expander: Arc<E>,
     algorithm: Arc<A>,
-) -> Planner<E, A, BasicFactory> {
-    Planner::with_algorithm(algorithm, expander)
+) -> Planner<E, A> {
+    Planner::from_algorithm(expander, algorithm)
+}
+
+pub trait Interface<S, G, Solution> {
+    fn plan(
+        &self,
+        start: &S,
+        goal: G,
+    ) -> anyhow::Result<progress::Abstract<Solution>>;
+}
+
+impl<E, A, O, S, G> Interface<S, G, E::Solution> for Planner<E, A, O>
+where
+    E: Initializable<S, G> + Expandable<G> + Solvable + 'static,
+    A: Algorithm<E> + 'static,
+    O: Options<E, A> + 'static,
+    G: Goal<E::Node> + 'static,
+{
+    fn plan(
+        &self,
+        start: &S,
+        goal: G,
+    ) -> anyhow::Result<progress::Abstract<E::Solution>> {
+        Planner::plan(self, start, goal)
+        .map(Progress::into_abstract)
+        .map_err(anyhow::Error::new)
+    }
+}
+
+pub struct Abstract<S, G, Solution> {
+    implementation: Box<RefCell<dyn Interface<S, G, Solution>>>,
+}
+
+impl<S, G, Solution> Interface<S, G, Solution> for Abstract<S, G, Solution> {
+    fn plan(
+        &self,
+        start: &S,
+        goal: G,
+    ) -> anyhow::Result<progress::Abstract<Solution>> {
+        self.implementation.borrow_mut().plan(start, goal)
+    }
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::node::{self, traits::*};
-    use crate::expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf, ExpansionErrorOf};
-    use crate::algorithm::{WeightSorted, Memory, Status, StepError};
+    use crate::{
+        node::{self, traits::*},
+        expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf, ExpansionErrorOf},
+        algorithm::{WeightSorted, Memory, Status, StepError},
+        error::NoError,
+    };
 
     struct CountingNode {
         value: u64,
@@ -163,7 +255,7 @@ mod tests {
     }
 
     impl<'a> Iterator for CountingExpansion<'a> {
-        type Item = Result<Arc<CountingNode>, ()>;
+        type Item = Result<Arc<CountingNode>, NoError>;
 
         fn next(&mut self) -> Option<Self::Item> {
             return self.next_node.take().map(|v| Ok(v));
@@ -184,7 +276,7 @@ mod tests {
     }
 
     impl Initializable<u64, CountingGoal> for CountingExpander {
-        type InitError = ();
+        type InitError = NoError;
         type InitialNodes<'a> = CountingExpansion<'a>;
 
         fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialNodes<'a> {
@@ -209,7 +301,7 @@ mod tests {
     }
 
     impl Expandable<CountingGoal> for CountingExpander {
-        type ExpansionError = ();
+        type ExpansionError = NoError;
         type Expansion<'a> = CountingExpansion<'a>;
 
         fn expand<'a>(
@@ -238,13 +330,13 @@ mod tests {
     }
 
     impl Solvable for CountingExpander {
-        type SolveError = ();
+        type SolveError = NoError;
         type Solution = CountingSolution;
 
         fn make_solution(
             &self,
             solution_node: &Arc<CountingNode>,
-        ) -> Result<Self::Solution, ()> {
+        ) -> Result<Self::Solution, NoError> {
             let mut solution = std::vec::Vec::<u64>::new();
             let mut next: Option<Arc<CountingNode>> = Some(solution_node.clone());
             while let Some(n) = next {
@@ -289,8 +381,8 @@ mod tests {
     struct TestAlgorithm;
     impl<E: Solvable> Algorithm<E> for TestAlgorithm {
         type Memory = TestAlgorithmMemory<E>;
-        type InitError = ();
-        type StepError = ();
+        type InitError = NoError;
+        type StepError = NoError;
 
         fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
             &self,
@@ -315,7 +407,7 @@ mod tests {
             memory: &mut Self::Memory,
             goal: &G,
             tracker: &mut T
-        ) -> Result<Status<E>, StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>>
+        ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>>
         where E: Expandable<G> {
             let top_opt = memory.queue.pop();
             if let Some(top) = top_opt {

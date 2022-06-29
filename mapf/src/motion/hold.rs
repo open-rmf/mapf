@@ -23,6 +23,7 @@ use crate::{
         trajectory::CostCalculator,
         movable::{Movable, ArcMovable},
     },
+    error::NoError,
 };
 use std::sync::Arc;
 
@@ -58,8 +59,8 @@ impl<W: Waypoint, C: CostCalculator<W>, N> Expander for Hold<W, C, N> {
 }
 
 impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, G: Goal<N>> Expandable<G> for Hold<W, C, N> {
-    type ExpansionError = ();
-    type Expansion<'a> where W: 'a, N: 'a, C: 'a, G: 'a = impl Iterator<Item=Result<Arc<N>, ()>>;
+    type ExpansionError = NoError;
+    type Expansion<'a> where W: 'a, N: 'a, C: 'a, G: 'a = impl Iterator<Item=Result<Arc<N>, NoError>>;
 
     fn expand<'a>(
         &'a self,

@@ -32,9 +32,11 @@ use crate::{
     },
     heuristic::Heuristic,
     directed::simple::SimpleGraph,
+    error::NoError,
 };
 use std::sync::Arc;
 use std::fmt::Debug;
+use thiserror::Error as ThisError;
 
 #[derive(Debug, Clone, Copy)]
 pub struct OrientationGoal {
@@ -115,8 +117,8 @@ pub struct ReachForLinearSE2 {
 }
 
 impl Reachable<Node, GoalSE2, se2::timed_position::Waypoint> for ReachForLinearSE2 {
-    type ReachError = ();
-    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, ()>>;
+    type ReachError = NoError;
+    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>>;
 
     fn reach_for<'a>(&'a self, parent: &'a Node, goal: &'a GoalSE2) -> Self::Reaching<'a> {
         [parent].into_iter()
@@ -231,10 +233,12 @@ pub fn make_default_time_variant_expander(
     )
 }
 
-#[derive(Debug)]
-pub enum InitErrorSE2<H: Heuristic<KeySE2, GoalSE2, i64>> {
+#[derive(ThisError, Debug)]
+pub enum InitErrorSE2<H> {
+    #[error("An error happened during extrapolation:\n{0}")]
     Extrapolator(<se2::timed_position::DifferentialDriveLineFollow as Extrapolator<se2::timed_position::Waypoint, r2::Position>>::Error),
-    Heuristic(H::Error)
+    #[error("An error happened while calculating the heuristic:\n{0}")]
+    Heuristic(H)
 }
 
 impl<G, S, C, H> Initializable<StartSE2, GoalSE2> for Expander<LinearSE2Policy<G, S, C, H>>
@@ -244,7 +248,7 @@ where
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64> + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
     H: Heuristic<KeySE2, GoalSE2, i64>,
 {
-    type InitError = InitErrorSE2<H>;
+    type InitError = InitErrorSE2<H::Error>;
     type InitialNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node>, Self::InitError>> + 'a;
 
     fn start<'a>(

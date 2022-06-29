@@ -15,9 +15,14 @@
  *
 */
 
-use crate::expander::traits::*;
-use std::sync::Arc;
-use std::fmt::Debug;
+use crate::{
+    expander::traits::*,
+    error::Error,
+};
+use std::{
+    sync::Arc,
+    fmt::Debug,
+};
 
 pub struct Closure<N, G: Goal<N>, Err: Debug, Exp: IntoIterator<Item=Result<Arc<N>, Err>>, F: Fn(&Arc<N>, &G) -> Exp> {
     closure: F,
@@ -49,7 +54,7 @@ where
 impl<N, G, Err, Exp, F> Expandable<G> for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
-    Err: Debug,
+    Err: Error,
     Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
     F: Fn(&Arc<N>, &G) -> Exp
 {

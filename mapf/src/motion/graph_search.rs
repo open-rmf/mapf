@@ -25,13 +25,15 @@ use crate::{
         trajectory::CostCalculator,
         reach::Reachable,
         movable::{Movable, ArcMovable, StartingPoint},
-    }
+    },
+    error::{Error, NoError},
 };
 use std::{
     fmt::Debug,
     sync::Arc,
 };
 use num::Zero;
+use thiserror::Error as ThisError;
 
 /// A StateKey is a key type that uniquely defines the state that the node
 /// represents. Two StateKeys that evaluate as equal must represent the same
@@ -46,7 +48,7 @@ pub trait StateKey<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKe
 /// For example if the state key and target key are both usize type then the
 /// child key will simply be the same usize as the target key.
 impl<K: node::Key, S> StateKey<K, S> for K {
-    fn make_child(&self, target_key: &K, target_state: &S) -> Self {
+    fn make_child(&self, target_key: &K, _target_state: &S) -> Self {
         target_key.clone()
     }
 }
@@ -259,35 +261,18 @@ impl<P: Policy> ExpanderTrait for Expander<P> {
     type Node = P::Node;
 }
 
-pub enum ExpansionError<P: Policy, G>
-where
-    P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
-    P::Reach: Reachable<P::Node, G, P::Waypoint>,
+#[derive(ThisError, Debug)]
+pub enum ExpansionError<E: Error, H: Error, R: Error>
 {
-    Extrapolator(ExtrapolatorErrorOf<P>),
-    Heuristic(HeuristicErrorOf<P, G>),
-    Reach(ReachErrorOf<P, G>),
+    #[error("An error occured during extrapolation:\n{0}")]
+    Extrapolator(E),
+    #[error("An error occured while computing the heuristic:\n{0}")]
+    Heuristic(H),
+    #[error("An error occurred while trying to reach for the goal:\n{0}")]
+    Reach(R),
 }
 
-impl<P: Policy, G> Debug for ExpansionError<P, G>
-where
-    P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
-    P::Reach: Reachable<P::Node, G, P::Waypoint>,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExpansionError::Extrapolator(e) => {
-                f.debug_tuple("graph_search::ExpansionError::Extrapolator").field(e).finish()
-            },
-            ExpansionError::Heuristic(e) => {
-                f.debug_tuple("graph_search::ExpansionError::Heuristic").field(e).finish()
-            },
-            ExpansionError::Reach(e) => {
-                f.debug_tuple("graph_search::ExpansionError::Reach").field(e).finish()
-            }
-        }
-    }
-}
+type ExpansionErrorOf<P, G> = ExpansionError<ExtrapolatorErrorOf<P>, HeuristicErrorOf<P, G>, ReachErrorOf<P, G>>;
 
 impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
@@ -299,8 +284,8 @@ where
     P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
     P::Reach: Reachable<P::Node, G, P::Waypoint>,
 {
-    type ExpansionError = ExpansionError<P, G>;
-    type Expansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionError<P, G>>> + 'a;
+    type ExpansionError = ExpansionErrorOf<P, G>;
+    type Expansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionErrorOf<P, G>>> + 'a;
 
     fn expand<'a>(
         &'a self,
@@ -313,7 +298,7 @@ where
             self.motions_from(parent, parent_key)
             .map(|r| r.map_err(ExpansionError::Extrapolator))
             .map(move |r| {
-                r.and_then(|MotionInfo{parent_key, to_key, trajectory}| {
+                r.and_then(|MotionInfo{parent_key: _, to_key, trajectory}| {
                     let h = self.heuristic.estimate_cost(
                         &to_key, goal
                     ).map_err(ExpansionError::Heuristic)?;
@@ -358,7 +343,7 @@ impl<P: Policy> Aimless for Expander<P> {
         .flat_map(move |parent_key| {
             self.motions_from(parent, parent_key)
             .map(move |r| {
-                r.and_then(|MotionInfo{parent_key, to_key, trajectory}| {
+                r.and_then(|MotionInfo{parent_key: _, to_key, trajectory}| {
                     Ok(self.make_child_node(
                         Some(to_key),
                         NodeCostOf::<P>::zero(),
@@ -446,7 +431,7 @@ impl<W: Waypoint, N: Agent<W, Trajectory<W>>> Iterator for ReconstructMotion<N, 
 
 impl<P: Policy> Solvable for Expander<P> {
     type Solution = Solution<P>;
-    type SolveError = ();
+    type SolveError = NoError;
 
     fn make_solution(&self, solution_node: &Arc<P::Node>) -> Result<Self::Solution, Self::SolveError> {
         let motion = Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok();

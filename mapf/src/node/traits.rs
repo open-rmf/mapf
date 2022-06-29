@@ -41,8 +41,8 @@ pub trait Agent<State, Action>: PathSearch {
 }
 
 /// A trait that describes what is needed to define a cost.
-pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug { }
-impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero + std::fmt::Debug> Cost for T { }
+pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero + Debug { }
+impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero + Debug> Cost for T { }
 
 /// A trait for nodes that have a cost associated with them.
 pub trait Weighted: Sized {
@@ -87,8 +87,8 @@ pub trait Reversible: PartialKeyed {
 pub type ReverseOf<N> = <N as Reversible>::Reverse;
 
 /// The set of traits required for a Key
-pub trait Key: Hash + Eq + Clone + Debug { }
-impl<T: Hash + Eq + Clone + Debug> Key for T { }
+pub trait Key: Hash + Eq + Clone + Debug + Send + Sync + 'static { }
+impl<T: Hash + Eq + Clone + Debug + Send + Sync + 'static> Key for T { }
 
 /// A trait for nodes that can sometimes provide a unique key but other times
 /// cannot.

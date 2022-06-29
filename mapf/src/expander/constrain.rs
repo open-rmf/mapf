@@ -16,18 +16,19 @@
 */
 
 use crate::{
-    node, expander::traits::*
+    node, expander::traits::*,
+    error::Error,
 };
 use std::sync::Arc;
-use std::fmt::Debug;
+use thiserror::Error as ThisError;
 
 pub trait Constraint<N, G> {
-    type ConstraintError: std::fmt::Debug;
+    type ConstraintError: Error;
     fn constrain(&self, node: Arc<N>, goal: &G) -> Result<Option<Arc<N>>, Self::ConstraintError>;
 }
 
 pub trait ReversibleConstraint<N: node::Reversible, S: Goal<N::Reverse>> {
-    type ReversalError: std::fmt::Debug;
+    type ReversalError: Error;
     type Reverse: Constraint<N::Reverse, S>;
     fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
 }
@@ -37,22 +38,12 @@ pub struct Constrain<E: Expander, C> {
     constrain_with: C,
 }
 
-pub enum ConstrainErr<E: Debug, C: Debug> {
+#[derive(ThisError, Debug)]
+pub enum ConstrainErr<E: Error, C: Error> {
+    #[error("An error occurred in the expander:\n{0}")]
     Base(E),
+    #[error("An error occurred in the constraint:\n{0}")]
     Constraint(C),
-}
-
-impl<E: Debug, C: Debug> Debug for ConstrainErr<E, C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConstrainErr::Base(e) => {
-                f.debug_tuple("ConstrainErr::Base").field(e).finish()
-            },
-            ConstrainErr::Constraint(e) => {
-                f.debug_tuple("ConstrainErr::Constraint").field(e).finish()
-            }
-        }
-    }
 }
 
 impl<E: Expander, C> Expander for Constrain<E, C> {
@@ -141,7 +132,7 @@ where
     }
 }
 
-pub struct ConstraintClosure<N, G: Goal<N>, Err: Debug, F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>> {
+pub struct ConstraintClosure<N, G: Goal<N>, Err: Error, F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>> {
     closure: F,
     _ignore: std::marker::PhantomData<(N, G, Err)>,
 }
@@ -149,7 +140,7 @@ pub struct ConstraintClosure<N, G: Goal<N>, Err: Debug, F: Fn(Arc<N>, &G) -> Res
 impl<N, G, Err, F> ConstraintClosure<N, G, Err, F>
 where
     G: Goal<N>,
-    Err: Debug,
+    Err: Error,
     F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>
 {
     pub fn new(closure: F) -> Self {
@@ -160,7 +151,7 @@ where
 impl<N, G, Err, F> Constraint<N, G> for ConstraintClosure<N, G, Err, F>
 where
     G: Goal<N>,
-    Err: Debug,
+    Err: Error,
     F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>
 {
     type ConstraintError = Err;
@@ -182,7 +173,7 @@ pub trait Constrainable {
     ) -> Constrain<Self::Base, ConstraintClosure<NodeOf<Self::Base>, G, Err, F>>
     where
         Self: Sized,
-        Err: Debug,
+        Err: Error,
         G: Goal<NodeOf<Self::Base>>,
         F: Fn(Arc<NodeOf<Self::Base>>, &G) -> Result<Option<Arc<NodeOf<Self::Base>>>, Err>,
     {

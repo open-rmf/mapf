@@ -19,6 +19,7 @@ use crate::{
     motion::{Trajectory, Interpolation, Motion, TimePoint, Duration, r2, se2},
     expander::Constraint,
     node::Agent,
+    error::NoError,
 };
 use nalgebra::Vector2;
 use std::sync::Arc;
@@ -206,7 +207,7 @@ pub struct CircleCollisionConstraint {
 impl<N, G> Constraint<N, G> for CircleCollisionConstraint
 where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
 {
-    type ConstraintError = ();
+    type ConstraintError = NoError;
     fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
         if let Some(trajectory) = node.action() {
             for (r_obs, t_obs) in &self.obstacles {

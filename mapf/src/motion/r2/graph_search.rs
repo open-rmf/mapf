@@ -30,6 +30,7 @@ use crate::{
     directed::simple::SimpleGraph,
 };
 use std::sync::Arc;
+use thiserror::Error as ThisError;
 
 pub type Node<C, K> = BuiltinNode<C, K, r2::timed_position::Waypoint>;
 
@@ -85,10 +86,13 @@ pub fn make_default_expander(
 
 pub type DefaultNode = Node<i64, usize>;
 
-#[derive(Debug)]
+#[derive(ThisError, Debug)]
 pub enum InitErrorR2<K, H> {
+    #[error("The requested start vertex [{0:?}] is missing")]
     MissingStartVertex(K),
+    #[error("The request goal vertex [{0:?}] is missing")]
     MissingGoalVertex(K),
+    #[error("An error occurred while calculating the heuristic:\n{0}")]
     Heuristic(H),
 }
 

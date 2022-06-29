@@ -15,33 +15,26 @@
  *
 */
 
-use crate::expander::{
-    traits::*, Closure,
+use crate::{
+    expander::{traits::*, Closure},
+    error::Error,
 };
-use std::sync::Arc;
-use std::fmt::Debug;
+use std::{
+    sync::Arc,
+};
+use thiserror::Error as ThisError;
 
 pub struct Chain<E: Expander, C: Expander<Node=E::Node>> {
     base: E,
     chain_with: C,
 }
 
-pub enum ChainErr<E: Debug, C: Debug> {
+#[derive(ThisError, Debug)]
+pub enum ChainErr<E: Error, C: Error> {
+    #[error("An error occurred in the base expander:\n{0}")]
     Base(E),
+    #[error("An error occurred in the chained expander:\n{0}")]
     Next(C),
-}
-
-impl<E: Debug, C: Debug> Debug for ChainErr<E, C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ChainErr::Base(e) => {
-                f.debug_tuple("ChainErr::Base").field(e).finish()
-            },
-            ChainErr::Next(e) => {
-                f.debug_tuple("ChainErr::Next").field(e).finish()
-            }
-        }
-    }
 }
 
 impl<E: Expander, C: Expander<Node=E::Node>> Expander for Chain<E, C> {
@@ -141,7 +134,7 @@ pub trait Chainable {
     where
         Self: Sized,
         G: Goal<NodeOf<Self::Base>>,
-        Err: Debug,
+        Err: Error,
         Exp: IntoIterator<Item=Result<Arc<NodeOf<Self::Base>>, Err>>,
         F: Fn(&Arc<NodeOf<Self::Base>>, &G) -> Exp,
     {
