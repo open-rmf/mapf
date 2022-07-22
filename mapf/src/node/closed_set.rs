@@ -15,7 +15,7 @@
  *
 */
 
-use super::traits::*;
+use crate::node::traits::*;
 use std::sync::Arc;
 use std::collections::hash_map::{HashMap, Entry};
 
@@ -77,7 +77,17 @@ pub trait ClosedSet<N>: Default {
     /// Check whether an equivalent node has been closed.
     fn status(&self, node: &N) -> ClosedStatus<N>;
 
+    /// Iterate through all the entries
     fn iter<'a>(&'a self) -> Self::Iter<'a>;
+}
+
+pub trait KeyedSet<N> {
+    /// The key type for the set. This can match the key type of the Node if the
+    /// Node has a PartialKeyed trait, but that is not a requirement in general.
+    type Key: Key;
+
+    /// Get the node in the closed set that matches this key
+    fn get(&self, key: &Self::Key) -> Option<&Arc<N>>;
 }
 
 pub struct PartialKeyedClosedSet<N: Weighted + PartialKeyed> {
@@ -133,6 +143,15 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
         self.closed_set.iter().map(|(_, n)| n)
+    }
+}
+
+impl<N: Weighted + PartialKeyed> KeyedSet<N> for PartialKeyedClosedSet<N> {
+
+    type Key = N::Key;
+
+    fn get(&self, key: &Self::Key) -> Option<&Arc<N>> {
+        self.closed_set.get(key)
     }
 }
 

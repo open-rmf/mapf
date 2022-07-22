@@ -35,7 +35,7 @@ pub trait InitAimless<Start>: Expander {
     type InitialAimlessNodes<'a>: IntoIterator<Item=Result<Arc<Self::Node>, Self::InitAimlessError>, IntoIter: 'a>
     where Self: 'a, Start: 'a;
 
-    fn start<'a>(
+    fn aimless_start<'a>(
         &'a self,
         start: &'a Start,
     ) -> Self::InitialAimlessNodes<'a>;
