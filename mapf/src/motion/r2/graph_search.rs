@@ -17,7 +17,7 @@
 
 use crate::{
     node::{Key, Cost, ClosedSet, PartialKeyed, PartialKeyedClosedSet},
-    expander::{Goal, Initializable},
+    expander::{Goal, InitTargeted},
     motion::{
         TimePoint,
         graph_search::{BuiltinNode, Policy, Expander},
@@ -96,21 +96,21 @@ pub enum InitErrorR2<K, H> {
     Heuristic(H),
 }
 
-impl<G, S, C, H> Initializable<G::Key, G::Key> for Expander<LinearR2Policy<G, S, C, H>>
+impl<G, S, C, H> InitTargeted<G::Key, G::Key> for Expander<LinearR2Policy<G, S, C, H>>
 where
     G: Graph<Vertex=r2::Position>,
     S: ClosedSet<Node<C::Cost, G::Key>>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     H: Heuristic<G::Key, G::Key, C::Cost>,
 {
-    type InitError = InitErrorR2<G::Key, H::Error>;
-    type InitialNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitError>>;
+    type InitTargetedError = InitErrorR2<G::Key, H::Error>;
+    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>>;
 
     fn start<'a>(
         &'a self,
         start: &'a G::Key,
         goal: &'a G::Key,
-    ) -> Self::InitialNodes<'a> {
+    ) -> Self::InitialTargetedNodes<'a> {
         [self.graph.vertex(start.clone())].into_iter()
         .map(|v| {
             v.map_or(

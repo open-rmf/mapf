@@ -17,7 +17,7 @@
 
 use crate::{
     motion::{Trajectory, Interpolation, Motion, TimePoint, Duration, r2, se2},
-    expander::Constraint,
+    expander::{AimlessConstraint, TargetedConstraint},
     node::Agent,
     error::NoError,
 };
@@ -204,11 +204,11 @@ pub struct CircleCollisionConstraint {
     pub agent_radius: f64,
 }
 
-impl<N, G> Constraint<N, G> for CircleCollisionConstraint
+impl<N> AimlessConstraint<N> for CircleCollisionConstraint
 where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
 {
     type ConstraintError = NoError;
-    fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
+    fn constrain(&self, node: Arc<N>) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
         if let Some(trajectory) = node.action() {
             for (r_obs, t_obs) in &self.obstacles {
                 if detect_collision_circles_se2(
@@ -223,5 +223,14 @@ where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Wa
         }
 
         return Ok(Some(node));
+    }
+}
+
+impl<N, G> TargetedConstraint<N, G> for CircleCollisionConstraint
+where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
+{
+    type ConstraintError = NoError;
+    fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<Arc<N>>, Self::ConstraintError> {
+        AimlessConstraint::constrain(self, node)
     }
 }

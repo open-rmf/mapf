@@ -17,7 +17,7 @@
 
 use crate::{
     node::Informed,
-    expander::traits::{Expander, Expandable, Goal},
+    expander::traits::{Expander, Targeted, Goal},
     motion::{
         Duration, Waypoint, Trajectory,
         trajectory::CostCalculator,
@@ -58,15 +58,15 @@ impl<W: Waypoint, C: CostCalculator<W>, N> Expander for Hold<W, C, N> {
     type Node = N;
 }
 
-impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, G: Goal<N>> Expandable<G> for Hold<W, C, N> {
-    type ExpansionError = NoError;
-    type Expansion<'a> where W: 'a, N: 'a, C: 'a, G: 'a = impl Iterator<Item=Result<Arc<N>, NoError>>;
+impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, G: Goal<N>> Targeted<G> for Hold<W, C, N> {
+    type TargetedError = NoError;
+    type TargetedExpansion<'a> where W: 'a, N: 'a, C: 'a, G: 'a = impl Iterator<Item=Result<Arc<N>, NoError>>;
 
     fn expand<'a>(
         &'a self,
         parent: &'a Arc<N>,
         _: &'a G,
-    ) -> Self::Expansion<'a> {
+    ) -> Self::TargetedExpansion<'a> {
         // SAFETY: The value check on for_duration makes sure that duration is
         // always positive so the hold will always be valid.
         let until_time = *parent.state().time() + self.duration;

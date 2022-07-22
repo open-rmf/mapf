@@ -24,7 +24,7 @@ use anyhow;
 
 use crate::{
     node::Weighted,
-    expander::{Goal, Expander, Expandable, Solvable, CostOf, ExpansionErrorOf, SolveErrorOf},
+    expander::{Goal, Expander, Targeted, Solvable, CostOf, ExpansionErrorOf, SolveErrorOf},
     algorithm::{Algorithm, WeightSorted, Status, Memory, StepError},
     trace::Trace,
 };
@@ -49,7 +49,7 @@ pub struct Progress<E: Solvable, A: Algorithm<E>, O: Options<E, A>, G, T: Trace<
 
 impl<E, A, O, G, T> Progress<E, A, O, G, T>
 where
-    E: Expandable<G> + Solvable,
+    E: Targeted<G> + Solvable,
     A: Algorithm<E>,
     O: Options<E, A>,
     G: Goal<E::Node>,
@@ -131,7 +131,7 @@ pub trait WithOptions<O> {
 
 impl<E, A, G, O, T> WithOptions<O> for Progress<E, A, O, G, T>
 where
-    E: Expandable<G> + Solvable,
+    E: Targeted<G> + Solvable,
     A: Algorithm<E>,
     G: Goal<E::Node>,
     O: Options<E, A>,
@@ -258,7 +258,7 @@ impl WithBasicOptions for BasicOptions {
 /// the Options of the Progress implement WithBasicOptions
 impl<E, A, G, O, T> WithBasicOptions for Progress<E, A, O, G, T>
 where
-    E: Expandable<G> + Solvable,
+    E: Targeted<G> + Solvable,
     A: Algorithm<E>,
     G: Goal<E::Node>,
     O: Options<E, A> + WithBasicOptions,
@@ -397,7 +397,7 @@ impl<E: Expander<Node: Weighted>> Clone for WeightedOptions<E> {
 
 impl<E, A, G, O, T> WithWeightedOptions<E> for Progress<E, A, O, G, T>
 where
-    E: Expandable<G> + Solvable<Node: Weighted>,
+    E: Targeted<G> + Solvable<Node: Weighted>,
     A: Algorithm<E>,
     G: Goal<E::Node>,
     O: Options<E, A> + WithWeightedOptions<E>,
@@ -425,7 +425,7 @@ pub trait Interface<Solution> {
 
 impl<E, A, O, G, T> Interface<E::Solution> for Progress<E, A, O, G, T>
 where
-    E: Expandable<G> + Solvable,
+    E: Targeted<G> + Solvable,
     A: Algorithm<E>,
     O: Options<E, A>,
     G: Goal<E::Node>,

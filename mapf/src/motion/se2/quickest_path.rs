@@ -15,8 +15,11 @@
  *
 */
 
-pub mod tree;
-pub use tree::Tree;
+use crate::{
+    tree::Tree,
+    motion::r2,
+};
 
-pub mod garden;
-pub use garden::BidirectionalGarden;
+// pub struct QuickestPath<G: Graph<Vertex=r2::Position>, C: CostCalculator<r2::timed_position::Waypoint>> {
+
+// }

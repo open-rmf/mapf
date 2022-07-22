@@ -25,7 +25,7 @@ use crate::{
         reach::Reachable,
         hold::Hold,
     },
-    expander::{Goal, Initializable, Chain, Chainable},
+    expander::{Goal, InitTargeted, Chain, Chainable},
     node::{
         Agent, PartialKeyed, Keyed,
         closed_set::{ClosedSet, PartialKeyedClosedSet, TimeVariantPartialKeyedClosetSet},
@@ -241,21 +241,21 @@ pub enum InitErrorSE2<H> {
     Heuristic(H)
 }
 
-impl<G, S, C, H> Initializable<StartSE2, GoalSE2> for Expander<LinearSE2Policy<G, S, C, H>>
+impl<G, S, C, H> InitTargeted<StartSE2, GoalSE2> for Expander<LinearSE2Policy<G, S, C, H>>
 where
     G: Graph<Vertex=r2::Position, Key=usize>,
     S: ClosedSet<Node>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64> + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
     H: Heuristic<KeySE2, GoalSE2, i64>,
 {
-    type InitError = InitErrorSE2<H::Error>;
-    type InitialNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node>, Self::InitError>> + 'a;
+    type InitTargetedError = InitErrorSE2<H::Error>;
+    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node>, Self::InitTargetedError>> + 'a;
 
     fn start<'a>(
         &'a self,
         start: &'a StartSE2,
         goal: &'a GoalSE2,
-    ) -> Self::InitialNodes<'a> {
+    ) -> Self::InitialTargetedNodes<'a> {
         [self.graph.vertex(start.vertex)].into_iter()
         .filter_map(|x| x)
         .flat_map(move |p0| {

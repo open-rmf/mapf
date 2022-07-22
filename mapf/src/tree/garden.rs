@@ -16,73 +16,72 @@
 */
 
 use super::Tree;
-use crate::node::{self, PartialKeyed, Keyed, ClosedSet, KeyOf, Weighted};
-use crate::expander::{Goal, Expander, Initializable, Expandable, Aimless, Closable, Reversible, BidirSolvable, CostOf, NodeOf, ReverseOf, ReverseNodeOf, SolutionOf, InitErrorOf, AimlessErrorOf, ReversalErrorOf, BidirSolveErrorOf};
-use crate::util::Minimum;
-use std::collections::hash_map::HashMap;
-use std::sync::{Arc, Mutex};
-use std::cell::RefCell;
+use crate::{
+    node::{self, PartialKeyed, Keyed, ClosedSet, KeyOf, Weighted},
+    expander::{
+        Expander, InitAimless, Aimless, Closable, Reversible, Solvable, BidirSolvable,
+        CostOf, NodeOf, ReverseOf, ReverseNodeOf, SolutionOf, InitAimlessErrorOf, AimlessErrorOf, ReversalErrorOf, BidirSolveErrorOf,
+    },
+    util::Minimum,
+};
+use std::{
+    collections::hash_map::HashMap,
+    sync::{Arc, Mutex},
+    cell::RefCell,
+};
 
 type MutexRefCell<T> = Mutex<RefCell<T>>;
 
 #[derive(Debug)]
 pub enum InitError<E, S, G>
 where
-    E: Initializable<S, G> + Reversible<S, G>,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    E: InitAimless<S> + Reversible,
+    E::Reverse: InitAimless<G>,
 {
-    Forward(InitErrorOf<E, S, G>),
-    Reverse(InitErrorOf<ReverseOf<E, S, G>, G, S>),
+    Forward(InitAimlessErrorOf<E, S>),
+    Reverse(InitAimlessErrorOf<ReverseOf<E>, G>),
     PoisonedMutex,
 }
 
 #[derive(Debug)]
-pub enum ExpansionError<E, S, G>
+pub enum ExpansionError<E>
 where
-    E: Initializable<S, G> + Aimless + BidirSolvable<S, G>,
-    ReverseOf<E, S, G>: Aimless,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    E: Aimless + BidirSolvable,
+    E::Reverse: Aimless,
 {
     Forward(AimlessErrorOf<E>),
-    Reverse(AimlessErrorOf<ReverseOf<E, S, G>>),
-    Solve(BidirSolveErrorOf<E, S, G>),
+    Reverse(AimlessErrorOf<ReverseOf<E>>),
+    Solve(BidirSolveErrorOf<E>),
     PoisonedMutex,
 }
 
 #[derive(Debug)]
 pub enum Error<E, S, G>
 where
-    E: Initializable<S, G> + Aimless + BidirSolvable<S, G>,
-    ReverseOf<E, S, G>: Aimless,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    E: InitAimless<S> + Aimless + BidirSolvable,
+    E::Reverse: InitAimless<G> + Aimless,
+    ReverseOf<E>: Aimless,
 {
     Init(InitError<E, S, G>),
-    Expansion(ExpansionError<E, S, G>),
+    Expansion(ExpansionError<E>),
 }
 
 impl<E, S, G> From<InitError<E, S, G>> for Error<E, S, G>
 where
-    E: Initializable<S, G> + Aimless + BidirSolvable<S, G>,
-    ReverseOf<E, S, G>: Aimless,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    E: InitAimless<S> + Aimless + BidirSolvable,
+    E::Reverse: InitAimless<G> + Aimless,
 {
     fn from(e: InitError<E, S, G>) -> Self {
         Error::Init(e)
     }
 }
 
-impl<E, S, G> From<ExpansionError<E, S, G>> for Error<E, S, G>
+impl<E, S, G> From<ExpansionError<E>> for Error<E, S, G>
 where
-    E: Initializable<S, G> + Aimless + BidirSolvable<S, G>,
-    ReverseOf<E, S, G>: Aimless,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    E: InitAimless<S> + Aimless + BidirSolvable,
+    E::Reverse: InitAimless<G> + Aimless,
 {
-    fn from(e: ExpansionError<E, S, G>) -> Self {
+    fn from(e: ExpansionError<E>) -> Self {
         Error::Expansion(e)
     }
 }
@@ -90,15 +89,26 @@ where
 // type TreeCache<E: Expander> where E::Node: HashOption = MutexRefCell<HashMap<<E::Node as node::HashOption>::Key, MutexRefCell<Tree<E>>>>;
 type TreeCache<E> = MutexRefCell<HashMap<KeyOf<NodeOf<E>>, Arc<MutexRefCell<Tree<E>>>>>;
 type SolutionCache<E> = MutexRefCell<HashMap<(KeyOf<NodeOf<E>>, KeyOf<NodeOf<E>>), Option<SolutionOf<E>>>>;
-type ConnectionMap<E, S, G> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Option<Arc<NodeOf<ReverseOf<E, S, G>>>>)>;
+type ConnectionMap<E> = HashMap<KeyOf<NodeOf<E>>, (Option<Arc<NodeOf<E>>>, Option<Arc<NodeOf<ReverseOf<E>>>>)>;
 
-pub struct Garden<E: Aimless + BidirSolvable<S, G> + Closable, S, G>
+pub struct Garden<E>
 where
+    E: Aimless + Reversible + Solvable + Closable,
+    E::Reverse: Aimless + Closable + Solvable + Closable,
+    NodeOf<E>: Weighted + Keyed,
+    ReverseNodeOf<E>: Weighted + Keyed,
+{
+    expander: Arc<E>,
+    trees: TreeCache<E>,
+    solutions: SolutionCache<E>,
+}
+
+pub struct BidirectionalGarden<E>
+where
+    E: Aimless + BidirSolvable + Closable,
+    E::Reverse: Aimless + Closable,
     NodeOf<E>: Weighted + node::Reversible + Keyed,
-    ReverseNodeOf<E, S, G>: Weighted + Keyed,
-    ReverseOf<E, S, G>: Aimless + Closable,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
+    ReverseNodeOf<E>: Weighted + Keyed,
 {
     expander: Arc<E>,
     reverser: Arc<E::Reverse>,
@@ -107,17 +117,14 @@ where
     solutions: SolutionCache<E>,
 }
 
-impl<E, S, G> Garden<E, S, G>
+impl<E> BidirectionalGarden<E>
 where
-    E: Initializable<S, G> + Expandable<G> + Aimless + BidirSolvable<S, G> + Closable,
-    S: Goal<ReverseNodeOf<E, S, G>>,
-    G: Goal<E::Node>,
-    E::Node: node::Weighted + node::Reversible + node::Keyed,
-    E::Solution: node::Weighted + Clone,
-    ReverseNodeOf<E, S, G>: node::Weighted<Cost=CostOf<E>> + node::Keyed,
-    ReverseOf<E, S, G>: Aimless + Closable,
+    E: Aimless + BidirSolvable + Closable,
+    E::Reverse: Aimless + Closable,
+    NodeOf<E>: Weighted + node::Reversible + Keyed,
+    ReverseNodeOf<E>: Weighted + Keyed,
 {
-    pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E, S, G>> {
+    pub fn new(expander: Arc<E>) -> Result<Self, ReversalErrorOf<E>> {
         let reverser = expander.reverse()?;
         let reverser = Arc::new(reverser);
         Ok(Self{
@@ -129,7 +136,14 @@ where
         })
     }
 
-    pub fn solve(&self, from: &S, to: &G) -> Result<Option<E::Solution>, Error<E, S, G>> {
+    pub fn solve<S, G>(&self, from: &S, to: &G) -> Result<Option<E::Solution>, Error<E, S, G>>
+    where
+        E: InitAimless<S>,
+        E::Reverse: InitAimless<G>,
+        E::Solution: Clone + Weighted,
+        E::Node: Weighted,
+        ReverseNodeOf<E>: Weighted<Cost=CostOf<E>>,
+    {
         // TODO(MXG): It should be possible to parallelize some of this effort.
         // We should look into how to use async and runtimes here.
         let mut best_solution = Minimum::new(|u: &E::Solution, v: &E::Solution| { u.cost().cmp(&v.cost()) });
@@ -137,10 +151,10 @@ where
         // Note: We use None for goal here because we are not interested in
         // doing an informed search. Calculating a heuristic would be a waste of
         // effort.
-        for forward in self.expander.start(from, to) {
+        for forward in self.expander.start(from) {
             let forward = forward.map_err(InitError::Forward)?;
             let key_f = forward.key();
-            for reverse in self.reverser.start(to, from) {
+            for reverse in self.reverser.start(to) {
                 let reverse = reverse.map_err(InitError::Reverse)?;
                 let key_r = reverse.key();
                 {
@@ -175,8 +189,11 @@ where
         key_f: <E::Node as PartialKeyed>::Key,
         reverse: Arc<<E::Reverse as Expander>::Node>,
         key_r: <E::Node as PartialKeyed>::Key,
-    ) -> Result<Option<(Arc<E::Node>, Arc<<E::Reverse as Expander>::Node>)>, ExpansionError<E, S , G>> {
-
+    ) -> Result<Option<(Arc<E::Node>, Arc<<E::Reverse as Expander>::Node>)>, ExpansionError<E>>
+    where
+        E::Node: Weighted,
+        ReverseNodeOf<E>: Weighted<Cost=CostOf<E>>,
+    {
         let mut best_connection = Minimum::new(
             |u: &(Arc<E::Node>, Arc<<E::Reverse as Expander>::Node>), v: &(Arc<E::Node>, Arc<<E::Reverse as Expander>::Node>)| {
                 (u.0.cost() + u.1.cost()).cmp(&(v.0.cost() + v.1.cost()))
@@ -209,7 +226,7 @@ where
         let reverse_tree_guard = reverse_tree_arc.lock().map_err(|_| ExpansionError::PoisonedMutex)?;
         let mut reverse_tree = reverse_tree_guard.borrow_mut();
 
-        let mut connections = ConnectionMap::<E, S, G>::new();
+        let mut connections = ConnectionMap::<E>::new();
         for node in forward_tree.closed().iter() {
             connections.insert(node.key().clone(), (Some(node.clone()), None));
         }

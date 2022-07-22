@@ -51,21 +51,21 @@ where
     type Node = N;
 }
 
-impl<N, G, Err, Exp, F> Expandable<G> for Closure<N, G, Err, Exp, F>
+impl<N, G, Err, Exp, F> Targeted<G> for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
     Err: Error,
     Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
     F: Fn(&Arc<N>, &G) -> Exp
 {
-    type ExpansionError = Err;
-    type Expansion<'a> where Self: 'a = Exp;
+    type TargetedError = Err;
+    type TargetedExpansion<'a> where Self: 'a = Exp;
 
     fn expand<'a>(
         &'a self,
         parent: &'a Arc<Self::Node>,
         goal: &'a G,
-    ) -> Self::Expansion<'a> {
+    ) -> Self::TargetedExpansion<'a> {
         (self.closure)(parent, goal)
     }
 }

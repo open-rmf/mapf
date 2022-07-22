@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use crate::{
         node::PartialKeyed,
-        expander::Initializable,
+        expander::InitTargeted,
         motion::r2::{
             Position, timed_position::LineFollow,
             graph_search::make_default_expander,

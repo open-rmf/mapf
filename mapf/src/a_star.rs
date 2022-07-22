@@ -18,7 +18,7 @@
 use crate::{
     Trace,
     algorithm::{self, Status},
-    expander::{Expander, Expandable, Initializable, Solvable, Closable, Goal, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf},
+    expander::{Expander, Targeted, InitTargeted, Solvable, Closable, Goal, CostOf, InitTargetedErrorOf, ExpansionErrorOf, SolveErrorOf},
     node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus},
     error::NoError,
 };
@@ -82,8 +82,8 @@ where
         start: &S,
         goal: &G,
         tracker: &mut T
-    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> {
+    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G> {
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, goal) {
             let node = node.map_err(algorithm::InitError::Expander)?;
@@ -104,7 +104,7 @@ where
         goal: &G,
         tracker: &mut T,
     ) -> Result<Status<E::Solution>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
-    where E: Expandable<G> {
+    where E: Targeted<G> {
 
         if let Some(top) = memory.queue.pop().map(|x| x.0.0) {
             if goal.is_satisfied(&top) {

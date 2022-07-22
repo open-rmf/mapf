@@ -21,7 +21,7 @@ use std::{
 };
 use crate::{
     progress::{self, Progress, Options, BasicOptions},
-    expander::{Goal, Initializable, Expandable, Solvable, InitErrorOf},
+    expander::{Goal, InitTargeted, Targeted, Solvable, InitTargetedErrorOf},
     algorithm::{Algorithm, InitError},
     trace::{Trace, NoTrace},
 };
@@ -84,8 +84,8 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         &self,
         start: &S,
         goal: G,
-    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> + Expandable<G> {
+    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G> + Targeted<G> {
         self.plan_with_options(start, goal, self.default_options.clone())
     }
 
@@ -94,8 +94,8 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         start: &S,
         goal: G,
         options: O,
-    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> + Expandable<G> {
+    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G> + Targeted<G> {
         let mut trace = NoTrace::default();
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, &goal, &mut trace
@@ -110,8 +110,8 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         start: &S,
         goal: G,
         trace: T,
-    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> + Expandable<G> {
+    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G> + Targeted<G> {
         self.trace_with_options(start, goal, self.default_options.clone(), trace)
     }
 
@@ -121,8 +121,8 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         goal: G,
         options: O,
         mut trace: T,
-    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G> + Expandable<G> {
+    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G> + Targeted<G> {
         let memory = self.algorithm.initialize(
             self.expander.clone(), &start, &goal, &mut trace
         )?;
@@ -132,7 +132,7 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
 
     pub fn into_abstract<S, G>(self) -> Abstract<S, G, E::Solution>
     where
-        E: Initializable<S, G> + Expandable<G> + 'static,
+        E: InitTargeted<S, G> + Targeted<G> + 'static,
         A: 'static,
         O: 'static,
         G: Goal<E::Node> + 'static,
@@ -158,7 +158,7 @@ pub trait Interface<S, G, Solution> {
 
 impl<E, A, O, S, G> Interface<S, G, E::Solution> for Planner<E, A, O>
 where
-    E: Initializable<S, G> + Expandable<G> + Solvable + 'static,
+    E: InitTargeted<S, G> + Targeted<G> + Solvable + 'static,
     A: Algorithm<E> + 'static,
     O: Options<E, A> + 'static,
     G: Goal<E::Node> + 'static,
@@ -194,7 +194,7 @@ mod tests {
     use super::*;
     use crate::{
         node::{self, traits::*},
-        expander::{Expander, Initializable, Expandable, Solvable, Closable, Goal, CostOf, ExpansionErrorOf},
+        expander::{Expander, InitTargeted, Targeted, Solvable, Closable, Goal, CostOf, ExpansionErrorOf},
         algorithm::{WeightSorted, Memory, Status, StepError},
         error::NoError,
     };
@@ -275,11 +275,11 @@ mod tests {
         }
     }
 
-    impl Initializable<u64, CountingGoal> for CountingExpander {
-        type InitError = NoError;
-        type InitialNodes<'a> = CountingExpansion<'a>;
+    impl InitTargeted<u64, CountingGoal> for CountingExpander {
+        type InitTargetedError = NoError;
+        type InitialTargetedNodes<'a> = CountingExpansion<'a>;
 
-        fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialNodes<'a> {
+        fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialTargetedNodes<'a> {
             if *start <= goal.value {
                 return CountingExpansion {
                     next_node: Some(
@@ -300,15 +300,15 @@ mod tests {
         }
     }
 
-    impl Expandable<CountingGoal> for CountingExpander {
-        type ExpansionError = NoError;
-        type Expansion<'a> = CountingExpansion<'a>;
+    impl Targeted<CountingGoal> for CountingExpander {
+        type TargetedError = NoError;
+        type TargetedExpansion<'a> = CountingExpansion<'a>;
 
         fn expand<'a>(
             &'a self,
             parent: &Arc<CountingNode>,
             goal: &CountingGoal,
-        ) -> Self::Expansion<'a> {
+        ) -> Self::TargetedExpansion<'a> {
             if parent.value <= goal.value {
                 return CountingExpansion{
                     next_node: Some(
@@ -390,8 +390,8 @@ mod tests {
             start: &S,
             goal: &G,
             trace: &mut T,
-        ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S, G>>>
-        where E: Initializable<S, G> {
+        ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
+        where E: InitTargeted<S, G> {
             let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
             for node in expander.start(start, goal) {
                 let node = node.map_err(InitError::Expander)?;
@@ -408,7 +408,7 @@ mod tests {
             goal: &G,
             tracker: &mut T
         ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>>
-        where E: Expandable<G> {
+        where E: Targeted<G> {
             let top_opt = memory.queue.pop();
             if let Some(top) = top_opt {
                 if goal.is_satisfied(&top) {

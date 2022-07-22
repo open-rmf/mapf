@@ -18,7 +18,7 @@
 use crate::{
     Heuristic,
     graph::{Graph, Edge, VertexOf, KeyOf},
-    expander::{Expander as ExpanderTrait, Aimless, Goal, Expandable, Closable, Solvable},
+    expander::{Expander as ExpanderTrait, Aimless, Goal, Targeted, Closable, Solvable},
     node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Keyed, Informed, PathSearch},
     motion::{
         Waypoint, Trajectory, Extrapolator,
@@ -278,20 +278,20 @@ impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
 }
 
-impl<P: Policy, G> Expandable<G> for Expander<P>
+impl<P: Policy, G> Targeted<G> for Expander<P>
 where
     G: Keyed<Key=GraphKeyOf<P>> + Goal<P::Node>,
     P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
     P::Reach: Reachable<P::Node, G, P::Waypoint>,
 {
-    type ExpansionError = ExpansionErrorOf<P, G>;
-    type Expansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionErrorOf<P, G>>> + 'a;
+    type TargetedError = ExpansionErrorOf<P, G>;
+    type TargetedExpansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionErrorOf<P, G>>> + 'a;
 
     fn expand<'a>(
         &'a self,
         parent: &'a std::sync::Arc<P::Node>,
         goal: &'a G,
-    ) -> Self::Expansion<'a> {
+    ) -> Self::TargetedExpansion<'a> {
         [parent.partial_key()].into_iter()
         .filter_map(|x| x)
         .flat_map(move |parent_key| {

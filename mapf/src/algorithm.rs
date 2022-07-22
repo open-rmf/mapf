@@ -17,7 +17,7 @@
 
 use crate::{
     node,
-    expander::{Goal, Expander, Initializable, Expandable, Solvable, CostOf, InitErrorOf, ExpansionErrorOf, SolveErrorOf},
+    expander::{Goal, Expander, InitTargeted, Targeted, Solvable, CostOf, InitTargetedErrorOf, ExpansionErrorOf, SolveErrorOf},
     trace::Trace,
     error::Error,
 };
@@ -74,8 +74,8 @@ pub trait Algorithm<E: Solvable>: Sized {
         start: &S,
         goal: &G,
         trace: &mut T,
-    ) -> Result<Self::Memory, InitError<Self::InitError, InitErrorOf<E, S, G>>>
-    where E: Initializable<S, G>;
+    ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
+    where E: InitTargeted<S, G>;
 
     fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
@@ -83,5 +83,5 @@ pub trait Algorithm<E: Solvable>: Sized {
         goal: &G,
         tracker: &mut T,
     ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
-    where E: Expandable<G>;
+    where E: Targeted<G>;
 }
