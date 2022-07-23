@@ -17,7 +17,7 @@
 
 use time_point::{TimePoint, Duration};
 use crate::{
-    motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator},
+    motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator, se2},
     error::NoError,
 };
 use super::{Position, Velocity};
@@ -152,14 +152,21 @@ impl Extrapolator<Waypoint, Position> for LineFollow {
 
 impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
     type Reverse = LineFollow;
-    type Error = ();
+    type Error = NoError;
 
-    fn reverse(&self) -> Result<Self::Reverse, ()> {
+    fn reverse(&self) -> Result<Self::Reverse, NoError> {
         Ok(Self{
             speed: self.speed,
             direction: -1.0 * self.direction,
             distance_threshold: self.distance_threshold,
         })
+    }
+}
+
+impl From<&se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
+    fn from(other: &se2::timed_position::DifferentialDriveLineFollow) -> Self {
+        LineFollow::new(other.translational_speed())
+        .expect("corrupt speed in DifferentialDriveLineFollow")
     }
 }
 

@@ -17,10 +17,10 @@
 
 use crate::{
     node::Cost,
-    error::Error,
+    error::{Error, NoError},
 };
 
-pub trait Heuristic<Start, Goal, C: Cost>: std::fmt::Debug {
+pub trait Heuristic<Start, Goal, C: Cost> {
     type Error: Error;
 
     fn estimate_cost(
@@ -28,4 +28,21 @@ pub trait Heuristic<Start, Goal, C: Cost>: std::fmt::Debug {
         from_state: &Start,
         to_goal: &Goal,
     ) -> Result<Option<C>, Self::Error>;
+}
+
+/// In cases where a heuristic needs to be specified for a generic argument but
+/// you know that it won't actually be used (e.g. you'll only be using aimless
+/// expansion), then you can pass in an Uninformed heuristic as a placeholder.
+/// This could also be used as a reference point for benchmarking heuristic
+/// performance.
+pub struct Uninformed;
+impl<S, G, C: Cost> Heuristic<S, G, C> for Uninformed {
+    type Error = NoError;
+    fn estimate_cost(
+        &self,
+        from_state: &S,
+        to_goal: &G,
+    ) -> Result<Option<C>, Self::Error> {
+        Ok(Some(C::zero()))
+    }
 }

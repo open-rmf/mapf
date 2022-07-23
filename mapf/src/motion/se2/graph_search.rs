@@ -19,7 +19,7 @@ use crate::{
     graph::{Graph, Edge},
     motion::{
         Extrapolator, TimePoint,
-        se2, r2::{self, direct_travel::DirectTravelHeuristic},
+        se2::{self, QuickestPath}, r2,
         graph_search::{Policy, BuiltinNode, Expander, StateKey},
         trajectory::{CostCalculator, DurationCostCalculator},
         reach::Reachable,
@@ -148,7 +148,7 @@ pub struct StartSE2 {
     pub orientation: se2::Rotation,
 }
 
-pub struct LinearSE2Policy<G, S, C=DurationCostCalculator, H=DirectTravelHeuristic<G, C>>
+pub struct LinearSE2Policy<G, S, C=DurationCostCalculator, H=QuickestPath<G, C>>
 where
     G: Graph<Vertex=se2::Point>,
     S: ClosedSet<Node>,
@@ -179,17 +179,17 @@ where
 }
 
 pub type TimeInvariantExpander<G, C, H> = Expander<LinearSE2Policy<G, PartialKeyedClosedSet<Node>, C, H>>;
-pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 pub fn make_default_time_invariant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
 ) -> DefaultTimeInvariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
-    let heuristic = Arc::new(DirectTravelHeuristic{
-        graph: graph.clone(),
-        cost_calculator: cost_calculator.clone(),
-        extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
-    });
+    let heuristic = Arc::new(se2::QuickestPath::new(
+        graph.clone(),
+        cost_calculator.clone(),
+        Arc::new(extrapolator.as_ref().into()),
+    ));
     let reacher = Arc::new(ReachForLinearSE2{
         extrapolator: extrapolator.clone(),
     });
@@ -204,29 +204,23 @@ pub type TimeVariantExpander<G, C, H> =
         Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node>, C, H>>,
         Hold<se2::timed_position::Waypoint, C, Node>,
     >;
-pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
 pub fn make_default_time_variant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
 ) -> DefaultTimeVariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
-    let heuristic = Arc::new(DirectTravelHeuristic{
-        graph: graph.clone(),
-        cost_calculator: cost_calculator.clone(),
-        extrapolator: r2::timed_position::LineFollow::new(extrapolator.translational_speed()).unwrap(),
-    });
+    let heuristic = Arc::new(QuickestPath::new(
+        graph.clone(),
+        cost_calculator.clone(),
+        Arc::new(extrapolator.as_ref().into()),
+    ));
     let reacher = Arc::new(ReachForLinearSE2{
         extrapolator: extrapolator.clone(),
     });
 
-    Expander::<
-        LinearSE2Policy<SimpleGraph<se2::Point>,
-        TimeVariantPartialKeyedClosetSet<Node>,
-        DurationCostCalculator,
-        DirectTravelHeuristic<SimpleGraph<se2::Point>,
-        DurationCostCalculator>>
-    >{
+    Expander{
         graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher,
     }.chain(
         Hold::new(cost_calculator)

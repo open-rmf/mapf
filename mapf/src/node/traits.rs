@@ -114,15 +114,17 @@ pub trait Keyed: PartialKeyed {
     }
 }
 
-/// If an object is purely a usize then we can consider it Keyed.
-impl PartialKeyed for usize {
-    type Key = usize;
-    fn partial_key(&self) -> Option<&Self::Key> {
-        Some(self)
+/// If an object is itself a Key then we its PartialKeyed implementation should
+/// simply be to return a reference to itself.
+impl<T: Key> PartialKeyed for T {
+    type Key = Self;
+    fn partial_key(&self) -> Option<&Self> {
+        Some(&self)
     }
 }
 
-impl Keyed for usize { }
+/// If an object is itself a Key then it can be considered Keyed.
+impl<T: Key> Keyed for T { }
 
 pub struct CostCmp<N: Weighted>(pub Arc<N>);
 

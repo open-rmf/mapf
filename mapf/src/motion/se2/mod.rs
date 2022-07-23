@@ -30,5 +30,6 @@ pub mod timed_position;
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
 
 pub mod quickest_path;
+pub use quickest_path::QuickestPath;
 
 pub mod graph_search;

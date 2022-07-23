@@ -16,6 +16,7 @@
 */
 
 pub type Position = nalgebra::geometry::Point2<f64>;
+pub type Point = Position;
 pub type Velocity = nalgebra::Vector2<f64>;
 
 pub mod timed_position;

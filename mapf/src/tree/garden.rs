@@ -35,19 +35,23 @@ type MutexRefCell<T> = Mutex<RefCell<T>>;
 
 
 #[derive(ThisError, Debug)]
-pub enum Error<E, S>
-where
-    E: InitAimless<S> + Aimless + Solvable,
-{
+pub enum ErrorImpl<I, E, S> {
     #[error("An error occurred while initializing:\n{0}")]
-    Init(E::InitAimlessError),
+    Init(I),
     #[error("An error occurred while expanding:\n{0}")]
-    Expansion(E::AimlessError),
+    Expansion(E),
     #[error("An error occurred while constructing the solution:\n{0}")]
-    Solve(E::SolveError),
+    Solve(S),
     #[error("a mutex was poisoned")]
     PoisenedMutex,
 }
+
+// We use this wrapper because otherwise derive(Debug) does not work correctly
+pub type Error<E, S> = ErrorImpl<
+    <E as InitAimless<S>>::InitAimlessError,
+    <E as Aimless>::AimlessError,
+    <E as Solvable>::SolveError,
+>;
 
 type TreeCache<E> = MutexRefCell<HashMap<KeyOf<NodeOf<E>>, Arc<MutexRefCell<Tree<E>>>>>;
 type SolutionCache<E> = MutexRefCell<HashMap<(KeyOf<NodeOf<E>>, KeyOf<NodeOf<E>>), Option<SolutionOf<E>>>>;
@@ -60,7 +64,7 @@ fn new_tree_entry<E: Aimless<Node: Weighted> + Closable>(tree: Tree<E>) -> Arc<M
 pub struct Garden<E>
 where
     E: Aimless + Solvable + Closable,
-    NodeOf<E>: Weighted + Keyed,
+    NodeOf<E>: Weighted + PartialKeyed,
 {
     expander: Arc<E>,
     trees: TreeCache<E>,
@@ -70,7 +74,7 @@ where
 impl<E> Garden<E>
 where
     E: Aimless + Solvable + Closable,
-    NodeOf<E>: Weighted + Keyed,
+    NodeOf<E>: Weighted + PartialKeyed,
 {
     pub fn new(expander: Arc<E>) -> Self {
         Self{
@@ -84,44 +88,55 @@ where
     where
         E: InitAimless<S>,
         E::Solution: Clone + Weighted,
-        E::ClosedSet: KeyedSet<NodeOf<E>, Key=KeyOf<NodeOf<E>>>
+        E::ClosedSet: KeyedSet<NodeOf<E>, Key=KeyOf<NodeOf<E>>>,
+        S: Keyed<Key=KeyOf<NodeOf<E>>>,
     {
-
         let mut best_solution = Minimum::new(|u: &E::Solution, v: &E::Solution| { u.cost().cmp(&v.cost()) });
 
+        let start_key = from.key();
         for start in self.expander.aimless_start(from) {
-            let start = start.map_err(Error::Init)?;
-            let start_key = start.key();
+            let start = start.map_err(ErrorImpl::Init)?;
+            dbg!(start.partial_key());
+            let already_have_solution = {
+                // We put this in a deeper scope to make sure that the lock on
+                // the solutions map mutex is released before we begin expanding
+                // the tree.
+                if let Some(solved) = self.solutions.lock()
+                    .map_err(|_| ErrorImpl::PoisenedMutex)?
+                    .borrow().get(&(start_key.clone(), to.clone())) {
+                    // The tree from this start point has already been grown towards
+                    // this target and either reached it or exhausted itself.
+                    if let Some(solution) = solved {
+                        // This tree has reached the target, so let's return the
+                        // solution for it.
+                        best_solution.consider(solution);
+                    }
 
-            if let Some(solved) = self.solutions.lock()
-                .map_err(|_| Error::PoisenedMutex)?
-                .borrow().get(&(start_key.clone(), to.clone())) {
-                // The tree from this start point has already been grown towards
-                // this target and either reached it or exhausted itself.
-                if let Some(solution) = solved {
-                    // This tree has reached the target, so let's return the
-                    // solution for it.
-                    best_solution.consider(solution);
+                    true
+                } else {
+                    false
                 }
-            } else {
+            };
+
+            if !already_have_solution {
                 // This tree from this start point has not been grown towards
                 // this target yet.
                 let tree_arc = {
                     self.trees.lock()
-                        .map_err(|_| Error::PoisenedMutex)?
+                        .map_err(|_| ErrorImpl::PoisenedMutex)?
                         .borrow_mut()
                         .entry(start_key.clone())
                         .or_insert_with(|| new_tree_entry(Tree::new(start.clone(), self.expander.clone())))
                         .clone()
                 };
 
-                let tree_lock = tree_arc.lock().map_err(|_| Error::PoisenedMutex)?;
+                let tree_lock = tree_arc.lock().map_err(|_| ErrorImpl::PoisenedMutex)?;
                 let mut tree = tree_lock.borrow_mut();
                 if let Some(reached_goal) = tree.closed().get(to) {
                     // This tree has already passed by the target, so we can
                     // construct a solution for it.
-                    let solution = self.expander.make_solution(reached_goal).map_err(Error::Solve)?;
-                    self.solutions.lock().map_err(|_| Error::PoisenedMutex)?
+                    let solution = self.expander.make_solution(reached_goal).map_err(ErrorImpl::Solve)?;
+                    self.solutions.lock().map_err(|_| ErrorImpl::PoisenedMutex)?
                         .borrow_mut().insert((start_key.clone(), to.clone()), Some(solution.clone()));
                     best_solution.consider_take(solution);
                 } else {
@@ -130,19 +145,28 @@ where
                     while !tree.is_exhausted() {
                         let mut found_solution = false;
                         for node in tree.grow() {
-                            let node: Arc<NodeOf<E>> = node.map_err(Error::Expansion)?;
-                            if node.key() == to {
-                                let solution = self.expander.make_solution(&node).map_err(Error::Solve)?;
-                                self.solutions.lock().map_err(|_| Error::PoisenedMutex)?
+                            let node: Arc<NodeOf<E>> = node.map_err(ErrorImpl::Expansion)?;
+                            dbg!(node.partial_key());
+                            if node.partial_key() == Some(to) {
+                                let solution = self.expander.make_solution(&node).map_err(ErrorImpl::Solve)?;
+                                best_solution.consider(&solution);
+                                dbg!("Locking solutions");
+                                self.solutions.lock().map_err(|_| ErrorImpl::PoisenedMutex)?
                                     .borrow_mut().insert((start_key.clone(), to.clone()), Some(solution));
+                                dbg!("Done locking");
                                 found_solution = true;
                             }
                         }
 
+                        dbg!("Finished growth");
+
                         if found_solution {
+                            dbg!("Found solution");
                             break;
                         }
                     }
+
+                    dbg!("Left loop");
                 }
             }
         }
@@ -396,9 +420,64 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{
+        motion::r2::{Point, graph_search::make_default_expander, timed_position::LineFollow},
+        directed::SimpleGraph,
+    };
+    use std::sync::Arc;
+
+    fn make_test_graph() -> SimpleGraph<Point> {
+        /*
+         * 0-----1-----2-----3
+         *           /       |
+         *         /         |
+         *       4-----5     6
+         *             |
+         *             |
+         *             7-----8
+        */
+
+        let mut vertices = Vec::<Point>::new();
+        vertices.push(Point::new(0.0, 0.0)); // 0
+        vertices.push(Point::new(1.0, 0.0)); // 1
+        vertices.push(Point::new(2.0, 0.0)); // 2
+        vertices.push(Point::new(3.0, 0.0)); // 3
+        vertices.push(Point::new(1.0, -1.0)); // 4
+        vertices.push(Point::new(2.0, -1.0)); // 5
+        vertices.push(Point::new(3.0, -1.0)); // 6
+        vertices.push(Point::new(2.0, -2.0)); // 7
+        vertices.push(Point::new(3.0, -2.0)); // 8
+
+        let mut edges = Vec::<Vec::<usize>>::new();
+        edges.resize(9, Vec::new());
+        let mut add_bidir_edge = |v0: usize, v1: usize| {
+            edges.get_mut(v0).unwrap().push(v1);
+            edges.get_mut(v1).unwrap().push(v0);
+        };
+        add_bidir_edge(0, 1);
+        add_bidir_edge(1, 2);
+        add_bidir_edge(2, 3);
+        add_bidir_edge(2, 4);
+        add_bidir_edge(3, 6);
+        add_bidir_edge(4, 5);
+        add_bidir_edge(5, 7);
+        add_bidir_edge(7, 8);
+
+        return SimpleGraph::new(vertices, edges);
+    }
 
     #[test]
-    fn build() {
+    fn test_simple_garden() {
+        let garden = Garden::new(Arc::new(
+            make_default_expander(
+                Arc::new(make_test_graph()),
+                Arc::new(LineFollow::new(1.0).unwrap()),
+            )
+        ));
 
+        let solution = garden.solve(&0, &8).unwrap();
+        assert!(solution.is_some());
+        print!("{solution:?}");
     }
 }

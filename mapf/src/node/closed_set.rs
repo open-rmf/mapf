@@ -43,8 +43,7 @@ impl<N> CloseResult<N> {
     }
 }
 
-/// The result of checking whether an equivalent node is already in the
-/// ClosedSet.
+/// The result of checking whether an equivalent node is already in the ClosedSet.
 // TODO(MXG): Consider returning an &Arc<N> to reduce reference counting overhead
 pub enum ClosedStatus<N> {
     Open,

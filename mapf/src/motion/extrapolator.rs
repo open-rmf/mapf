@@ -66,7 +66,7 @@ pub trait Extrapolator<W: Waypoint, Target> {
 /// extrapolation in the reverse direction of time.
 pub trait Reversible<W: Waypoint, Target> {
     /// The type of error that can happen while reversing.
-    type Error: std::fmt::Debug;
+    type Error: Error;
 
     /// The Reverse of this extrapolation.
     type Reverse: Extrapolator<W, Target>;

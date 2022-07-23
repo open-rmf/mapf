@@ -370,6 +370,15 @@ impl<P: Policy> Debug for Solution<P> {
     }
 }
 
+impl<P: Policy> Clone for Solution<P> {
+    fn clone(&self) -> Self {
+        Self{
+            cost: self.cost.clone(),
+            motion: self.motion.clone(),
+        }
+    }
+}
+
 impl<P: Policy> Solution<P> {
     pub fn cost(&self) -> &NodeCostOf<P> {
         &self.cost

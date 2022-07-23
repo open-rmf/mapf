@@ -37,7 +37,7 @@ pub struct DirectTravelHeuristic<G: Graph<Vertex=r2::Position>, C: CostCalculato
 
 impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for DirectTravelHeuristic<G, C>
 where
-    G: Graph<Vertex=r2::Position, Key=usize>,
+    G: Graph<Vertex=r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     S: Into<G::Key> + Clone,
     Goal: Keyed<Key=G::Key>,

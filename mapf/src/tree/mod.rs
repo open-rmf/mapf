@@ -19,4 +19,4 @@ pub mod tree;
 pub use tree::Tree;
 
 pub mod garden;
-pub use garden::BidirGarden;
+pub use garden::{Garden, BidirGarden};

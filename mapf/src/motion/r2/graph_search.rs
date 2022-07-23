@@ -17,7 +17,7 @@
 
 use crate::{
     node::{Key, Cost, ClosedSet, PartialKeyed, PartialKeyedClosedSet},
-    expander::{Goal, InitTargeted},
+    expander::{Goal, InitAimless, InitTargeted},
     motion::{
         TimePoint,
         graph_search::{BuiltinNode, Policy, Expander},
@@ -31,6 +31,7 @@ use crate::{
 };
 use std::sync::Arc;
 use thiserror::Error as ThisError;
+use num::Zero;
 
 pub type Node<C, K> = BuiltinNode<C, K, r2::timed_position::Waypoint>;
 
@@ -96,6 +97,42 @@ pub enum InitErrorR2<K, H> {
     Heuristic(H),
 }
 
+impl<G, S, C, H> InitAimless<G::Key> for Expander<LinearR2Policy<G, S, C, H>>
+where
+    G: Graph<Vertex=r2::Position>,
+    S: ClosedSet<Node<C::Cost, G::Key>>,
+    C: CostCalculator<r2::timed_position::Waypoint>,
+    H: Heuristic<G::Key, G::Key, C::Cost>,
+{
+    type InitAimlessError = InitErrorR2<G::Key, H::Error>;
+    type InitialAimlessNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitAimlessError>>;
+
+    fn aimless_start<'a>(
+        &'a self,
+        start: &'a G::Key,
+    ) -> Self::InitialAimlessNodes<'a> {
+        [self.graph.vertex(start.clone())].into_iter()
+        .map(|v| {
+            v.map_or(
+                Err(InitErrorR2::MissingStartVertex(start.clone())),
+                |p| Ok(p),
+            )
+        })
+        .map(|r| {
+            r.map(|start_p| {
+                let h = C::Cost::zero();
+                let state = r2::timed_position::Waypoint{
+                    time: TimePoint::zero(),
+                    position: start_p.clone(),
+                };
+
+                Some(self.start_from(state, Some(start.clone()), h, None))
+            })
+        })
+        .filter_map(|r| r.transpose())
+    }
+}
+
 impl<G, S, C, H> InitTargeted<G::Key, G::Key> for Expander<LinearR2Policy<G, S, C, H>>
 where
     G: Graph<Vertex=r2::Position>,
@@ -133,7 +170,7 @@ where
 
                 let state = r2::timed_position::Waypoint{
                     time: TimePoint::zero(),
-                    position: start_p.clone()
+                    position: start_p.clone(),
                 };
 
                 Ok(h.map(|h| self.start_from(state, Some(start.clone()), h, None)))
