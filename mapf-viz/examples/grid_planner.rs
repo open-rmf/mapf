@@ -41,7 +41,7 @@ use mapf::{
         se2::{
             self, Rotation,
             timed_position::{Waypoint, DifferentialDriveLineFollow},
-            graph_search::{DefaultTimeVariantExpander, StartSE2, GoalSE2, LinearSE2Policy},
+            graph_search::{DefaultTimeVariantExpander, DefaultTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy},
         },
     },
     directed::simple::SimpleGraph,
@@ -454,6 +454,7 @@ struct SolutionVisual<Message> {
     pub path_color: iced::Color,
     pub solution: Option<Trajectory<Waypoint>>,
     pub obstacles: Vec<(f64, se2::LinearTrajectory)>,
+    pub vertex_lookup: HashMap<Cell, usize>,
     tick_start: Option<TimePoint>,
     now: Option<Duration>,
     _msg: std::marker::PhantomData<Message>,
@@ -476,6 +477,7 @@ impl SolutionVisual<Message> {
             path_color,
             solution: None,
             obstacles: vec![(1.0, t_obs)],
+            vertex_lookup: HashMap::new(),
             tick_start: None,
             now: None,
             _msg: Default::default(),
@@ -610,6 +612,19 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
                 }
             }
         }
+
+        for (cell, v) in &self.vertex_lookup {
+            let p = cell.to_center_point(self.cell_size);
+            let p = iced::Point::new(p.x as f32, p.y as f32);
+            if bound.contains(p) {
+                hud.at(
+                    p,
+                    |frame| {
+                        frame.fill_text(format!("{v}"));
+                    }
+                );
+            }
+        }
     }
 
     fn estimate_bounds(&self) -> InclusionZone {
@@ -621,7 +636,8 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
-type ObsAvoidance = Constrain<DefaultTimeVariantExpander, CircleCollisionConstraint>;
+// type ObsAvoidance = Constrain<DefaultTimeVariantExpander, CircleCollisionConstraint>;
+type ObsAvoidance = Constrain<DefaultTimeInvariantExpander, CircleCollisionConstraint>;
 
 struct App {
     robot_size_slider: slider::State,
@@ -630,7 +646,8 @@ struct App {
     input_value: String,
     reset_size_button: button::State,
     canvas: SpatialCanvas<Message, GridLayers>,
-    scroll: scrollable::State,
+    node_list_scroll: scrollable::State,
+    debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
     progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2, NoTrace>>,
     step_progress: button::State,
@@ -750,12 +767,12 @@ impl App {
             if endpoints.start_valid && endpoints.goal_valid {
                 let mut vertices = Vec::new();
                 let mut edges: Vec<Vec<usize>> = Vec::new();
-                let mut lookup = HashMap::new();
+                self.canvas.program.layers.3.vertex_lookup.clear();
                 vertices.push(start_cell.to_center_point(cell_size));
                 vertices.push(goal_cell.to_center_point(cell_size));
                 let mut get_vertex_index =
                     |cell: &Cell| {
-                        *lookup.entry(*cell).or_insert_with(
+                        *self.canvas.program.layers.3.vertex_lookup.entry(*cell).or_insert_with(
                             || {
                                 let index = vertices.len();
                                 vertices.push(cell.to_center_point(cell_size));
@@ -798,7 +815,8 @@ impl App {
 
                 let graph = Arc::new(SimpleGraph::new(vertices, edges));
                 let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                let expander = se2::graph_search::make_default_time_variant_expander(graph, extrapolator);
+                // let expander = se2::graph_search::make_default_time_variant_expander(graph, extrapolator);
+                let expander = se2::graph_search::make_default_time_invariant_expander(graph, extrapolator);
 
                 let expander = Arc::new(
                     expander.constrain(
@@ -899,7 +917,8 @@ impl Application for App {
                 input_value: String::new(),
                 reset_size_button: button::State::new(),
                 canvas,
-                scroll: scrollable::State::new(),
+                node_list_scroll: scrollable::State::new(),
+                debug_text_scroll: scrollable::State::new(),
                 show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
                 progress: None,
                 step_progress: button::State::new(),
@@ -1106,7 +1125,7 @@ impl Application for App {
                         .align_items(Alignment::Center)
                     )
                     .push({
-                        let mut scroll = Scrollable::<Message>::new(&mut self.scroll);
+                        let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
                         for (i, node) in self.debug_nodes.iter().enumerate() {
                             scroll = scroll.push(Radio::new(
                                 i, format!(
@@ -1120,7 +1139,23 @@ impl Application for App {
                         }
 
                         scroll
-                    })
+                    }.height(Length::Fill))
+                    .push({
+                        Scrollable::<Message>::new(&mut self.debug_text_scroll)
+                        .push(
+                            Text::new({
+                                if let Some(selection) = self.debug_node_selected {
+                                    if let Some(node) = self.debug_nodes.get(selection) {
+                                        format!("{node:#?}")
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    String::new()
+                                }
+                            }).size(10)
+                        )
+                    }.height(Length::Fill))
                 )
             );
         } else {

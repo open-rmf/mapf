@@ -96,7 +96,6 @@ where
         let start_key = from.key();
         for start in self.expander.aimless_start(from) {
             let start = start.map_err(ErrorImpl::Init)?;
-            dbg!(start.partial_key());
             let already_have_solution = {
                 // We put this in a deeper scope to make sure that the lock on
                 // the solutions map mutex is released before we begin expanding
@@ -146,27 +145,19 @@ where
                         let mut found_solution = false;
                         for node in tree.grow() {
                             let node: Arc<NodeOf<E>> = node.map_err(ErrorImpl::Expansion)?;
-                            dbg!(node.partial_key());
                             if node.partial_key() == Some(to) {
                                 let solution = self.expander.make_solution(&node).map_err(ErrorImpl::Solve)?;
                                 best_solution.consider(&solution);
-                                dbg!("Locking solutions");
                                 self.solutions.lock().map_err(|_| ErrorImpl::PoisenedMutex)?
                                     .borrow_mut().insert((start_key.clone(), to.clone()), Some(solution));
-                                dbg!("Done locking");
                                 found_solution = true;
                             }
                         }
 
-                        dbg!("Finished growth");
-
                         if found_solution {
-                            dbg!("Found solution");
                             break;
                         }
                     }
-
-                    dbg!("Left loop");
                 }
             }
         }

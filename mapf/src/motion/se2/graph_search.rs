@@ -250,6 +250,11 @@ where
         start: &'a StartSE2,
         goal: &'a GoalSE2,
     ) -> Self::InitialTargetedNodes<'a> {
+        // TODO(MXG): This ends up creating a lot of redundant nodes.
+        // We should replace this with an implementation that does not create
+        // a different node for every neighboring start key but instead picks
+        // the cost estimate of the lowest one and gives that cost estimate to
+        // a single starting node.
         [self.graph.vertex(start.vertex)].into_iter()
         .filter_map(|x| x)
         .flat_map(move |p0| {
@@ -279,12 +284,14 @@ where
                     Ok((towards_key, wp0, trajectory))
                 })
                 .map(move |r| {
-                    r.and_then(|(towards_vertex, state, trajectory)| {
+                    r.and_then(|(towards_vertex, wp0, trajectory)| {
                         let key = KeySE2{
                             from_vertex: start.vertex,
                             to_vertex: *towards_vertex,
                             side: Side::Beginning,
                         };
+
+                        let state = trajectory.as_ref().map(|t| t.finish().clone()).unwrap_or(wp0);
 
                         let h = self.heuristic.estimate_cost(
                             &key, goal,
