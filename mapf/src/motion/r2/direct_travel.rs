@@ -69,10 +69,10 @@ where
 
         let wp0 = r2::timed_position::Waypoint{
             time: TimePoint::zero(),
-            position: *p0,
+            position: p0,
         };
 
-        let cost = self.extrapolator.make_trajectory(wp0, p1)?
+        let cost = self.extrapolator.make_trajectory(wp0, &p1)?
             .map(|t| self.cost_calculator.compute_cost(&t))
             .unwrap_or(C::Cost::zero());
         Ok(Some(cost))

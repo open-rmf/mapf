@@ -66,28 +66,37 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
     }
 }
 
-impl crate::graph::Edge<usize> for usize {
-    fn endpoint_key(&self) -> &usize {
-        self
+impl crate::graph::Edge<usize> for (usize, usize) {
+    fn from_vertex(&self) -> &usize {
+        &self.0
+    }
+
+    fn to_vertex(&self) -> &usize {
+        &self.1
     }
 }
 
 impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
     type Key = usize;
     type Vertex = V;
-    type Edge = usize;
+    type Edge = (usize, usize);
 
-    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=&'a usize> + 'a;
+    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=(usize, usize)> + 'a;
 
-    fn vertex (&self, key: usize) -> Option<&V> {
-        self.vertices.get(key)
+    fn vertex (&self, key: usize) -> Option<V> {
+        self.vertices.get(key).cloned()
     }
 
-    fn edges_from_vertex<'a>(&'a self, key: usize) -> Self::EdgeIter<'a> {
-        if let Some(to_vertices) = self.edges.get(key) {
-            return to_vertices.iter();
+    fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a> {
+        let copy_from_key = from_key;
+        let make_edge = move |to_key: &usize| {
+            (copy_from_key, to_key.clone())
+        };
+
+        if let Some(to_vertices) = self.edges.get(from_key) {
+            return to_vertices.iter().map(make_edge);
         }
 
-        return self._placeholder.iter();
+        return self._placeholder.iter().map(make_edge);
     }
 }

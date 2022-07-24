@@ -242,14 +242,14 @@ where
     fn motions_from<'a>(&'a self, parent: &'a Arc<P::Node>, parent_key: &'a NodeKeyOf<P>)
     -> impl Iterator<Item=Result<MotionInfo<P>, ExtrapolatorErrorOf<P>>> + 'a {
         self.graph.edges_from_vertex(parent_key.graph_key()).into_iter()
-            .filter_map(|edge| -> Option<(&KeyOf<P::Graph>, &VertexOf<P::Graph>)> {
-                let key = edge.endpoint_key();
-                self.graph.vertex((*key).clone()).map(|target| (key, target))
+            .filter_map(|edge| -> Option<(KeyOf<P::Graph>, VertexOf<P::Graph>)> {
+                let key = edge.to_vertex().clone();
+                self.graph.vertex((key).clone()).map(|target| (key, target))
             })
             .map(move |(to_key, to_target)| {
                 let trajectory = self.extrapolator.make_trajectory(
                     parent.state().clone(),
-                    to_target
+                    &to_target
                 )?;
 
                 let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());

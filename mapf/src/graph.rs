@@ -15,18 +15,19 @@
  *
 */
 
-use crate::node::Key;
+use crate::node::Key as KeyTrait;
 
-pub trait Edge<Key> {
-    fn endpoint_key(&self) -> &Key;
+pub trait Edge<Key: KeyTrait> {
+    fn from_vertex(&self) -> &Key;
+    fn to_vertex(&self) -> &Key;
 }
 
 pub trait Graph: std::fmt::Debug {
-    type Key: Key;
+    type Key: KeyTrait;
     type Vertex;
     type Edge: Edge<Self::Key>;
 
-    type EdgeIter<'a>: IntoIterator<Item=&'a Self::Edge> where Self: 'a, Self::Edge: 'a;
+    type EdgeIter<'a>: IntoIterator<Item=Self::Edge> where Self: 'a, Self::Edge: 'a;
 
     // TODO(MXG): Consider if there's a way we can have this API accept a key by
     // reference instead of by value. The current issue is that Node keys need a
@@ -35,7 +36,7 @@ pub trait Graph: std::fmt::Debug {
     // correctly. We also have to consider: What if the Node key does not contain
     // a Graph key instance? In that case the Node key cannot provide a reference
     // to a Graph key.
-    fn vertex(&self, key: Self::Key) -> Option<&Self::Vertex>;
+    fn vertex(&self, key: Self::Key) -> Option<Self::Vertex>;
 
     fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>;
 }

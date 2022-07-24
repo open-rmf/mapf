@@ -356,6 +356,10 @@ impl<G: Grid> Visibility<G> {
         ).map(|(v_cell, _)| { v_cell })
     }
 
+    pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item=Cell> {
+        [].into_iter()
+    }
+
     /// Get a reference to the underlying occupancy grid.
     pub fn grid(&self) -> &G {
         return &self.grid;
@@ -708,4 +712,6 @@ impl<'a, G: Grid> Iterator for VisibilityEdgeIter<'a, G> {
 
 pub mod sparse_grid;
 pub use sparse_grid::SparseGrid;
+pub mod graph;
+pub use graph::VisibilityGraph;
 mod util;
