@@ -20,7 +20,8 @@ use crate::{
     expander::{InitAimless, Closable, NodeOf, SolutionOf},
     tree::{garden, Garden},
     motion::{
-        r2, trajectory::CostCalculator, reach::NoReach,
+        se2, r2, trajectory::CostCalculator, reach::NoReach,
+        graph_search::StateKey,
     },
     heuristic::{Heuristic, Uninformed},
     graph::Graph,
@@ -65,7 +66,7 @@ impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for QuickestPath<G, C>
 where
     G: Graph<Vertex=r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
-    S: Into<G::Key> + Clone,
+    S: StateKey<G::Key, se2::timed_position::Waypoint>,
     Goal: Keyed<Key=G::Key>,
     UninformedExpanderR2<G, C>: InitAimless<G::Key> + Closable<ClosedSet: KeyedSet<NodeOf<UninformedExpanderR2<G, C>>, Key=G::Key>>,
     NodeOf<UninformedExpanderR2<G, C>>: PartialKeyed<Key=G::Key> + Weighted,
@@ -78,7 +79,7 @@ where
         from_state: &S,
         to_goal: &Goal,
     ) -> Result<Option<C::Cost>, Self::Error> {
-        let start_key: G::Key = from_state.clone().into();
+        let start_key: G::Key = from_state.graph_key();
         self.garden.solve(&start_key, to_goal.key())
         .map(|solution_opt| solution_opt.map(|solution| solution.cost().clone()))
     }

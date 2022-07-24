@@ -38,8 +38,10 @@ use thiserror::Error as ThisError;
 /// A StateKey is a key type that uniquely defines the state that the node
 /// represents. Two StateKeys that evaluate as equal must represent the same
 /// state of an agent.
-pub trait StateKey<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKey> {
-    fn make_child(&self, target_key: &TargetKey, target_state: &TargetState) -> Self;
+pub trait StateKey<GraphKey: node::Key, State>: node::Key {
+    fn from_state(graph_key: &GraphKey, state: &State) -> Self;
+
+    fn graph_key(&self) -> GraphKey;
 }
 
 /// If the type of the target key is identical to the type of the state key, then
@@ -48,8 +50,12 @@ pub trait StateKey<TargetKey: node::Key, TargetState>: node::Key + Into<TargetKe
 /// For example if the state key and target key are both usize type then the
 /// child key will simply be the same usize as the target key.
 impl<K: node::Key, S> StateKey<K, S> for K {
-    fn make_child(&self, target_key: &K, _target_state: &S) -> Self {
-        target_key.clone()
+    fn from_state(graph_key: &K, _state: &S) -> Self {
+        graph_key.clone()
+    }
+
+    fn graph_key(&self) -> K {
+        self.clone()
     }
 }
 
@@ -235,7 +241,7 @@ where
 
     fn motions_from<'a>(&'a self, parent: &'a Arc<P::Node>, parent_key: &'a NodeKeyOf<P>)
     -> impl Iterator<Item=Result<MotionInfo<P>, ExtrapolatorErrorOf<P>>> + 'a {
-        self.graph.edges_from_vertex(parent_key.clone().into()).into_iter()
+        self.graph.edges_from_vertex(parent_key.graph_key()).into_iter()
             .filter_map(|edge| -> Option<(&KeyOf<P::Graph>, &VertexOf<P::Graph>)> {
                 let key = edge.endpoint_key();
                 self.graph.vertex((*key).clone()).map(|target| (key, target))
@@ -247,7 +253,7 @@ where
                 )?;
 
                 let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());
-                let to_key = parent_key.make_child(&to_key, state);
+                let to_key = NodeKeyOf::<P>::from_state(&to_key, state);
                 Ok(MotionInfo{
                     parent_key: parent_key.clone(),
                     to_key,
@@ -319,7 +325,7 @@ where
                     r.and_then(|trajectory| {
                         // We assume the goal is reached, because otherwise
                         // the Reachable trait was implemented incorrectly.
-                        let to_key = parent_key.make_child(goal.key(), trajectory.finish());
+                        let to_key = NodeKeyOf::<P>::from_state(goal.key(), trajectory.finish());
                         Ok(self.make_child_node(
                             Some(to_key), NodeCostOf::<P>::zero(), Some(trajectory), parent.clone()
                         ))

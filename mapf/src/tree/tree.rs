@@ -59,7 +59,6 @@ impl<E: Aimless<Node: Weighted> + Closable> Tree<E> {
     }
 
     pub fn is_exhausted(&self) -> bool {
-        dbg!(self.queue.len());
         self.queue.is_empty()
     }
 }

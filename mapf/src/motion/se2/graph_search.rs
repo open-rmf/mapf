@@ -27,7 +27,7 @@ use crate::{
     },
     expander::{Goal, InitTargeted, Chain, Chainable},
     node::{
-        Agent, PartialKeyed, Keyed,
+        Agent, PartialKeyed, Key, Keyed,
         closed_set::{ClosedSet, PartialKeyedClosedSet, TimeVariantPartialKeyedClosetSet},
     },
     heuristic::Heuristic,
@@ -45,13 +45,13 @@ pub struct OrientationGoal {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct GoalSE2 {
-    pub vertex: usize,
+pub struct GoalSE2<GraphKey: Key> {
+    pub vertex: GraphKey,
     pub orientation: Option<OrientationGoal>
 }
 
-impl Goal<Node> for GoalSE2 {
-    fn is_satisfied(&self, node: &Node) -> bool {
+impl<GraphKey: Key, const RESOLUTION: u64> Goal<Node<GraphKey, RESOLUTION>> for GoalSE2<GraphKey> {
+    fn is_satisfied(&self, node: &Node<GraphKey, RESOLUTION>) -> bool {
         if node.partial_key().map(|k| k.vertex() != self.vertex).unwrap_or(false) {
             return false;
         }
@@ -63,64 +63,62 @@ impl Goal<Node> for GoalSE2 {
     }
 }
 
-impl PartialKeyed for GoalSE2 {
-    type Key = usize;
+impl<GraphKey: Key> PartialKeyed for GoalSE2<GraphKey> {
+    type Key = GraphKey;
     fn partial_key(&self) -> Option<&Self::Key> {
         Some(&self.vertex)
     }
 }
 
-impl Keyed for GoalSE2 { }
+impl<GraphKey: Key> Keyed for GoalSE2<GraphKey> { }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Side {
-    Beginning,
-    Finish,
+pub struct KeySE2<GraphKey: Key, const RESOLUTION: u64> {
+    /// The graph vertex that the agent is currently on
+    vertex: GraphKey,
+    /// The key of the agent's orientation. This value should be in the range of
+    /// +/- 2*PI * RESOLUTION
+    orientation: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct KeySE2 {
-    from_vertex: usize,
-    to_vertex: usize,
-    side: Side,
-}
-
-impl KeySE2 {
-    pub fn vertex(&self) -> usize {
-        match self.side {
-            Side::Beginning => self.from_vertex,
-            Side::Finish => self.to_vertex,
-        }
+impl<GraphKey: Key, const R: u64> KeySE2<GraphKey, R> {
+    pub fn vertex(&self) -> GraphKey {
+        self.vertex.clone()
     }
 }
 
-impl From<KeySE2> for usize {
-    fn from(key: KeySE2) -> Self {
+impl<const RESOLUTION: u64> From<KeySE2<usize, RESOLUTION>> for usize {
+    fn from(key: KeySE2<usize, RESOLUTION>) -> Self {
         key.vertex()
     }
 }
 
-impl StateKey<usize, se2::timed_position::Waypoint> for KeySE2 {
-    fn make_child(&self, target_key: &usize, _: &se2::timed_position::Waypoint) -> Self {
+impl<GraphKey: Key, const RESOLUTION: u64> StateKey<GraphKey, se2::timed_position::Waypoint> for KeySE2<GraphKey, RESOLUTION> {
+    fn from_state(graph_key: &GraphKey, state: &se2::timed_position::Waypoint) -> Self {
         Self{
-            from_vertex: self.to_vertex,
-            to_vertex: *target_key,
-            side: Side::Finish,
+            vertex: graph_key.clone(),
+            orientation: (state.position.rotation.angle() * RESOLUTION as f64) as i64,
         }
+    }
+
+    fn graph_key(&self) -> GraphKey {
+        self.vertex.clone()
     }
 }
 
-pub type Node = BuiltinNode<i64, KeySE2, se2::timed_position::Waypoint>;
+pub type Node<GraphKey, const RESOLUTION: u64> = BuiltinNode<
+    i64, KeySE2<GraphKey, RESOLUTION>, se2::timed_position::Waypoint
+>;
 
 pub struct ReachForLinearSE2 {
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
 }
 
-impl Reachable<Node, GoalSE2, se2::timed_position::Waypoint> for ReachForLinearSE2 {
+impl<GraphKey: Key, const RESOLUTION: u64> Reachable<Node<GraphKey, RESOLUTION>, GoalSE2<GraphKey>, se2::timed_position::Waypoint> for ReachForLinearSE2 {
     type ReachError = NoError;
     type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>>;
 
-    fn reach_for<'a>(&'a self, parent: &'a Node, goal: &'a GoalSE2) -> Self::Reaching<'a> {
+    fn reach_for<'a>(&'a self, parent: &'a Node<GraphKey, RESOLUTION>, goal: &'a GoalSE2<GraphKey>) -> Self::Reaching<'a> {
         [parent].into_iter()
         .filter(|n| {
             if let Some(key) = n.partial_key() {
@@ -143,42 +141,42 @@ impl Reachable<Node, GoalSE2, se2::timed_position::Waypoint> for ReachForLinearS
 }
 
 #[derive(Debug)]
-pub struct StartSE2 {
-    pub vertex: usize,
+pub struct StartSE2<GraphKey: Key> {
+    pub vertex: GraphKey,
     pub orientation: se2::Rotation,
 }
 
-pub struct LinearSE2Policy<G, S, C=DurationCostCalculator, H=QuickestPath<G, C>>
+pub struct LinearSE2Policy<G, S, C=DurationCostCalculator, H=QuickestPath<G, C>, const RESOLUTION: u64 = 100>
 where
     G: Graph<Vertex=se2::Point>,
-    S: ClosedSet<Node>,
+    S: ClosedSet<Node<G::Key, RESOLUTION>>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64>
         + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<KeySE2, GoalSE2, i64>,
+    H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
 {
     _ignore: std::marker::PhantomData<(G, S, C, H)>,
 }
 
-impl<G, S, C, H> Policy for LinearSE2Policy<G, S, C, H>
+impl<G, S, C, H, const RESOLUTION: u64> Policy for LinearSE2Policy<G, S, C, H, RESOLUTION>
 where
     G: Graph<Vertex=se2::Point, Key=usize>,
-    S: ClosedSet<Node>,
+    S: ClosedSet<Node<G::Key, RESOLUTION>>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64>
         + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<KeySE2, GoalSE2, i64>,
+    H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
 {
     type Waypoint = se2::timed_position::Waypoint;
     type ClosedSet = S;
     type Graph = G;
-    type StateKey = KeySE2;
-    type Node = Node;
+    type StateKey = KeySE2<G::Key, RESOLUTION>;
+    type Node = Node<G::Key, RESOLUTION>;
     type Extrapolator = se2::timed_position::DifferentialDriveLineFollow;
     type Heuristic = H;
     type Reach = ReachForLinearSE2;
     type CostCalculator = C;
 }
 
-pub type TimeInvariantExpander<G, C, H> = Expander<LinearSE2Policy<G, PartialKeyedClosedSet<Node>, C, H>>;
+pub type TimeInvariantExpander<G, C, H, const RESOLUTION: u64 = 100> = Expander<LinearSE2Policy<G, PartialKeyedClosedSet<Node<<G as Graph>::Key, RESOLUTION>>, C, H>>;
 pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 pub fn make_default_time_invariant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
@@ -199,10 +197,10 @@ pub fn make_default_time_invariant_expander(
     }
 }
 
-pub type TimeVariantExpander<G, C, H> =
+pub type TimeVariantExpander<G, C, H, const RESOLUTION: u64 = 100> =
     Chain<
-        Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node>, C, H>>,
-        Hold<se2::timed_position::Waypoint, C, Node>,
+        Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node<<G as Graph>::Key, RESOLUTION>>, C, H>>,
+        Hold<se2::timed_position::Waypoint, C, Node<<G as Graph>::Key, RESOLUTION>>,
     >;
 pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
@@ -235,75 +233,35 @@ pub enum InitErrorSE2<H> {
     Heuristic(H)
 }
 
-impl<G, S, C, H> InitTargeted<StartSE2, GoalSE2> for Expander<LinearSE2Policy<G, S, C, H>>
+impl<G, S, C, H, const RESOLUTION: u64> InitTargeted<StartSE2<G::Key>, GoalSE2<G::Key>> for Expander<LinearSE2Policy<G, S, C, H, RESOLUTION>>
 where
     G: Graph<Vertex=r2::Position, Key=usize>,
-    S: ClosedSet<Node>,
+    S: ClosedSet<Node<G::Key, RESOLUTION>>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64> + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
-    H: Heuristic<KeySE2, GoalSE2, i64>,
+    H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
 {
     type InitTargetedError = InitErrorSE2<H::Error>;
-    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node>, Self::InitTargetedError>> + 'a;
+    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node<G::Key, RESOLUTION>>, Self::InitTargetedError>> + 'a;
 
     fn start<'a>(
         &'a self,
-        start: &'a StartSE2,
-        goal: &'a GoalSE2,
+        start: &'a StartSE2<G::Key>,
+        goal: &'a GoalSE2<G::Key>,
     ) -> Self::InitialTargetedNodes<'a> {
-        // TODO(MXG): This ends up creating a lot of redundant nodes.
-        // We should replace this with an implementation that does not create
-        // a different node for every neighboring start key but instead picks
-        // the cost estimate of the lowest one and gives that cost estimate to
-        // a single starting node.
         [self.graph.vertex(start.vertex)].into_iter()
         .filter_map(|x| x)
-        .flat_map(move |p0| {
-            self.graph.edges_from_vertex(start.vertex).into_iter()
-                .filter_map(|edge| -> Option<(&usize, &r2::Position)> {
-                    let key = edge.endpoint_key();
-                    self.graph.vertex(*key).map(|target| (key, target))
-                })
-                .map(move |(towards_key, towards_target)| {
-                    let dx = towards_target - p0;
-                    let wp0 = se2::timed_position::Waypoint{
-                        time: TimePoint::zero(),
-                        position: se2::Position::from_parts(p0.coords.into(), start.orientation)
-                    };
+        .map(move |p0| {
+            let state = se2::timed_position::Waypoint{
+                time: TimePoint::zero(),
+                position: se2::Position::from_parts(p0.coords.into(), start.orientation),
+            };
+            let key = KeySE2::from_state(&start.vertex, &state);
+            let h = self.heuristic.estimate_cost(&key, goal)
+                .map_err(InitErrorSE2::Heuristic)?;
 
-                    if dx.norm() < 1e-8 {
-                        // There is no direction to turn towards to reach the
-                        // target waypoint.
-                        return Ok((towards_key, wp0, None));
-                    }
-
-                    let trajectory = self.extrapolator.make_trajectory(
-                        wp0.clone(),
-                        &se2::Position::new(p0.coords, dx.y.atan2(dx.x))
-                    ).map_err(InitErrorSE2::Extrapolator)?;
-
-                    Ok((towards_key, wp0, trajectory))
-                })
-                .map(move |r| {
-                    r.and_then(|(towards_vertex, wp0, trajectory)| {
-                        let key = KeySE2{
-                            from_vertex: start.vertex,
-                            to_vertex: *towards_vertex,
-                            side: Side::Beginning,
-                        };
-
-                        let state = trajectory.as_ref().map(|t| t.finish().clone()).unwrap_or(wp0);
-
-                        let h = self.heuristic.estimate_cost(
-                            &key, goal,
-                        ).map_err(InitErrorSE2::Heuristic)?;
-
-                        Ok(h.map(|h| self.start_from(state, Some(key), h, trajectory)))
-                    })
-                })
-                .filter_map(|r| r.transpose())
+            Ok(h.map(|h| self.start_from(state, Some(key), h, None)))
         })
-
-
+        .filter_map(|r| r.transpose())
     }
 }
 

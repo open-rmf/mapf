@@ -57,6 +57,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
+type SearchNode = se2::graph_search::Node<usize, 100>;
 
 pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
     value: Option<T>,
@@ -649,11 +650,11 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2, NoTrace>>,
+    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<usize>, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<ObsAvoidance>>,
     debug_on: bool,
-    debug_nodes: Vec<Arc<se2::graph_search::Node>>,
+    debug_nodes: Vec<Arc<SearchNode>>,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
 }
