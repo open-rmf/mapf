@@ -27,7 +27,7 @@ pub struct VisibilityGraph<G: Grid> {
 }
 
 impl<G: Grid> VisibilityGraph<G> {
-    fn new(visibility: Arc<Visibility<G>>) -> Self {
+    pub fn new(visibility: Arc<Visibility<G>>) -> Self {
         Self{visibility}
     }
 }
@@ -68,7 +68,7 @@ pub struct NeighborhoodGraph<G: Grid> {
 }
 
 impl<G: Grid> NeighborhoodGraph<G> {
-    fn new(visibility: Arc<Visibility<G>>) -> Self {
+    pub fn new(visibility: Arc<Visibility<G>>) -> Self {
         Self{visibility}
     }
 }

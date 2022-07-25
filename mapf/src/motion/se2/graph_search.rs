@@ -32,6 +32,11 @@ use crate::{
     },
     heuristic::Heuristic,
     directed::simple::SimpleGraph,
+    occupancy::{
+        Visibility,
+        sparse_grid::SparseGrid,
+        graph::{NeighborhoodGraph, VisibilityGraph},
+    },
     error::NoError,
 };
 use std::sync::Arc;
@@ -159,7 +164,7 @@ where
 
 impl<G, S, C, H, const RESOLUTION: u64> Policy for LinearSE2Policy<G, S, C, H, RESOLUTION>
 where
-    G: Graph<Vertex=se2::Point, Key=usize>,
+    G: Graph<Vertex=se2::Point>,
     S: ClosedSet<Node<G::Key, RESOLUTION>>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64>
         + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
@@ -177,11 +182,11 @@ where
 }
 
 pub type TimeInvariantExpander<G, C, H, const RESOLUTION: u64 = 100> = Expander<LinearSE2Policy<G, PartialKeyedClosedSet<Node<<G as Graph>::Key, RESOLUTION>>, C, H>>;
-pub type DefaultTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
-pub fn make_default_time_invariant_expander(
+pub type DirectedTimeInvariantExpander = TimeInvariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub fn make_directed_time_invariant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
-) -> DefaultTimeInvariantExpander {
+) -> DirectedTimeInvariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(se2::QuickestPath::new(
         graph.clone(),
@@ -192,8 +197,29 @@ pub fn make_default_time_invariant_expander(
         extrapolator: extrapolator.clone(),
     });
 
-    DefaultTimeInvariantExpander{
+    DirectedTimeInvariantExpander{
         graph, extrapolator, cost_calculator, heuristic, reacher,
+    }
+}
+
+pub type FreeSpaceTimeInvariantExpander = TimeInvariantExpander<NeighborhoodGraph<SparseGrid>, DurationCostCalculator, QuickestPath<VisibilityGraph<SparseGrid>, DurationCostCalculator>>;
+pub fn make_free_space_time_invariant_expander(
+    visibility: Arc<Visibility<SparseGrid>>,
+    extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+) -> FreeSpaceTimeInvariantExpander {
+    let cost_calculator = Arc::new(DurationCostCalculator);
+    let heuristic = Arc::new(se2::QuickestPath::new(
+        Arc::new(VisibilityGraph::new(visibility.clone())),
+        cost_calculator.clone(),
+        Arc::new(extrapolator.as_ref().into()),
+    ));
+    let reacher = Arc::new(ReachForLinearSE2{
+        extrapolator: extrapolator.clone(),
+    });
+    let graph = Arc::new(NeighborhoodGraph::new(visibility));
+
+    FreeSpaceTimeInvariantExpander{
+        graph, extrapolator, cost_calculator, heuristic, reacher
     }
 }
 
@@ -202,12 +228,12 @@ pub type TimeVariantExpander<G, C, H, const RESOLUTION: u64 = 100> =
         Expander<LinearSE2Policy<G, TimeVariantPartialKeyedClosetSet<Node<<G as Graph>::Key, RESOLUTION>>, C, H>>,
         Hold<se2::timed_position::Waypoint, C, Node<<G as Graph>::Key, RESOLUTION>>,
     >;
-pub type DefaultTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
+pub type DirectedTimeVariantExpander = TimeVariantExpander<SimpleGraph<se2::Point>, DurationCostCalculator, QuickestPath<SimpleGraph<se2::Point>, DurationCostCalculator>>;
 
-pub fn make_default_time_variant_expander(
+pub fn make_directed_time_variant_expander(
     graph: Arc<SimpleGraph<se2::Point>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
-) -> DefaultTimeVariantExpander {
+) -> DirectedTimeVariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(QuickestPath::new(
         graph.clone(),
@@ -220,6 +246,29 @@ pub fn make_default_time_variant_expander(
 
     Expander{
         graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher,
+    }.chain(
+        Hold::new(cost_calculator)
+    )
+}
+
+pub type FreeSpaceTimeVariantExpander = TimeVariantExpander<NeighborhoodGraph<SparseGrid>, DurationCostCalculator, QuickestPath<VisibilityGraph<SparseGrid>, DurationCostCalculator>>;
+pub fn make_free_space_time_variant_expander(
+    visibility: Arc<Visibility<SparseGrid>>,
+    extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+) -> FreeSpaceTimeVariantExpander {
+    let cost_calculator = Arc::new(DurationCostCalculator);
+    let heuristic = Arc::new(se2::QuickestPath::new(
+        Arc::new(VisibilityGraph::new(visibility.clone())),
+        cost_calculator.clone(),
+        Arc::new(extrapolator.as_ref().into()),
+    ));
+    let reacher = Arc::new(ReachForLinearSE2{
+        extrapolator: extrapolator.clone(),
+    });
+    let graph = Arc::new(NeighborhoodGraph::new(visibility));
+
+    Expander{
+        graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher
     }.chain(
         Hold::new(cost_calculator)
     )
@@ -322,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_time_invariant_expander() {
-        let expander = make_default_time_invariant_expander(
+        let expander = make_directed_time_invariant_expander(
             Arc::new(make_test_graph()),
             Arc::new(make_test_extrapolation()),
         );
@@ -367,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_time_variant_expander() {
-        let expander = make_default_time_variant_expander(
+        let expander = make_directed_time_variant_expander(
             Arc::new(make_test_graph()),
             Arc::new(make_test_extrapolation())
         );
