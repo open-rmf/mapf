@@ -356,8 +356,36 @@ impl<G: Grid> Visibility<G> {
         ).map(|(v_cell, _)| { v_cell })
     }
 
-    pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item=Cell> {
-        [].into_iter()
+    pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item=Cell> + '_ {
+        [of_cell].into_iter()
+        .filter(|of_cell| {
+            self.grid().is_square_occupied(
+                of_cell.to_center_point(self.grid().cell_size()),
+                2.0*self.agent_radius,
+            ).is_none()
+        })
+        .flat_map(move |of_cell| {
+            [-1, 0, 1].into_iter()
+            .flat_map(move |i| {
+                [-1, 0, 1].into_iter()
+                .filter(move |j| {
+                    i == 0 && *j == 0
+                })
+                .filter_map(move |j| {
+                    let cell_size = self.grid().cell_size();
+                    let neighbor = of_cell.shifted(i, j);
+                    if self.grid().is_sweep_occupied(
+                        of_cell.to_center_point(cell_size),
+                        neighbor.to_center_point(cell_size),
+                        2.0*self.agent_radius(),
+                    ).is_none() {
+                        Some(neighbor)
+                    } else {
+                        None
+                    }
+                })
+            })
+        })
     }
 
     /// Get a reference to the underlying occupancy grid.
