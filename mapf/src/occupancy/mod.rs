@@ -18,7 +18,10 @@
 use std::ops::Sub;
 use std::collections::{HashSet, hash_map, HashMap};
 use bitfield::{Bit, bitfield};
-use crate::util::triangular_for;
+use crate::{
+    node::Key,
+    util::triangular_for
+};
 use util::LineSegment;
 
 pub type Point = nalgebra::geometry::Point2<f64>;
@@ -341,22 +344,39 @@ impl<G: Grid> Visibility<G> {
         return &self.edges;
     }
 
-    pub fn calculate_visibility(&self, cell: Cell) -> impl Iterator<Item=&Cell> {
-        self.iter_points().filter(
-            move |(v_cell, corner_status)| {
-                if !cell.in_visible_quadrant_of(*v_cell, **corner_status) {
-                    return false;
-                }
+    pub fn calculate_visibility(&self, cell: Cell) -> impl Iterator<Item=Cell> + '_ {
+        let visibility_edges = self.edges.get(&cell);
+        [visibility_edges].into_iter()
+        .filter_map(|x| x)
+        .flat_map(|edges| {
+            edges.into_iter()
+            .filter(|(_, blocked_by)| blocked_by.is_none())
+            .map(|(cell, _)| *cell)
+        })
+        .chain(
+            // This chain kicks in when visibility_edges returned None, which
+            // means we need to calculate the visibility for this cell.
+            [visibility_edges].into_iter()
+            .filter(|x| x.is_none())
+            .flat_map(move |_| {
+                self.iter_points().filter(
+                    move |(v_cell, corner_status)| {
+                        if !cell.in_visible_quadrant_of(*v_cell, **corner_status) {
+                            return false;
+                        }
 
-                let cell_size = self.grid.cell_size();
-                let p0 = cell.to_center_point(cell_size);
-                let p1 = v_cell.to_center_point(cell_size);
-                return self.grid.is_sweep_occupied(p0, p1, 2.0*self.agent_radius).is_none();
-            }
-        ).map(|(v_cell, _)| { v_cell })
+                        let cell_size = self.grid.cell_size();
+                        let p0 = cell.to_center_point(cell_size);
+                        let p1 = v_cell.to_center_point(cell_size);
+                        return self.grid.is_sweep_occupied(p0, p1, 2.0*self.agent_radius).is_none();
+                    }
+                ).map(|(v_cell, _)| *v_cell)
+            })
+        )
     }
 
     pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item=Cell> + '_ {
+        // dbg!("neighbors");
         [of_cell].into_iter()
         .filter(|of_cell| {
             self.grid().is_square_occupied(
@@ -365,13 +385,16 @@ impl<G: Grid> Visibility<G> {
             ).is_none()
         })
         .flat_map(move |of_cell| {
+            // dbg!(of_cell);
             [-1, 0, 1].into_iter()
             .flat_map(move |i| {
+                // dbg!(i);
                 [-1, 0, 1].into_iter()
                 .filter(move |j| {
-                    i == 0 && *j == 0
+                    !(i == 0 && *j == 0)
                 })
                 .filter_map(move |j| {
+                    // dbg!(j);
                     let cell_size = self.grid().cell_size();
                     let neighbor = of_cell.shifted(i, j);
                     if self.grid().is_sweep_occupied(

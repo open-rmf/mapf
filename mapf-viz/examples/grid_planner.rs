@@ -41,7 +41,10 @@ use mapf::{
         se2::{
             self, Rotation,
             timed_position::{Waypoint, DifferentialDriveLineFollow},
-            graph_search::{DefaultTimeVariantExpander, DefaultTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy},
+            graph_search::{
+                DirectedTimeVariantExpander, DirectedTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy,
+                FreeSpaceTimeInvariantExpander, FreeSpaceTimeVariantExpander,
+            },
         },
     },
     directed::simple::SimpleGraph,
@@ -57,7 +60,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 type Visibility = mapf::occupancy::Visibility<SparseGrid>;
-type SearchNode = se2::graph_search::Node<usize, 100>;
+type SearchNode = se2::graph_search::Node<GraphKey, 100>;
 
 pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
     value: Option<T>,
@@ -286,7 +289,7 @@ impl<Message> EndpointSelector<Message> {
     ) -> Vec<Cell> {
         if valid {
             if let Some(cell) = cell_opt {
-                return visibility.calculate_visibility(cell).map(|c| *c).collect();
+                return visibility.calculate_visibility(cell).map(|c| c).collect();
             }
         }
 
@@ -637,8 +640,9 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
-// type ObsAvoidance = Constrain<DefaultTimeVariantExpander, CircleCollisionConstraint>;
-type ObsAvoidance = Constrain<DefaultTimeInvariantExpander, CircleCollisionConstraint>;
+// type ObsAvoidance = Constrain<DirectedTimeInvariantExpander, CircleCollisionConstraint>;
+type ObsAvoidance = Constrain<FreeSpaceTimeInvariantExpander, CircleCollisionConstraint>;
+type GraphKey = Cell;
 
 struct App {
     robot_size_slider: slider::State,
@@ -650,7 +654,7 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<usize>, NoTrace>>,
+    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<GraphKey>, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<ObsAvoidance>>,
     debug_on: bool,
@@ -816,8 +820,12 @@ impl App {
 
                 let graph = Arc::new(SimpleGraph::new(vertices, edges));
                 let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                // let expander = se2::graph_search::make_default_time_variant_expander(graph, extrapolator);
-                let expander = se2::graph_search::make_default_time_invariant_expander(graph, extrapolator);
+                // let expander = se2::graph_search::make_directed_time_invariant_expander(graph, extrapolator);
+                let expander = se2::graph_search::make_free_space_time_invariant_expander(
+                    Arc::new(self.canvas.program.layers.1.visibility().clone()),
+                    extrapolator,
+                    vec![start_cell, goal_cell],
+                );
 
                 let expander = Arc::new(
                     expander.constrain(
@@ -829,13 +837,23 @@ impl App {
                 );
 
                 let planner = make_planner(expander.clone(), Arc::new(a_star::Algorithm));
+                // let mut progress = planner.plan(
+                //     &StartSE2{
+                //         vertex: 0,
+                //         orientation: Rotation::new(0_f64),
+                //     },
+                //     GoalSE2{
+                //         vertex: 1,
+                //         orientation: None,
+                //     },
+                // ).unwrap();
                 let mut progress = planner.plan(
                     &StartSE2{
-                        vertex: 0,
+                        vertex: start_cell,
                         orientation: Rotation::new(0_f64),
                     },
                     GoalSE2{
-                        vertex: 1,
+                        vertex: goal_cell,
                         orientation: None,
                     },
                 ).unwrap();

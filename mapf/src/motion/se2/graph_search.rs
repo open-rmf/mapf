@@ -33,7 +33,7 @@ use crate::{
     heuristic::Heuristic,
     directed::simple::SimpleGraph,
     occupancy::{
-        Visibility,
+        Visibility, Cell,
         sparse_grid::SparseGrid,
         graph::{NeighborhoodGraph, VisibilityGraph},
     },
@@ -95,6 +95,12 @@ impl<GraphKey: Key, const R: u64> KeySE2<GraphKey, R> {
 impl<const RESOLUTION: u64> From<KeySE2<usize, RESOLUTION>> for usize {
     fn from(key: KeySE2<usize, RESOLUTION>) -> Self {
         key.vertex()
+    }
+}
+
+impl<const RESOLUTION: u64> From<KeySE2<Cell, RESOLUTION>> for Cell {
+    fn from(cell: KeySE2<Cell, RESOLUTION>) -> Self {
+        cell.vertex()
     }
 }
 
@@ -206,17 +212,18 @@ pub type FreeSpaceTimeInvariantExpander = TimeInvariantExpander<NeighborhoodGrap
 pub fn make_free_space_time_invariant_expander(
     visibility: Arc<Visibility<SparseGrid>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+    points_of_interest: Vec<Cell>,
 ) -> FreeSpaceTimeInvariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(se2::QuickestPath::new(
-        Arc::new(VisibilityGraph::new(visibility.clone())),
+        Arc::new(VisibilityGraph::new(visibility.clone(), points_of_interest.iter().cloned())),
         cost_calculator.clone(),
         Arc::new(extrapolator.as_ref().into()),
     ));
     let reacher = Arc::new(ReachForLinearSE2{
         extrapolator: extrapolator.clone(),
     });
-    let graph = Arc::new(NeighborhoodGraph::new(visibility));
+    let graph = Arc::new(NeighborhoodGraph::new(visibility, points_of_interest.iter().cloned()));
 
     FreeSpaceTimeInvariantExpander{
         graph, extrapolator, cost_calculator, heuristic, reacher
@@ -255,17 +262,18 @@ pub type FreeSpaceTimeVariantExpander = TimeVariantExpander<NeighborhoodGraph<Sp
 pub fn make_free_space_time_variant_expander(
     visibility: Arc<Visibility<SparseGrid>>,
     extrapolator: Arc<se2::timed_position::DifferentialDriveLineFollow>,
+    points_of_interest: Vec<Cell>,
 ) -> FreeSpaceTimeVariantExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
     let heuristic = Arc::new(se2::QuickestPath::new(
-        Arc::new(VisibilityGraph::new(visibility.clone())),
+        Arc::new(VisibilityGraph::new(visibility.clone(), points_of_interest.iter().cloned())),
         cost_calculator.clone(),
         Arc::new(extrapolator.as_ref().into()),
     ));
     let reacher = Arc::new(ReachForLinearSE2{
         extrapolator: extrapolator.clone(),
     });
-    let graph = Arc::new(NeighborhoodGraph::new(visibility));
+    let graph = Arc::new(NeighborhoodGraph::new(visibility, points_of_interest.iter().cloned()));
 
     Expander{
         graph, extrapolator, cost_calculator: cost_calculator.clone(), heuristic, reacher
@@ -284,7 +292,7 @@ pub enum InitErrorSE2<H> {
 
 impl<G, S, C, H, const RESOLUTION: u64> InitTargeted<StartSE2<G::Key>, GoalSE2<G::Key>> for Expander<LinearSE2Policy<G, S, C, H, RESOLUTION>>
 where
-    G: Graph<Vertex=r2::Position, Key=usize>,
+    G: Graph<Vertex=r2::Position>,
     S: ClosedSet<Node<G::Key, RESOLUTION>>,
     C: CostCalculator<se2::timed_position::Waypoint, Cost=i64> + CostCalculator<r2::timed_position::Waypoint, Cost=i64>,
     H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
@@ -297,7 +305,7 @@ where
         start: &'a StartSE2<G::Key>,
         goal: &'a GoalSE2<G::Key>,
     ) -> Self::InitialTargetedNodes<'a> {
-        [self.graph.vertex(start.vertex)].into_iter()
+        [self.graph.vertex(start.vertex.clone())].into_iter()
         .filter_map(|x| x)
         .map(move |p0| {
             let state = se2::timed_position::Waypoint{
