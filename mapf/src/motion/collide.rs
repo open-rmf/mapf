@@ -66,8 +66,6 @@ fn detect_proximity(
     let mut wp0_b_opt = iter_b.next();
     let mut wp1_b_opt = iter_b.next();
 
-    // println!(" =========================== ");
-
     while let (Some(wp0_a), Some(wp1_a), Some(wp0_b), Some(wp1_b)) = (wp0_a_opt, wp1_a_opt, wp0_b_opt, wp1_b_opt) {
         if wp1_a.time < wp0_b.time {
             wp0_a_opt = Some(wp1_a);
@@ -91,20 +89,6 @@ fn detect_proximity(
         let b = 2.0*dv.dot(&dp0);
         let c = dp0.dot(&dp0) - dist_squared;
 
-        // println!(" --- ");
-        // println!("{:?} -> {:?}", wp0_a, wp1_a);
-        // println!("{:?} -> {:?}", wp0_b, wp1_b);
-        // println!("p0_a: {p0_a:?}, v_a: {v_a:?}, p0_b: {p0_b:?}, v_b: {v_b:?}");
-        // println!("dp0: {dp0:?}, dv: {dv:?}");
-        // println!("a: {a}, b: {b}, c: {c}");
-        // println!(
-        //     "t_a: [{}, {}], t_b: [{}, {}]",
-        //     wp0_a.time.as_secs_f64(),
-        //     wp1_a.time.as_secs_f64(),
-        //     wp0_b.time.as_secs_f64(),
-        //     wp1_b.time.as_secs_f64(),
-        // );
-
         if a.abs() < 1e-8 {
             // The two motions have almost identical velocities or nearly
             // orthogonal velocities
@@ -116,27 +100,20 @@ fn detect_proximity(
             } else {
                 let t = -c/b;
                 if let Some(t) = time_within_range(t, &t_range) {
-                    // println!(" >> COLLISION TIME: {}", t.as_secs_f64());
                     return Some(t);
                 }
             }
         } else {
             let radicand = b.powi(2) - 4.0*a*c;
-            // dbg!(radicand);
-
             if radicand >= 0.0 {
                 let sqrt_radicand = radicand.sqrt();
                 let t_m = (-b - sqrt_radicand)/(2.0*a);
-                // println!("t_m: {t_m}");
                 if let Some(t_m) = time_within_range(t_m, &t_range) {
-                    // println!(" >> COLLISION TIME: {}", t_m.as_secs_f64());
                     return Some(t_m);
                 }
 
                 let t_p = (-b + sqrt_radicand)/(2.0*a);
-                // println!("t_p: {t_p}");
                 if let Some(t_p) = time_within_range(t_p, &t_range) {
-                    // println!(" >> COLLISION TIME: {}", t_p.as_secs_f64());
                     return Some(t_p);
                 }
             }
@@ -169,7 +146,6 @@ fn detect_proximity(
         }
     }
 
-    // println!(" >> NO COLLISION");
     return None;
 }
 
