@@ -17,7 +17,7 @@
 
 use std::ops::Sub;
 use std::collections::{HashSet, hash_map, HashMap};
-use bitfield::{Bit, bitfield};
+use bitfield::{Bit, BitMut, bitfield};
 use crate::{
     node::Key,
     util::triangular_for
