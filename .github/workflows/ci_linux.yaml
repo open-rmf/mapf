@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Instally nightly
+      run: |
+        rustup toolchain install nightly
+        rustup default nightly
     - uses: actions/checkout@v3
     - name: Build mapf
       run: cd mapf && cargo build
