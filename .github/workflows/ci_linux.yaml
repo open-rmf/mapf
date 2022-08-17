@@ -1,0 +1,23 @@
+name: ci_linux
+
+on:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build mapf
+      run: cd mapf && cargo build
+    - name: Run tests mapf
+      run: cd mapf && cargo test
+    - name: Build mapf_viz
+      run: cd mapf_viz && cargo build
+    - name: Run tests mapf_viz
+      run: cd mapf_viz && cargo test
