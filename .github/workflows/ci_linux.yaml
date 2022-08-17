@@ -21,7 +21,7 @@ jobs:
       run: cd mapf && cargo build
     - name: Run tests mapf
       run: cd mapf && cargo test
-    - name: Build mapf_viz
-      run: cd mapf_viz && cargo build
-    - name: Run tests mapf_viz
-      run: cd mapf_viz && cargo test
+    - name: Build mapf-viz
+      run: cd mapf-viz && cargo build
+    - name: Run tests mapf-viz
+      run: cd mapf-viz && cargo test
