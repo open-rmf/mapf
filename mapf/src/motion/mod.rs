@@ -37,7 +37,7 @@ pub mod movable;
 
 pub mod collide;
 
-use time_point::{TimePoint, Duration};
+pub use time_point::{TimePoint, Duration};
 
 /// The default translational threshold is 1mm
 pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
