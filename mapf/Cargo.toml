@@ -26,5 +26,3 @@ derivative = "*"
 anyhow = "*"
 thiserror = "*"
 
-[lib]
-path = "lib.rs"
