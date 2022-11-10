@@ -14,7 +14,7 @@
  * limitations under the License.
  *
 */
-#![feature(generic_associated_types, associated_type_bounds, type_alias_impl_trait)]
+#![feature(associated_type_bounds, type_alias_impl_trait)]
 
 pub mod progress;
 
