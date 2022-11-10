@@ -298,7 +298,7 @@ where
     H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
 {
     type InitTargetedError = InitErrorSE2<H::Error>;
-    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node<G::Key, RESOLUTION>>, Self::InitTargetedError>> + 'a;
+    type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Node<G::Key, RESOLUTION>>, Self::InitTargetedError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a;
 
     fn start<'a>(
         &'a self,

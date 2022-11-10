@@ -81,7 +81,7 @@ impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
     type Vertex = V;
     type Edge = (usize, usize);
 
-    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=(usize, usize)> + 'a;
+    type EdgeIter<'a>  = impl Iterator<Item=(usize, usize)> + 'a where Self: 'a;
 
     fn vertex (&self, key: usize) -> Option<V> {
         self.vertices.get(key).cloned()

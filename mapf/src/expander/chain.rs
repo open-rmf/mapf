@@ -43,7 +43,7 @@ impl<E: Expander, C: Expander<Node=E::Node>> Expander for Chain<E, C> {
 
 impl<E: Targeted<G>, C: Targeted<G, Node=E::Node>, G: Goal<E::Node>> Targeted<G> for Chain<E, C> {
     type TargetedError = ChainErr<E::TargetedError, C::TargetedError>;
-    type TargetedExpansion<'a> where Self: 'a, G: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::TargetedError>> + 'a;
+    type TargetedExpansion<'a>  = impl Iterator<Item=Result<Arc<Self::Node>, Self::TargetedError>> + 'a where Self: 'a, G: 'a;
 
     fn expand<'a>(
         &'a self,
@@ -62,7 +62,7 @@ where
     G: Goal<E::Node>,
 {
     type InitTargetedError = E::InitTargetedError;
-    type InitialTargetedNodes<'a> where Self: 'a, S: 'a, G: 'a = E::InitialTargetedNodes<'a>;
+    type InitialTargetedNodes<'a> = E::InitialTargetedNodes<'a> where Self: 'a, S: 'a, G: 'a;
 
     fn start<'a>(
         &'a self,

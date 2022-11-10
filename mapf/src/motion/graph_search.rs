@@ -291,7 +291,7 @@ where
     P::Reach: Reachable<P::Node, G, P::Waypoint>,
 {
     type TargetedError = ExpansionErrorOf<P, G>;
-    type TargetedExpansion<'a> where P: 'a, G: 'a = impl Iterator<Item=Result<Arc<P::Node>, ExpansionErrorOf<P, G>>> + 'a;
+    type TargetedExpansion<'a> = impl Iterator<Item=Result<Arc<P::Node>, ExpansionErrorOf<P, G>>> + 'a where P: 'a, G: 'a ;
 
     fn expand<'a>(
         &'a self,
@@ -338,7 +338,7 @@ where
 
 impl<P: Policy> Aimless for Expander<P> {
     type AimlessError = ExtrapolatorErrorOf<P>;
-    type AimlessExpansion<'a> where P: 'a = impl Iterator<Item=Result<Arc<P::Node>, Self::AimlessError>> + 'a;
+    type AimlessExpansion<'a> = impl Iterator<Item=Result<Arc<P::Node>, Self::AimlessError>> + 'a where P: 'a;
 
     fn aimless_expand<'a>(
         &'a self,

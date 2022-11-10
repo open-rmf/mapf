@@ -102,7 +102,7 @@ impl<N: Weighted + PartialKeyed> Default for PartialKeyedClosedSet<N> {
 }
 
 impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
-    type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
+    type Iter<'a> = impl Iterator<Item=&'a Arc<N>> + 'a where N: 'a;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
         if let Some(key) = node.partial_key() {
@@ -169,7 +169,7 @@ impl<N: Weighted + PartialKeyed + Timed> Default for TimeVariantPartialKeyedClos
 }
 
 impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeyedClosetSet<N> {
-    type Iter<'a> where N: 'a = impl Iterator<Item=&'a Arc<N>> + 'a;
+    type Iter<'a> = impl Iterator<Item=&'a Arc<N>> + 'a where N: 'a ;
 
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N> {
         if let Some(key) = node.partial_key() {

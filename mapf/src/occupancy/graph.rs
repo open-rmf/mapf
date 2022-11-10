@@ -86,7 +86,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     type Key = Cell;
     type Vertex = Point;
     type Edge = (Cell, Cell);
-    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=(Cell, Cell)> + 'a;
+    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
     fn vertex(&self, cell: Self::Key) -> Option<Self::Vertex> {
         // We don't bother to filter out occupied cells because those cells will
@@ -162,7 +162,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Key = Cell;
     type Vertex = Point;
     type Edge = (Cell, Cell);
-    type EdgeIter<'a> where Self: 'a = impl Iterator<Item=(Cell, Cell)> + 'a;
+    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
     fn vertex(&self, cell: Self::Key) -> Option<Self::Vertex> {
         if self.visibility.grid().is_occupied(&cell) {
