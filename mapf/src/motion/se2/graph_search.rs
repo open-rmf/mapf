@@ -127,7 +127,7 @@ pub struct ReachForLinearSE2 {
 
 impl<GraphKey: Key, const RESOLUTION: u64> Reachable<Node<GraphKey, RESOLUTION>, GoalSE2<GraphKey>, se2::timed_position::Waypoint> for ReachForLinearSE2 {
     type ReachError = NoError;
-    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>>;
+    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>> + 'a;
 
     fn reach_for<'a>(&'a self, parent: &'a Node<GraphKey, RESOLUTION>, goal: &'a GoalSE2<GraphKey>) -> Self::Reaching<'a> {
         [parent].into_iter()

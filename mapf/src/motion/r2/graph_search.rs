@@ -105,7 +105,7 @@ where
     H: Heuristic<G::Key, G::Key, C::Cost>,
 {
     type InitAimlessError = InitErrorR2<G::Key, H::Error>;
-    type InitialAimlessNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitAimlessError>> where G: 'a, C: 'a, H: 'a, S: 'a;
+    type InitialAimlessNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitAimlessError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a;
 
     fn aimless_start<'a>(
         &'a self,
@@ -141,7 +141,7 @@ where
     H: Heuristic<G::Key, G::Key, C::Cost>,
 {
     type InitTargetedError = InitErrorR2<G::Key, H::Error>;
-    type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> where G: 'a, C: 'a, H: 'a, S: 'a ;
+    type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a ;
 
     fn start<'a>(
         &'a self,
