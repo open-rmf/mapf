@@ -1,0 +1,25 @@
+name: style
+
+on:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  style:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: rustfmt
+      run: |
+        rustup toolchain install nightly
+        rustup default nightly
+        rustup component add rustfmt
+
+    - name: style
+      run: cd mapf && rustfmt --check --edition 2021 src/*

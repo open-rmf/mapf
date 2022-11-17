@@ -1,0 +1,27 @@
+name: ci_linux
+
+on:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Instally nightly
+      run: |
+        rustup toolchain install nightly
+        rustup default nightly
+    - uses: actions/checkout@v3
+    - name: Build mapf
+      run: cd mapf && cargo build
+    - name: Run tests mapf
+      run: cd mapf && cargo test
+    - name: Build mapf-viz
+      run: cd mapf-viz && cargo build
+    - name: Run tests mapf-viz
+      run: cd mapf-viz && cargo test
