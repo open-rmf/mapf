@@ -57,7 +57,7 @@ impl<E: Expander, C> Expander for Constrain<E, C> {
 
 impl<E: Targeted<G>, C: TargetedConstraint<E::Node, G>, G: Goal<E::Node>> Targeted<G> for Constrain<E, C> {
     type TargetedError = ConstrainErr<E::TargetedError, C::ConstraintError>;
-    type TargetedExpansion<'a> where Self: 'a, G: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::TargetedError>> + 'a;
+    type TargetedExpansion<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::TargetedError>> + 'a where Self: 'a, G: 'a ;
 
     fn expand<'a>(
         &'a self,
@@ -77,7 +77,7 @@ where
     G: Goal<E::Node>,
 {
     type InitTargetedError = ConstrainErr<E::InitTargetedError, C::ConstraintError>;
-    type InitialTargetedNodes<'a> where Self: 'a, S: 'a, G: 'a = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> + 'a;
+    type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> + 'a where Self: 'a, S: 'a, G: 'a;
 
     fn start<'a>(
         &'a self,

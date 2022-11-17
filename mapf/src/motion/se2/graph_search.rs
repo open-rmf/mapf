@@ -127,7 +127,7 @@ pub struct ReachForLinearSE2 {
 
 impl<GraphKey: Key, const RESOLUTION: u64> Reachable<Node<GraphKey, RESOLUTION>, GoalSE2<GraphKey>, se2::timed_position::Waypoint> for ReachForLinearSE2 {
     type ReachError = NoError;
-    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>>;
+    type Reaching<'a> = impl Iterator<Item=Result<se2::LinearTrajectory, NoError>> + 'a;
 
     fn reach_for<'a>(&'a self, parent: &'a Node<GraphKey, RESOLUTION>, goal: &'a GoalSE2<GraphKey>) -> Self::Reaching<'a> {
         [parent].into_iter()
@@ -298,7 +298,7 @@ where
     H: Heuristic<KeySE2<G::Key, RESOLUTION>, GoalSE2<G::Key>, i64>,
 {
     type InitTargetedError = InitErrorSE2<H::Error>;
-    type InitialTargetedNodes<'a> where G: 'a, C: 'a, H: 'a, S: 'a = impl Iterator<Item=Result<Arc<Node<G::Key, RESOLUTION>>, Self::InitTargetedError>> + 'a;
+    type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Node<G::Key, RESOLUTION>>, Self::InitTargetedError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a;
 
     fn start<'a>(
         &'a self,

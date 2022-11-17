@@ -59,7 +59,7 @@ where
     F: Fn(&Arc<N>, &G) -> Exp
 {
     type TargetedError = Err;
-    type TargetedExpansion<'a> where Self: 'a = Exp;
+    type TargetedExpansion<'a> = Exp where Self: 'a;
 
     fn expand<'a>(
         &'a self,
