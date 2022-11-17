@@ -15,9 +15,12 @@
  *
 */
 
-use super::{waypoint, TimePoint, Duration, Motion, Waypoint, InterpError, timed::{TimeCmp, Timed}};
-use sorted_vec::{SortedSet, FindOrInsert};
+use super::{
+    timed::{TimeCmp, Timed},
+    waypoint, Duration, InterpError, Motion, TimePoint, Waypoint,
+};
 use cached::{Cached, UnboundCache};
+use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -64,7 +67,6 @@ pub struct Trajectory<W: Waypoint> {
 }
 
 impl<'a, W: Waypoint> Trajectory<W> {
-
     /// Create a new trajectory, starting with the given endpoints. If the
     /// endpoints have the same time value then this will return an Err.
     pub fn new(start: W, finish: W) -> Result<Self, ()> {
@@ -72,7 +74,9 @@ impl<'a, W: Waypoint> Trajectory<W> {
             return Result::Err(());
         }
 
-        let mut result = Self{ waypoints: SortedSet::new() };
+        let mut result = Self {
+            waypoints: SortedSet::new(),
+        };
 
         result.waypoints.push(TimeCmp(start));
         result.waypoints.push(TimeCmp(finish));
@@ -95,8 +99,10 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Drains elements out of the given iterator type and constructs a
     /// Trajectory with them. If the final number of elements that would be in
     /// the trajectory is less than 2, then this function returns an Err.
-    pub fn from_iter<I: std::iter::IntoIterator<Item=W>>(iter: I) -> Result<Self, ()> {
-        let mut result = Self{ waypoints: SortedSet::new() };
+    pub fn from_iter<I: std::iter::IntoIterator<Item = W>>(iter: I) -> Result<Self, ()> {
+        let mut result = Self {
+            waypoints: SortedSet::new(),
+        };
         for element in iter {
             result.waypoints.push(TimeCmp(element));
         }
@@ -114,7 +120,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     pub fn insert(&mut self, waypoint: W) -> Result<usize, usize> {
         match self.waypoints.find_or_push(TimeCmp(waypoint)) {
             FindOrInsert::Found(index) => Result::Err(index),
-            FindOrInsert::Inserted(index) => Result::Ok(index)
+            FindOrInsert::Inserted(index) => Result::Ok(index),
         }
     }
 
@@ -143,7 +149,10 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
     /// Find the segment of the trajectory that matches this point in time.
     pub fn find(&self, time: &TimePoint) -> Find {
-        match self.waypoints.binary_search_by(|x| x.partial_cmp(time).unwrap())  {
+        match self
+            .waypoints
+            .binary_search_by(|x| x.partial_cmp(time).unwrap())
+        {
             Result::Ok(index) => return Find::Exact(index),
             Result::Err(index) => {
                 if index == 0 {
@@ -207,8 +216,11 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// to the waypoint's time that would cause its order within the vector to
     /// change, then its time value will be reverted back to the original and
     /// an error will be returned.
-    pub fn mutate_waypoint<F: FnOnce(&mut W)>(&mut self, index: usize, f: F)
-    -> Result<(), MutateError> {
+    pub fn mutate_waypoint<F: FnOnce(&mut W)>(
+        &mut self,
+        index: usize,
+        f: F,
+    ) -> Result<(), MutateError> {
         if index >= self.waypoints.len() {
             return Result::Err(MutateError::OutOfBounds);
         }
@@ -278,10 +290,10 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
     /// Get a motion for this trajectory
     pub fn motion(&'a self) -> TrajectoryMotion<'a, W> {
-        return TrajectoryMotion{
+        return TrajectoryMotion {
             trajectory: self,
-            motion_cache: RefCell::new(UnboundCache::new())
-        }
+            motion_cache: RefCell::new(UnboundCache::new()),
+        };
     }
 
     /// Iterate through this trajectory.
@@ -329,10 +341,10 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
                 } else {
                     return Ok(self.get_motion_segment(index));
                 }
-            },
+            }
             Find::Approaching(index) => {
                 return Ok(self.get_motion_segment(index));
-            },
+            }
             Find::BeforeStart | Find::AfterFinish => {
                 return Err(InterpError::OutOfBounds);
             }
@@ -340,9 +352,10 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     }
 
     fn get_motion_segment(&self, index: usize) -> Rc<W::Motion> {
-        return self.motion_cache.borrow_mut().cache_get_or_set_with(
-            index,
-            || {
+        return self
+            .motion_cache
+            .borrow_mut()
+            .cache_get_or_set_with(index, || {
                 // SAFETY: This should only be called by find_motion_segment
                 // which should only call this function with an index greater
                 // than zero and less than the length of the underlying vec.
@@ -351,8 +364,8 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
                     let wp1 = self.trajectory.get_unchecked(index);
                     return Rc::new(wp0.interpolate(wp1));
                 }
-            }
-        ).clone();
+            })
+            .clone();
     }
 }
 
@@ -394,56 +407,72 @@ mod tests {
         let t0 = time_point::TimePoint::new(0);
         let mut trajectory = se2::LinearTrajectory::new(
             WaypointSE2::new(t0, 0.0, 0.0, 0.0),
-            WaypointSE2::new(t0 + time_point::Duration::from_secs(2), 1.0, 0.0, 90f64.to_radians())
-        ).expect("Trajectory failed to be created");
+            WaypointSE2::new(
+                t0 + time_point::Duration::from_secs(2),
+                1.0,
+                0.0,
+                90f64.to_radians(),
+            ),
+        )
+        .expect("Trajectory failed to be created");
 
-        let insertion = trajectory.insert(
-            WaypointSE2::new(t0 + time_point::Duration::from_secs(3), 1.0, 1.0, 180f64.to_radians())
-        );
+        let insertion = trajectory.insert(WaypointSE2::new(
+            t0 + time_point::Duration::from_secs(3),
+            1.0,
+            1.0,
+            180f64.to_radians(),
+        ));
         assert_eq!(insertion.ok(), Some(2));
 
-        let insertion = trajectory.insert(
-            WaypointSE2::new(t0 + time_point::Duration::from_secs(1), 0.0, 1.0, -45f64.to_radians())
-        );
+        let insertion = trajectory.insert(WaypointSE2::new(
+            t0 + time_point::Duration::from_secs(1),
+            0.0,
+            1.0,
+            -45f64.to_radians(),
+        ));
         assert_eq!(insertion.ok(), Some(1));
 
         assert_eq!(trajectory.len(), 4);
 
         let motion = trajectory.motion();
-        let p = motion.compute_position(
-            &(t0 + time_point::Duration::from_secs_f64(0.5))
-        ).expect("Failed to calculate position");
+        let p = motion
+            .compute_position(&(t0 + time_point::Duration::from_secs_f64(0.5)))
+            .expect("Failed to calculate position");
         assert_relative_eq!(p.translation.vector[0], 0.0);
         assert_relative_eq!(p.translation.vector[1], 0.5);
-        assert_relative_eq!(p.rotation.angle(), (-45f64/2.0).to_radians());
+        assert_relative_eq!(p.rotation.angle(), (-45f64 / 2.0).to_radians());
 
-        let v = motion.compute_velocity(
-            &(t0 + time_point::Duration::from_secs_f64(0.6788612))
-        ).expect("Failed to calculate velocity");
+        let v = motion
+            .compute_velocity(&(t0 + time_point::Duration::from_secs_f64(0.6788612)))
+            .expect("Failed to calculate velocity");
         assert_relative_eq!(v.translational[0], 0.0);
         assert_relative_eq!(v.translational[1], 1.0);
         assert_relative_eq!(v.rotational, -45f64.to_radians());
 
-        let p = motion.compute_position(
-            &(t0 + time_point::Duration::from_secs(3))
-        ).expect("Failed to calculate position");
+        let p = motion
+            .compute_position(&(t0 + time_point::Duration::from_secs(3)))
+            .expect("Failed to calculate position");
         assert_relative_eq!(p.translation.vector[0], 1.0);
         assert_relative_eq!(p.translation.vector[1], 1.0);
         assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
 
-        let v = motion.compute_velocity(
-            &(t0 + time_point::Duration::from_secs(3))
-        ).expect("Failed to compute velocity");
+        let v = motion
+            .compute_velocity(&(t0 + time_point::Duration::from_secs(3)))
+            .expect("Failed to compute velocity");
         assert_relative_eq!(v.translational[0], 0.0);
         assert_relative_eq!(v.translational[1], 1.0);
         assert_relative_eq!(v.rotational, 90f64.to_radians());
 
-        let p = motion.compute_position(&t0).expect("Failed to compute velocity");
+        let p = motion
+            .compute_position(&t0)
+            .expect("Failed to compute velocity");
         assert_relative_eq!(p.translation.vector[0], 0.0);
         assert_relative_eq!(p.translation.vector[1], 0.0);
         assert_relative_eq!(p.rotation.angle(), 0.0);
 
-        let v = motion.compute_velocity(&t0).expect("Failed to calculate velocity");
+        let v = motion
+            .compute_velocity(&t0)
+            .expect("Failed to calculate velocity");
         assert_relative_eq!(v.translational[0], 0.0);
         assert_relative_eq!(v.translational[1], 1.0);
         assert_relative_eq!(v.rotational, -45f64.to_radians());

@@ -16,18 +16,14 @@
 */
 
 use crate::{
-    node::Cost,
     error::{Error, NoError},
+    node::Cost,
 };
 
 pub trait Heuristic<Start, Goal, C: Cost> {
     type Error: Error;
 
-    fn estimate_cost(
-        &self,
-        from_state: &Start,
-        to_goal: &Goal,
-    ) -> Result<Option<C>, Self::Error>;
+    fn estimate_cost(&self, from_state: &Start, to_goal: &Goal) -> Result<Option<C>, Self::Error>;
 }
 
 /// In cases where a heuristic needs to be specified for a generic argument but
@@ -38,11 +34,7 @@ pub trait Heuristic<Start, Goal, C: Cost> {
 pub struct Uninformed;
 impl<S, G, C: Cost> Heuristic<S, G, C> for Uninformed {
     type Error = NoError;
-    fn estimate_cost(
-        &self,
-        from_state: &S,
-        to_goal: &G,
-    ) -> Result<Option<C>, Self::Error> {
+    fn estimate_cost(&self, from_state: &S, to_goal: &G) -> Result<Option<C>, Self::Error> {
         Ok(Some(C::zero()))
     }
 }

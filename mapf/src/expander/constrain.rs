@@ -15,11 +15,8 @@
  *
 */
 
-use crate::{
-    expander::traits::*,
-    error::Error,
-};
-use std::{sync::Arc, marker::PhantomData};
+use crate::{error::Error, expander::traits::*};
+use std::{marker::PhantomData, sync::Arc};
 use thiserror::Error as ThisError;
 
 pub trait AimlessConstraint<N> {
@@ -55,7 +52,9 @@ impl<E: Expander, C> Expander for Constrain<E, C> {
     type Node = E::Node;
 }
 
-impl<E: Targeted<G>, C: TargetedConstraint<E::Node, G>, G: Goal<E::Node>> Targeted<G> for Constrain<E, C> {
+impl<E: Targeted<G>, C: TargetedConstraint<E::Node, G>, G: Goal<E::Node>> Targeted<G>
+    for Constrain<E, C>
+{
     type TargetedError = ConstrainErr<E::TargetedError, C::ConstraintError>;
     type TargetedExpansion<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::TargetedError>> + 'a where Self: 'a, G: 'a ;
 
@@ -64,9 +63,18 @@ impl<E: Targeted<G>, C: TargetedConstraint<E::Node, G>, G: Goal<E::Node>> Target
         parent: &'a Arc<Self::Node>,
         goal: &'a G,
     ) -> Self::TargetedExpansion<'a> {
-        self.base.expand(parent, goal).into_iter().map(|r| r.map_err(ConstrainErr::Base))
-        .map(move |r| r.and_then(|n| self.constrain_with.constrain(n, goal).map_err(ConstrainErr::Constraint)))
-        .filter_map(|r| r.transpose())
+        self.base
+            .expand(parent, goal)
+            .into_iter()
+            .map(|r| r.map_err(ConstrainErr::Base))
+            .map(move |r| {
+                r.and_then(|n| {
+                    self.constrain_with
+                        .constrain(n, goal)
+                        .map_err(ConstrainErr::Constraint)
+                })
+            })
+            .filter_map(|r| r.transpose())
     }
 }
 
@@ -79,21 +87,29 @@ where
     type InitTargetedError = ConstrainErr<E::InitTargetedError, C::ConstraintError>;
     type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> + 'a where Self: 'a, S: 'a, G: 'a;
 
-    fn start<'a>(
-        &'a self,
-        start: &'a S,
-        goal: &'a G,
-    ) -> Self::InitialTargetedNodes<'a> {
-        self.base.start(start, goal).into_iter().map(|r| r.map_err(ConstrainErr::Base))
-        .map(move |r| r.and_then(|n| self.constrain_with.constrain(n, goal).map_err(ConstrainErr::Constraint)))
-        .filter_map(|r| r.transpose())
+    fn start<'a>(&'a self, start: &'a S, goal: &'a G) -> Self::InitialTargetedNodes<'a> {
+        self.base
+            .start(start, goal)
+            .into_iter()
+            .map(|r| r.map_err(ConstrainErr::Base))
+            .map(move |r| {
+                r.and_then(|n| {
+                    self.constrain_with
+                        .constrain(n, goal)
+                        .map_err(ConstrainErr::Constraint)
+                })
+            })
+            .filter_map(|r| r.transpose())
     }
 }
 
 impl<E: Solvable, C> Solvable for Constrain<E, C> {
     type Solution = E::Solution;
     type SolveError = E::SolveError;
-    fn make_solution(&self, solution_node: &Arc<Self::Node>) -> Result<Self::Solution, Self::SolveError> {
+    fn make_solution(
+        &self,
+        solution_node: &Arc<Self::Node>,
+    ) -> Result<Self::Solution, Self::SolveError> {
         self.base.make_solution(solution_node)
     }
 }
@@ -108,8 +124,14 @@ impl<E: Reversible, C: ReversibleConstraint> Reversible for Constrain<E, C> {
 
     fn reverse(&self) -> Result<ReverseOf<Self>, Self::ReversalError> {
         let base = self.base.reverse().map_err(ConstrainErr::Base)?;
-        let constrain_with = self.constrain_with.reverse().map_err(ConstrainErr::Constraint)?;
-        Ok(Constrain{base, constrain_with})
+        let constrain_with = self
+            .constrain_with
+            .reverse()
+            .map_err(ConstrainErr::Constraint)?;
+        Ok(Constrain {
+            base,
+            constrain_with,
+        })
     }
 }
 
@@ -121,7 +143,8 @@ impl<E: BidirSolvable, C: ReversibleConstraint> BidirSolvable for Constrain<E, C
         forward_solution_node: &Arc<Self::Node>,
         reverse_solution_node: &Arc<ReverseNodeOf<E>>,
     ) -> Result<Self::Solution, Self::BidirSolveError> {
-        self.base.make_bidirectional_solution(forward_solution_node, reverse_solution_node)
+        self.base
+            .make_bidirectional_solution(forward_solution_node, reverse_solution_node)
     }
 }
 
@@ -130,22 +153,25 @@ impl<E: BidirSolvable, C: ReversibleConstraint> BidirSolvable for Constrain<E, C
 // is available
 pub struct AimlessConstraintClosure<F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>, N, Err> {
     closure: F,
-    _ignore: PhantomData<(N, Err)>
+    _ignore: PhantomData<(N, Err)>,
 }
 
 impl<F, N, Err> AimlessConstraintClosure<F, N, Err>
 where
-    F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>,
 {
     pub fn new(closure: F) -> Self {
-        Self{closure, _ignore: Default::default()}
+        Self {
+            closure,
+            _ignore: Default::default(),
+        }
     }
 }
 
 impl<F, N, Err> AimlessConstraint<N> for AimlessConstraintClosure<F, N, Err>
 where
     Err: Error,
-    F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
     fn constrain(&self, node: Arc<N>) -> Result<Option<Arc<N>>, Self::ConstraintError> {
@@ -155,15 +181,18 @@ where
 
 pub struct TargetedConstraintClosure<F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>, N, G, Err> {
     closure: F,
-    _ignore: PhantomData<(N, G, Err)>
+    _ignore: PhantomData<(N, G, Err)>,
 }
 
 impl<F, N, G, Err> TargetedConstraintClosure<F, N, G, Err>
 where
-    F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>,
 {
     pub fn new(closure: F) -> Self {
-        Self{closure, _ignore: Default::default()}
+        Self {
+            closure,
+            _ignore: Default::default(),
+        }
     }
 }
 
@@ -171,7 +200,7 @@ impl<F, N, G, Err> TargetedConstraint<N, G> for TargetedConstraintClosure<F, N, 
 where
     G: Goal<N>,
     Err: Error,
-    F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
     fn constrain(&self, node: Arc<N>, goal: &G) -> Result<Option<Arc<N>>, Self::ConstraintError> {
@@ -181,15 +210,18 @@ where
 
 pub struct ConstraintClosure<F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>, N, G, Err> {
     closure: F,
-    _ignore: PhantomData<(N, G, Err)>
+    _ignore: PhantomData<(N, G, Err)>,
 }
 
 impl<F, N, G, Err> ConstraintClosure<F, N, G, Err>
 where
-    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
 {
     pub fn new(closure: F) -> Self {
-        Self{closure, _ignore: Default::default()}
+        Self {
+            closure,
+            _ignore: Default::default(),
+        }
     }
 }
 
@@ -197,7 +229,7 @@ impl<F, N, G, Err> AimlessConstraint<N> for ConstraintClosure<F, N, G, Err>
 where
     G: Goal<N>,
     Err: Error,
-    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
     fn constrain(&self, node: Arc<N>) -> Result<Option<Arc<N>>, Self::ConstraintError> {
@@ -209,7 +241,7 @@ impl<F, N, G, Err> TargetedConstraint<N, G> for ConstraintClosure<F, N, G, Err>
 where
     G: Goal<N>,
     Err: Error,
-    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+    F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
     fn constrain(&self, node: Arc<N>, goal: &G) -> Result<Option<Arc<N>>, Self::ConstraintError> {
@@ -219,16 +251,14 @@ where
 
 pub trait Constrainable: Sized {
     type Base: Expander;
-    fn constrain<C>(
-        self,
-        constrain_with: C,
-    ) -> Constrain<Self::Base, C>;
+    fn constrain<C>(self, constrain_with: C) -> Constrain<Self::Base, C>;
 
     fn constrain_fn<F, N, G, Err>(
         self,
         closure: F,
     ) -> Constrain<Self::Base, ConstraintClosure<F, N, G, Err>>
-    where F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>
+    where
+        F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
     {
         self.constrain(ConstraintClosure::new(closure))
     }
@@ -237,7 +267,8 @@ pub trait Constrainable: Sized {
         self,
         closure: F,
     ) -> Constrain<Self::Base, AimlessConstraintClosure<F, N, Err>>
-    where F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>
+    where
+        F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>,
     {
         self.constrain(AimlessConstraintClosure::new(closure))
     }
@@ -246,7 +277,8 @@ pub trait Constrainable: Sized {
         self,
         closure: F,
     ) -> Constrain<Self::Base, TargetedConstraintClosure<F, N, G, Err>>
-    where F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>
+    where
+        F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>,
     {
         self.constrain(TargetedConstraintClosure::new(closure))
     }
@@ -254,10 +286,10 @@ pub trait Constrainable: Sized {
 
 impl<E: Expander> Constrainable for E {
     type Base = E;
-    fn constrain<C>(
-        self,
-        constrain_with: C,
-    ) -> Constrain<Self::Base, C> {
-        Constrain{base: self, constrain_with}
+    fn constrain<C>(self, constrain_with: C) -> Constrain<Self::Base, C> {
+        Constrain {
+            base: self,
+            constrain_with,
+        }
     }
 }

@@ -16,22 +16,22 @@
 */
 
 use crate::{
-    node::{Key, Cost, ClosedSet, PartialKeyed, PartialKeyedClosedSet},
+    directed::simple::SimpleGraph,
     expander::{Goal, InitAimless, InitTargeted},
+    graph::{Graph, KeyOf as KeyOfGraph},
+    heuristic::Heuristic,
     motion::{
-        TimePoint,
-        graph_search::{BuiltinNode, Policy, Expander},
-        trajectory::{CostCalculator, DurationCostCalculator},
+        graph_search::{BuiltinNode, Expander, Policy},
         r2::{self, direct_travel::DirectTravelHeuristic, timed_position::LineFollow},
         reach::NoReach,
+        trajectory::{CostCalculator, DurationCostCalculator},
+        TimePoint,
     },
-    heuristic::Heuristic,
-    graph::{Graph, KeyOf as KeyOfGraph},
-    directed::simple::SimpleGraph,
+    node::{ClosedSet, Cost, Key, PartialKeyed, PartialKeyedClosedSet},
 };
+use num::Zero;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
-use num::Zero;
 
 pub type Node<C, K> = BuiltinNode<C, K, r2::timed_position::Waypoint>;
 
@@ -46,12 +46,12 @@ impl<C: Cost, K: Key> Goal<Node<C, K>> for K {
 }
 
 pub struct LinearR2Policy<G, S, C, H> {
-    _ignore: std::marker::PhantomData<(G, S, C, H)>
+    _ignore: std::marker::PhantomData<(G, S, C, H)>,
 }
 
 impl<G, S, C, H> Policy for LinearR2Policy<G, S, C, H>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     S: ClosedSet<Node<C::Cost, KeyOfGraph<G>>>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     H: Heuristic<KeyOfGraph<G>, KeyOfGraph<G>, C::Cost>,
@@ -67,21 +67,38 @@ where
     type CostCalculator = C;
 }
 
-pub type TimeInvariantExpander<G, C, H> = Expander<LinearR2Policy<G, PartialKeyedClosedSet<Node<<C as CostCalculator<r2::timed_position::Waypoint>>::Cost, KeyOfGraph<G>>>, C, H>>;
-pub type DefaultExpander = TimeInvariantExpander<SimpleGraph<r2::Position>, DurationCostCalculator, DirectTravelHeuristic<SimpleGraph<r2::Position>, DurationCostCalculator>>;
+pub type TimeInvariantExpander<G, C, H> = Expander<
+    LinearR2Policy<
+        G,
+        PartialKeyedClosedSet<
+            Node<<C as CostCalculator<r2::timed_position::Waypoint>>::Cost, KeyOfGraph<G>>,
+        >,
+        C,
+        H,
+    >,
+>;
+pub type DefaultExpander = TimeInvariantExpander<
+    SimpleGraph<r2::Position>,
+    DurationCostCalculator,
+    DirectTravelHeuristic<SimpleGraph<r2::Position>, DurationCostCalculator>,
+>;
 pub fn make_default_expander(
     graph: Arc<SimpleGraph<r2::Position>>,
     extrapolator: Arc<LineFollow>,
 ) -> DefaultExpander {
     let cost_calculator = Arc::new(DurationCostCalculator);
-    let heuristic = Arc::new(DirectTravelHeuristic{
+    let heuristic = Arc::new(DirectTravelHeuristic {
         graph: graph.clone(),
         cost_calculator: cost_calculator.clone(),
         extrapolator: (*extrapolator).clone(),
     });
 
-    DefaultExpander{
-        graph, extrapolator, cost_calculator, heuristic, reacher: Arc::new(NoReach)
+    DefaultExpander {
+        graph,
+        extrapolator,
+        cost_calculator,
+        heuristic,
+        reacher: Arc::new(NoReach),
     }
 }
 
@@ -99,7 +116,7 @@ pub enum InitErrorR2<K, H> {
 
 impl<G, S, C, H> InitAimless<G::Key> for Expander<LinearR2Policy<G, S, C, H>>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     S: ClosedSet<Node<C::Cost, G::Key>>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     H: Heuristic<G::Key, G::Key, C::Cost>,
@@ -107,35 +124,32 @@ where
     type InitAimlessError = InitErrorR2<G::Key, H::Error>;
     type InitialAimlessNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitAimlessError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a;
 
-    fn aimless_start<'a>(
-        &'a self,
-        start: &'a G::Key,
-    ) -> Self::InitialAimlessNodes<'a> {
-        [self.graph.vertex(start.clone())].into_iter()
-        .map(|v| {
-            v.map_or(
-                Err(InitErrorR2::MissingStartVertex(start.clone())),
-                |p| Ok(p),
-            )
-        })
-        .map(|r| {
-            r.map(|start_p| {
-                let h = C::Cost::zero();
-                let state = r2::timed_position::Waypoint{
-                    time: TimePoint::zero(),
-                    position: start_p.clone(),
-                };
-
-                Some(self.start_from(state, Some(start.clone()), h, None))
+    fn aimless_start<'a>(&'a self, start: &'a G::Key) -> Self::InitialAimlessNodes<'a> {
+        [self.graph.vertex(start.clone())]
+            .into_iter()
+            .map(|v| {
+                v.map_or(Err(InitErrorR2::MissingStartVertex(start.clone())), |p| {
+                    Ok(p)
+                })
             })
-        })
-        .filter_map(|r| r.transpose())
+            .map(|r| {
+                r.map(|start_p| {
+                    let h = C::Cost::zero();
+                    let state = r2::timed_position::Waypoint {
+                        time: TimePoint::zero(),
+                        position: start_p.clone(),
+                    };
+
+                    Some(self.start_from(state, Some(start.clone()), h, None))
+                })
+            })
+            .filter_map(|r| r.transpose())
     }
 }
 
 impl<G, S, C, H> InitTargeted<G::Key, G::Key> for Expander<LinearR2Policy<G, S, C, H>>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     S: ClosedSet<Node<C::Cost, G::Key>>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     H: Heuristic<G::Key, G::Key, C::Cost>,
@@ -143,40 +157,36 @@ where
     type InitTargetedError = InitErrorR2<G::Key, H::Error>;
     type InitialTargetedNodes<'a> = impl Iterator<Item=Result<Arc<Self::Node>, Self::InitTargetedError>> + 'a where G: 'a, C: 'a, H: 'a, S: 'a ;
 
-    fn start<'a>(
-        &'a self,
-        start: &'a G::Key,
-        goal: &'a G::Key,
-    ) -> Self::InitialTargetedNodes<'a> {
-        [self.graph.vertex(start.clone())].into_iter()
-        .map(|v| {
-            v.map_or(
-                Err(InitErrorR2::MissingStartVertex(start.clone())),
-                |p| Ok(p),
-            )
-        })
-        .map(|r| {
-            r.and_then(|start_p| {
-                // Check if the goal is valid before we begin expanding. It may
-                // be good to do this for other initializables as well.
-                self.graph.vertex(goal.clone())
-                    .map_or(Err(InitErrorR2::MissingGoalVertex(goal.clone())),
-                    |p| Ok(p)
-                )?;
-
-                let h = self.heuristic.estimate_cost(
-                    start, goal
-                ).map_err(InitErrorR2::Heuristic)?;
-
-                let state = r2::timed_position::Waypoint{
-                    time: TimePoint::zero(),
-                    position: start_p.clone(),
-                };
-
-                Ok(h.map(|h| self.start_from(state, Some(start.clone()), h, None)))
+    fn start<'a>(&'a self, start: &'a G::Key, goal: &'a G::Key) -> Self::InitialTargetedNodes<'a> {
+        [self.graph.vertex(start.clone())]
+            .into_iter()
+            .map(|v| {
+                v.map_or(Err(InitErrorR2::MissingStartVertex(start.clone())), |p| {
+                    Ok(p)
+                })
             })
-        })
-        .filter_map(|r| r.transpose())
+            .map(|r| {
+                r.and_then(|start_p| {
+                    // Check if the goal is valid before we begin expanding. It may
+                    // be good to do this for other initializables as well.
+                    self.graph
+                        .vertex(goal.clone())
+                        .map_or(Err(InitErrorR2::MissingGoalVertex(goal.clone())), |p| Ok(p))?;
+
+                    let h = self
+                        .heuristic
+                        .estimate_cost(start, goal)
+                        .map_err(InitErrorR2::Heuristic)?;
+
+                    let state = r2::timed_position::Waypoint {
+                        time: TimePoint::zero(),
+                        position: start_p.clone(),
+                    };
+
+                    Ok(h.map(|h| self.start_from(state, Some(start.clone()), h, None)))
+                })
+            })
+            .filter_map(|r| r.transpose())
     }
 }
 
@@ -184,11 +194,10 @@ where
 mod tests {
     use super::*;
     use crate::{
-        a_star, algorithm::Status,
+        a_star,
+        algorithm::Status,
+        motion::r2::{timed_position::LineFollow, Position},
         planner::make_planner,
-        motion::{
-            r2::{Position, timed_position::LineFollow}
-        },
     };
 
     fn make_test_graph() -> SimpleGraph<Position> {
@@ -200,7 +209,7 @@ mod tests {
          *             |
          *             |
          *             7-----8
-        */
+         */
 
         let mut vertices = Vec::<Position>::new();
         vertices.push(Position::new(0.0, 0.0)); // 0
@@ -213,7 +222,7 @@ mod tests {
         vertices.push(Position::new(2.0, -2.0)); // 7
         vertices.push(Position::new(3.0, -2.0)); // 8
 
-        let mut edges = Vec::<Vec::<usize>>::new();
+        let mut edges = Vec::<Vec<usize>>::new();
         edges.resize(9, Vec::new());
         let mut add_bidir_edge = |v0: usize, v1: usize| {
             edges.get_mut(v0).unwrap().push(v1);
@@ -231,7 +240,7 @@ mod tests {
         return SimpleGraph::new(vertices, edges);
     }
 
-    fn make_test_extrapolation() -> LineFollow{
+    fn make_test_extrapolation() -> LineFollow {
         return LineFollow::new(1.0f64).unwrap();
     }
 
@@ -250,10 +259,10 @@ mod tests {
                 let motion = solution.motion().as_ref().unwrap();
                 println!("{:#?}", motion);
                 println!("Finish time: {:?}", motion.finish_time().as_secs_f32());
-            },
+            }
             Status::Impossible => {
                 assert!(false);
-            },
+            }
             Status::Incomplete => {
                 assert!(false);
             }

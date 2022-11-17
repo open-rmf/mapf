@@ -16,21 +16,18 @@
 */
 
 use crate::{
-    node::{PartialKeyed, Keyed, Weighted, KeyedSet},
-    expander::{InitAimless, Closable, NodeOf, SolutionOf},
-    tree::{garden, Garden},
-    motion::{
-        se2, r2, trajectory::CostCalculator, reach::NoReach,
-        graph_search::StateKey,
-    },
-    heuristic::{Heuristic, Uninformed},
+    expander::{Closable, InitAimless, NodeOf, SolutionOf},
     graph::Graph,
+    heuristic::{Heuristic, Uninformed},
+    motion::{graph_search::StateKey, r2, reach::NoReach, se2, trajectory::CostCalculator},
+    node::{Keyed, KeyedSet, PartialKeyed, Weighted},
+    tree::{garden, Garden},
 };
 use std::sync::Arc;
 
 pub struct QuickestPath<G, C>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
 {
     garden: Garden<r2::graph_search::TimeInvariantExpander<G, C, Uninformed>>,
@@ -38,7 +35,7 @@ where
 
 impl<G, C> QuickestPath<G, C>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
 {
     pub fn new(
@@ -46,16 +43,14 @@ where
         cost_calculator: Arc<C>,
         extrapolator: Arc<r2::timed_position::LineFollow>,
     ) -> Self {
-        Self{
-            garden: Garden::new(
-                Arc::new(r2::graph_search::TimeInvariantExpander{
-                    graph,
-                    extrapolator,
-                    cost_calculator,
-                    heuristic: Arc::new(Uninformed),
-                    reacher: Arc::new(NoReach),
-                })
-            )
+        Self {
+            garden: Garden::new(Arc::new(r2::graph_search::TimeInvariantExpander {
+                graph,
+                extrapolator,
+                cost_calculator,
+                heuristic: Arc::new(Uninformed),
+                reacher: Arc::new(NoReach),
+            })),
         }
     }
 }
@@ -64,12 +59,13 @@ type UninformedExpanderR2<G, C> = r2::graph_search::TimeInvariantExpander<G, C, 
 
 impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for QuickestPath<G, C>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     S: StateKey<G::Key, se2::timed_position::Waypoint>,
-    Goal: Keyed<Key=G::Key>,
-    UninformedExpanderR2<G, C>: InitAimless<G::Key> + Closable<ClosedSet: KeyedSet<NodeOf<UninformedExpanderR2<G, C>>, Key=G::Key>>,
-    NodeOf<UninformedExpanderR2<G, C>>: PartialKeyed<Key=G::Key> + Weighted,
+    Goal: Keyed<Key = G::Key>,
+    UninformedExpanderR2<G, C>: InitAimless<G::Key>
+        + Closable<ClosedSet: KeyedSet<NodeOf<UninformedExpanderR2<G, C>>, Key = G::Key>>,
+    NodeOf<UninformedExpanderR2<G, C>>: PartialKeyed<Key = G::Key> + Weighted,
     SolutionOf<UninformedExpanderR2<G, C>>: Clone + Weighted,
 {
     type Error = garden::Error<r2::graph_search::TimeInvariantExpander<G, C, Uninformed>, G::Key>;
@@ -80,8 +76,9 @@ where
         to_goal: &Goal,
     ) -> Result<Option<C::Cost>, Self::Error> {
         let start_key: G::Key = from_state.graph_key();
-        self.garden.solve(&start_key, to_goal.key())
-        .map(|solution_opt| solution_opt.map(|solution| solution.cost().clone()))
+        self.garden
+            .solve(&start_key, to_goal.key())
+            .map(|solution_opt| solution_opt.map(|solution| solution.cost().clone()))
     }
 }
 
@@ -89,7 +86,5 @@ where
 mod tests {
 
     #[test]
-    fn build() {
-
-    }
+    fn build() {}
 }

@@ -21,14 +21,13 @@ pub trait Trace<Node>: Default {
     fn solution_found_from(&mut self, node: &Node);
 }
 
-
 #[derive(Default, Debug)]
 pub struct NoTrace;
 
 impl<N> Trace<N> for NoTrace {
-    fn expanded_from(&mut self, _: &N) { }
-    fn expanded_to(&mut self, _: &N) { }
-    fn solution_found_from(&mut self, _: &N) { }
+    fn expanded_from(&mut self, _: &N) {}
+    fn expanded_to(&mut self, _: &N) {}
+    fn solution_found_from(&mut self, _: &N) {}
 }
 
 #[derive(Default)]

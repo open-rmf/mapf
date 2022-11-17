@@ -16,10 +16,10 @@
 */
 
 use crate::{
-    motion::{Trajectory, Interpolation, Motion, TimePoint, Duration, r2, se2},
-    expander::{AimlessConstraint, TargetedConstraint},
-    node::Agent,
     error::NoError,
+    expander::{AimlessConstraint, TargetedConstraint},
+    motion::{r2, se2, Duration, Interpolation, Motion, TimePoint, Trajectory},
+    node::Agent,
 };
 use nalgebra::Vector2;
 use std::sync::Arc;
@@ -41,13 +41,10 @@ fn compute_p0_v(
     let dp = wp1.position - wp0.position;
     let dt = (wp1.time - wp0.time).as_secs_f64();
     let p0 = wp0.interpolate(wp1).compute_position(&t_range.0).unwrap();
-    (p0.coords, dp/dt)
+    (p0.coords, dp / dt)
 }
 
-fn time_within_range(
-    t: f64,
-    t_range: &(TimePoint, TimePoint),
-) -> Option<TimePoint> {
+fn time_within_range(t: f64, t_range: &(TimePoint, TimePoint)) -> Option<TimePoint> {
     let dt = (t_range.1 - t_range.0).as_secs_f64();
     if 0.0 <= t && t <= dt {
         return Some(t_range.0 + Duration::from_secs_f64(t));
@@ -58,15 +55,17 @@ fn time_within_range(
 
 fn detect_proximity(
     dist_squared: f64,
-    mut iter_a: impl Iterator<Item=r2::timed_position::Waypoint>,
-    mut iter_b: impl Iterator<Item=r2::timed_position::Waypoint>,
+    mut iter_a: impl Iterator<Item = r2::timed_position::Waypoint>,
+    mut iter_b: impl Iterator<Item = r2::timed_position::Waypoint>,
 ) -> Option<TimePoint> {
     let mut wp0_a_opt = iter_a.next();
     let mut wp1_a_opt = iter_a.next();
     let mut wp0_b_opt = iter_b.next();
     let mut wp1_b_opt = iter_b.next();
 
-    while let (Some(wp0_a), Some(wp1_a), Some(wp0_b), Some(wp1_b)) = (wp0_a_opt, wp1_a_opt, wp0_b_opt, wp1_b_opt) {
+    while let (Some(wp0_a), Some(wp1_a), Some(wp0_b), Some(wp1_b)) =
+        (wp0_a_opt, wp1_a_opt, wp0_b_opt, wp1_b_opt)
+    {
         if wp1_a.time < wp0_b.time {
             wp0_a_opt = Some(wp1_a);
             wp1_a_opt = iter_a.next();
@@ -86,7 +85,7 @@ fn detect_proximity(
         let dv = v_b - v_a;
 
         let a = dv.dot(&dv);
-        let b = 2.0*dv.dot(&dp0);
+        let b = 2.0 * dv.dot(&dp0);
         let c = dp0.dot(&dp0) - dist_squared;
 
         if a.abs() < 1e-8 {
@@ -98,21 +97,21 @@ fn detect_proximity(
                     return Some(wp0_a.time.max(wp0_b.time));
                 }
             } else {
-                let t = -c/b;
+                let t = -c / b;
                 if let Some(t) = time_within_range(t, &t_range) {
                     return Some(t);
                 }
             }
         } else {
-            let radicand = b.powi(2) - 4.0*a*c;
+            let radicand = b.powi(2) - 4.0 * a * c;
             if radicand >= 0.0 {
                 let sqrt_radicand = radicand.sqrt();
-                let t_m = (-b - sqrt_radicand)/(2.0*a);
+                let t_m = (-b - sqrt_radicand) / (2.0 * a);
                 if let Some(t_m) = time_within_range(t_m, &t_range) {
                     return Some(t_m);
                 }
 
-                let t_p = (-b + sqrt_radicand)/(2.0*a);
+                let t_p = (-b + sqrt_radicand) / (2.0 * a);
                 if let Some(t_p) = time_within_range(t_p, &t_range) {
                     return Some(t_p);
                 }
@@ -121,7 +120,7 @@ fn detect_proximity(
 
         let tp0 = wp0_a.time.min(wp0_b.time);
         let t0 = tp0.as_secs_f64();
-        if a*t0.powi(2) + b*t0 + c <= 0.0 {
+        if a * t0.powi(2) + b * t0 + c <= 0.0 {
             return Some(tp0);
         }
 
@@ -181,18 +180,16 @@ pub struct CircleCollisionConstraint {
 }
 
 impl<N> AimlessConstraint<N> for CircleCollisionConstraint
-where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
+where
+    N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>,
 {
     type ConstraintError = NoError;
     fn constrain(&self, node: Arc<N>) -> Result<Option<std::sync::Arc<N>>, Self::ConstraintError> {
         if let Some(trajectory) = node.action() {
             for (r_obs, t_obs) in &self.obstacles {
-                if detect_collision_circles_se2(
-                    self.agent_radius,
-                    trajectory,
-                    *r_obs,
-                    t_obs
-                ).is_some() {
+                if detect_collision_circles_se2(self.agent_radius, trajectory, *r_obs, t_obs)
+                    .is_some()
+                {
                     return Ok(None);
                 }
             }
@@ -203,7 +200,8 @@ where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Wa
 }
 
 impl<N, G> TargetedConstraint<N, G> for CircleCollisionConstraint
-where N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>
+where
+    N: Agent<se2::timed_position::Waypoint, Trajectory<se2::timed_position::Waypoint>>,
 {
     type ConstraintError = NoError;
     fn constrain(&self, node: Arc<N>, _: &G) -> Result<Option<Arc<N>>, Self::ConstraintError> {

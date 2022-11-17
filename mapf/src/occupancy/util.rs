@@ -15,7 +15,7 @@
  *
 */
 
-use super::{Point, Cell};
+use super::{Cell, Point};
 use arrayvec::ArrayVec;
 
 pub(crate) struct SearchF64 {
@@ -24,14 +24,14 @@ pub(crate) struct SearchF64 {
 
 impl SearchF64 {
     pub(crate) fn new() -> Self {
-        return Self{value: None};
+        return Self { value: None };
     }
 
     pub(crate) fn check_min(&mut self, other: f64) {
         match self.value {
             None => {
                 self.value = Some(other);
-            },
+            }
             Some(v) => {
                 self.value = Some(v.min(other));
             }
@@ -42,7 +42,7 @@ impl SearchF64 {
         match self.value {
             None => {
                 self.value = Some(other);
-            },
+            }
             Some(v) => {
                 self.value = Some(v.max(other));
             }
@@ -57,7 +57,7 @@ pub(crate) struct LineSegment {
 
 impl LineSegment {
     pub(crate) fn new(p0: Point, p1: Point) -> Self {
-        Self{p0, p1}
+        Self { p0, p1 }
     }
 
     pub(crate) fn vertical_intersect(&self, x: f64) -> ArrayVec<f64, 2> {
@@ -76,7 +76,7 @@ impl LineSegment {
             return intersects;
         }
 
-        let m = (self.p1.y - self.p0.y)/(self.p1.x - self.p0.x);
+        let m = (self.p1.y - self.p0.y) / (self.p1.x - self.p0.x);
         intersects.push(m * (x - self.p0.x) + self.p0.y);
         return intersects;
     }
@@ -97,7 +97,7 @@ impl LineSegment {
             return intersects;
         }
 
-        let m = (self.p1.x - self.p0.x)/(self.p1.y - self.p0.y);
+        let m = (self.p1.x - self.p0.x) / (self.p1.y - self.p0.y);
         intersects.push(m * (y - self.p0.y) + self.p0.x);
         return intersects;
     }
@@ -109,7 +109,7 @@ impl LineSegment {
             return (p - self.p0).norm();
         }
 
-        let v1_u = v1/length;
+        let v1_u = v1 / length;
         let v = p - self.p0;
         let shadow = v.dot(&v1_u);
         if shadow < 0.0 {
@@ -121,17 +121,12 @@ impl LineSegment {
         return (v - shadow * v1_u).norm();
     }
 
-    pub(crate) fn passes_near_cell(
-        &self,
-        cell: &Cell,
-        cell_size: f64,
-        proximity: f64
-    ) -> bool {
+    pub(crate) fn passes_near_cell(&self, cell: &Cell, cell_size: f64, proximity: f64) -> bool {
         // 1.4143 is chosen as a value slightly higher than sqrt(2) to give us
         // an upper bound on how far any point in the cell can be from the line
         // segment without completely ruling out the possibility that it passes
         // nearby.
-        let bound_distance = proximity + 1.4143*cell_size;
+        let bound_distance = proximity + 1.4143 * cell_size;
         for m in [0, 1] {
             for n in [0, 1] {
                 let p = cell.shifted(m, n).to_bottom_left_point(cell_size);
@@ -151,9 +146,7 @@ impl LineSegment {
 
         // We need to check if either line segment endpoint is inside the cell
         for p in [&self.p0, &self.p1] {
-            if p_min.x < p.x && p.x < p_max.x
-                && p_min.y < p.y && p.y < p_max.y
-            {
+            if p_min.x < p.x && p.x < p_max.x && p_min.y < p.y && p.y < p_max.y {
                 return true;
             }
         }

@@ -16,11 +16,11 @@
 */
 
 use crate::expander::{Aimless, Closable};
-use crate::node::{Weighted, CostCmp, ClosedSet};
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
-use std::sync::Arc;
+use crate::node::{ClosedSet, CostCmp, Weighted};
 use num::Zero;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 /// Tree implements a simple Dijkstra search algorithm. The tree is rooted at a
 /// start node and expands according to the provided expander.
@@ -34,11 +34,14 @@ pub struct Tree<E: Aimless<Node: Weighted> + Closable> {
 }
 
 impl<E: Aimless<Node: Weighted> + Closable> Tree<E> {
-
     pub fn new(root: Arc<E::Node>, expander: Arc<E>) -> Self {
         let mut queue = BinaryHeap::new();
         queue.push(Reverse(CostCmp(root)));
-        Self{closed_set: Default::default(), queue, expander}
+        Self {
+            closed_set: Default::default(),
+            queue,
+            expander,
+        }
     }
 
     /// Inspect the current closed set of the tree. Each item in this set
@@ -54,8 +57,15 @@ impl<E: Aimless<Node: Weighted> + Closable> Tree<E> {
     /// connection, it is important to consider all tying top nodes instead of
     /// only considering the one that happens to be first in the queue.
     pub fn grow<'a>(&'a mut self) -> Growth<'a, E> {
-        let expected_cost = self.queue.peek().map(|n| n.0.0.cost()).unwrap_or(<E::Node as Weighted>::Cost::zero());
-        Growth{tree: self, expected_cost}
+        let expected_cost = self
+            .queue
+            .peek()
+            .map(|n| n.0 .0.cost())
+            .unwrap_or(<E::Node as Weighted>::Cost::zero());
+        Growth {
+            tree: self,
+            expected_cost,
+        }
     }
 
     pub fn is_exhausted(&self) -> bool {
@@ -68,7 +78,7 @@ pub struct Growth<'a, E: Aimless<Node: Weighted> + Closable> {
     expected_cost: <E::Node as Weighted>::Cost,
 }
 
-impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> {
+impl<'a, N: Weighted, E: Aimless<Node = N> + Closable> Iterator for Growth<'a, E> {
     type Item = Result<Arc<N>, E::AimlessError>;
 
     fn next(&mut self) -> Option<Result<Arc<N>, E::AimlessError>> {
@@ -76,8 +86,8 @@ impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> 
             if let Some(top) = self.tree.queue.peek() {
                 // First check if the cost is tied for the expected cost.
                 // If it is not tied, then we should not modify the queue anymore.
-                if top.0.0.cost().eq(&self.expected_cost) {
-                    if let Some(top) = self.tree.queue.pop().map(|n| n.0.0) {
+                if top.0 .0.cost().eq(&self.expected_cost) {
+                    if let Some(top) = self.tree.queue.pop().map(|n| n.0 .0) {
                         if self.tree.closed_set.close(&top).accepted() {
                             for child in self.tree.expander.aimless_expand(&top) {
                                 match child {
@@ -85,7 +95,7 @@ impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> 
                                         if self.tree.closed_set.status(&child).is_open() {
                                             self.tree.queue.push(Reverse(CostCmp(child)));
                                         }
-                                    },
+                                    }
                                     Err(e) => {
                                         return Some(Err(e));
                                     }
@@ -113,13 +123,10 @@ impl<'a, N: Weighted, E: Aimless<Node=N> + Closable> Iterator for Growth<'a, E> 
 mod tests {
     use super::*;
     use crate::{
-        node::PartialKeyed,
-        expander::InitTargeted,
-        motion::r2::{
-            Position, timed_position::LineFollow,
-            graph_search::make_default_expander,
-        },
         directed::simple::SimpleGraph,
+        expander::InitTargeted,
+        motion::r2::{graph_search::make_default_expander, timed_position::LineFollow, Position},
+        node::PartialKeyed,
     };
     use std::collections::HashSet;
 
@@ -132,7 +139,7 @@ mod tests {
          *             |
          *             |
          *             7-----8
-        */
+         */
 
         let mut vertices = Vec::<Position>::new();
         vertices.push(Position::new(0.0, 0.0)); // 0
@@ -145,7 +152,7 @@ mod tests {
         vertices.push(Position::new(2.0, -2.0)); // 7
         vertices.push(Position::new(3.0, -2.0)); // 8
 
-        let mut edges = Vec::<Vec::<usize>>::new();
+        let mut edges = Vec::<Vec<usize>>::new();
         edges.resize(9, Vec::new());
         let mut add_bidir_edge = |v0: usize, v1: usize| {
             edges.get_mut(v0).unwrap().push(v1);
@@ -163,7 +170,7 @@ mod tests {
         return SimpleGraph::new(vertices, edges);
     }
 
-    fn make_test_extrapolation() -> LineFollow{
+    fn make_test_extrapolation() -> LineFollow {
         return LineFollow::new(1.0f64).unwrap();
     }
 
@@ -171,15 +178,13 @@ mod tests {
     fn test_r2_tree_expansion() {
         let expander = Arc::new(make_default_expander(
             Arc::new(make_test_graph()),
-            Arc::new(make_test_extrapolation())
+            Arc::new(make_test_extrapolation()),
         ));
 
         let mut visited: HashSet<usize> = HashSet::default();
         for start in expander.start(&0, &0) {
             let start = start.unwrap();
-            let mut tree = Tree::new(
-                start, expander.clone()
-            );
+            let mut tree = Tree::new(start, expander.clone());
 
             while !tree.is_exhausted() {
                 for node in tree.grow() {

@@ -16,8 +16,8 @@
 */
 
 use crate::{
-    node::{Weighted, PartialKeyed, Agent, KeyOf, CostOf},
     motion::{Trajectory, Waypoint},
+    node::{Agent, CostOf, KeyOf, PartialKeyed, Weighted},
 };
 use std::sync::Arc;
 
@@ -52,7 +52,13 @@ impl<W: Waypoint, N: Movable<W>> ArcMovable<W, N> for Arc<N> {
         remaining_cost_estimate: CostOf<N>,
         motion_from_parent: Option<Trajectory<W>>,
     ) -> Self {
-        Arc::new(N::move_from(self, key, cost_from_parent, remaining_cost_estimate, motion_from_parent))
+        Arc::new(N::move_from(
+            self,
+            key,
+            cost_from_parent,
+            remaining_cost_estimate,
+            motion_from_parent,
+        ))
     }
 }
 

@@ -15,13 +15,10 @@
  *
 */
 
+use crate::{node::Key, util::triangular_for};
+use bitfield::{bitfield, Bit, BitMut};
+use std::collections::{hash_map, HashMap, HashSet};
 use std::ops::Sub;
-use std::collections::{HashSet, hash_map, HashMap};
-use bitfield::{Bit, BitMut, bitfield};
-use crate::{
-    node::Key,
-    util::triangular_for
-};
 use util::LineSegment;
 
 pub type Point = nalgebra::geometry::Point2<f64>;
@@ -34,10 +31,9 @@ pub struct Cell {
 }
 
 impl Cell {
-
     /// Make a new cell from a pair of indices.
     pub fn new(x: i64, y: i64) -> Self {
-        Self{x, y}
+        Self { x, y }
     }
 
     /// Get the cell that this point is inside of. Points that are perfectly on
@@ -45,8 +41,8 @@ impl Cell {
     /// higher index value.
     pub fn from_point(p: Point, cell_size: f64) -> Self {
         Self {
-            x: (p.x/cell_size).floor() as i64,
-            y: (p.y/cell_size).floor() as i64,
+            x: (p.x / cell_size).floor() as i64,
+            y: (p.y / cell_size).floor() as i64,
         }
     }
 
@@ -67,14 +63,14 @@ impl Cell {
     /// Get a new cell that is the same as this one, but shifted in x and y by
     /// the given values.
     pub fn shifted(&self, x: i64, y: i64) -> Self {
-        Self{x: self.x+x, y: self.y+y}
+        Self {
+            x: self.x + x,
+            y: self.y + y,
+        }
     }
 
     pub fn in_visible_quadrant_of(&self, other_cell: &Cell, other_status: CornerStatus) -> bool {
-        if let Some(corner) = Corner::from_direction(
-            other_cell.x - self.x,
-            other_cell.y - self.y,
-        ) {
+        if let Some(corner) = Corner::from_direction(other_cell.x - self.x, other_cell.y - self.y) {
             // If self is in a quadrant that other_cell is a corner relative to,
             // then we should not try to make any connection between the two.
             return !other_status.get(corner);
@@ -110,7 +106,7 @@ impl Corner {
 impl Into<u8> for Corner {
     fn into(self) -> u8 {
         assert!((self.0 == 1 || self.0 == -1) && (self.1 == 1 || self.1 == -1));
-        return ((self.0 + 1)/2 + (self.1 + 1)) as u8;
+        return ((self.0 + 1) / 2 + (self.1 + 1)) as u8;
     }
 }
 
@@ -126,11 +122,11 @@ impl From<u8> for Corner {
         assert!(bit < 4);
         let q = (bit / 2) as i8;
         let r = (bit % 2) as i8;
-        return Corner(2*r - 1, 2*q - 1);
+        return Corner(2 * r - 1, 2 * q - 1);
     }
 }
 
-bitfield!{
+bitfield! {
     /// Indicates what type of type of corner a cell is. This is implemented as
     /// a bitfield, so you can call northwest(), southeast(), etc to get a
     /// boolean which indicates whether this is a corner in that direction.
@@ -164,7 +160,10 @@ impl CornerStatus {
     }
 
     pub fn iter(&self) -> CornerStatusIter {
-        return CornerStatusIter{status: *self, next_bit: 0};
+        return CornerStatusIter {
+            status: *self,
+            next_bit: 0,
+        };
     }
 }
 
@@ -209,12 +208,12 @@ type ConfirmedChanges = Vec<(Cell, bool)>;
 type ChangedCorners = Vec<(Cell, CornerStatus)>;
 
 pub trait Grid: std::fmt::Debug {
-    type OccupiedIterator<'a>: IntoIterator<Item=&'a Cell>
+    type OccupiedIterator<'a>: IntoIterator<Item = &'a Cell>
     where
         Cell: 'a,
         Self: 'a;
 
-    type CornerIterator<'a>: IntoIterator<Item=(&'a Cell, &'a CornerStatus)>
+    type CornerIterator<'a>: IntoIterator<Item = (&'a Cell, &'a CornerStatus)>
     where
         Cell: 'a,
         CornerStatus: 'a,
@@ -222,10 +221,8 @@ pub trait Grid: std::fmt::Debug {
 
     /// Change the occupancy value of a set of cells. Get back any changes that
     /// have occurred to the corners of the occupancy.
-    fn change_cells(&mut self, changes: &HashMap<Cell, bool>) -> (
-        ConfirmedChanges,
-        ChangedCorners,
-    );
+    fn change_cells(&mut self, changes: &HashMap<Cell, bool>)
+        -> (ConfirmedChanges, ChangedCorners);
 
     /// Get the size (width and height) of a cell.
     fn cell_size(&self) -> f64;
@@ -268,17 +265,16 @@ pub struct Visibility<G: Grid> {
 }
 
 impl<G: Grid> Visibility<G> {
-
     /// Create a new visibility graph for the given grid and radius. The radius
     /// cannot be changed without recalculating the entire visibility graph.
     pub fn new(grid: G, agent_radius: f64) -> Self {
         let cell_size = grid.cell_size();
-        let mut output = Self{
+        let mut output = Self {
             grid,
             agent_radius,
             cell_shift: Self::calculate_cell_shift(agent_radius, cell_size),
             points: HashMap::new(),
-            edges: HashMap::new()
+            edges: HashMap::new(),
         };
 
         Self::update_corners(
@@ -312,7 +308,7 @@ impl<G: Grid> Visibility<G> {
         return Self::update_corners(
             &self.grid,
             &confirmed_changes,
-            corner_changes.iter().map(|(c, s)|{(c, s)}),
+            corner_changes.iter().map(|(c, s)| (c, s)),
             self.agent_radius,
             self.cell_shift,
             &mut self.points,
@@ -320,11 +316,11 @@ impl<G: Grid> Visibility<G> {
         );
     }
 
-    pub fn iter_points(&self) -> impl Iterator<Item=(&Cell, &CornerStatus)> {
-        self.points.iter()
-            .filter(|(_, (blocked_by, _))| { blocked_by.is_none() })
-            .map(|(cell, (_, corner_status))| { (cell, corner_status) }
-        )
+    pub fn iter_points(&self) -> impl Iterator<Item = (&Cell, &CornerStatus)> {
+        self.points
+            .iter()
+            .filter(|(_, (blocked_by, _))| blocked_by.is_none())
+            .map(|(cell, (_, corner_status))| (cell, corner_status))
     }
 
     pub fn debug_points(&self) -> &HashMap<Cell, (BlockedBy, CornerStatus)> {
@@ -332,11 +328,11 @@ impl<G: Grid> Visibility<G> {
     }
 
     pub fn iter_edges(&self) -> VisibilityEdgeIter<'_, G> {
-        VisibilityEdgeIter{
+        VisibilityEdgeIter {
             visibility: self,
             point_iter: self.edges.iter(),
             edge_iter: None,
-            pair_tracker: UniqueCellPairSet::new()
+            pair_tracker: UniqueCellPairSet::new(),
         }
     }
 
@@ -344,71 +340,82 @@ impl<G: Grid> Visibility<G> {
         return &self.edges;
     }
 
-    pub fn calculate_visibility(&self, cell: Cell) -> impl Iterator<Item=Cell> + '_ {
+    pub fn calculate_visibility(&self, cell: Cell) -> impl Iterator<Item = Cell> + '_ {
         let visibility_edges = self.edges.get(&cell);
-        [visibility_edges].into_iter()
-        .filter_map(|x| x)
-        .flat_map(|edges| {
-            edges.into_iter()
-            .filter(|(_, blocked_by)| blocked_by.is_none())
-            .map(|(cell, _)| *cell)
-        })
-        .chain(
-            // This chain kicks in when visibility_edges returned None, which
-            // means we need to calculate the visibility for this cell.
-            [visibility_edges].into_iter()
-            .filter(|x| x.is_none())
-            .flat_map(move |_| {
-                self.iter_points().filter(
-                    move |(v_cell, corner_status)| {
-                        if !cell.in_visible_quadrant_of(*v_cell, **corner_status) {
-                            return false;
-                        }
-
-                        let cell_size = self.grid.cell_size();
-                        let p0 = cell.to_center_point(cell_size);
-                        let p1 = v_cell.to_center_point(cell_size);
-                        return self.grid.is_sweep_occupied(p0, p1, 2.0*self.agent_radius).is_none();
-                    }
-                ).map(|(v_cell, _)| *v_cell)
+        [visibility_edges]
+            .into_iter()
+            .filter_map(|x| x)
+            .flat_map(|edges| {
+                edges
+                    .into_iter()
+                    .filter(|(_, blocked_by)| blocked_by.is_none())
+                    .map(|(cell, _)| *cell)
             })
-        )
+            .chain(
+                // This chain kicks in when visibility_edges returned None, which
+                // means we need to calculate the visibility for this cell.
+                [visibility_edges]
+                    .into_iter()
+                    .filter(|x| x.is_none())
+                    .flat_map(move |_| {
+                        self.iter_points()
+                            .filter(move |(v_cell, corner_status)| {
+                                if !cell.in_visible_quadrant_of(*v_cell, **corner_status) {
+                                    return false;
+                                }
+
+                                let cell_size = self.grid.cell_size();
+                                let p0 = cell.to_center_point(cell_size);
+                                let p1 = v_cell.to_center_point(cell_size);
+                                return self
+                                    .grid
+                                    .is_sweep_occupied(p0, p1, 2.0 * self.agent_radius)
+                                    .is_none();
+                            })
+                            .map(|(v_cell, _)| *v_cell)
+                    }),
+            )
     }
 
-    pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item=Cell> + '_ {
+    pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item = Cell> + '_ {
         // dbg!("neighbors");
-        [of_cell].into_iter()
-        .filter(|of_cell| {
-            self.grid().is_square_occupied(
-                of_cell.to_center_point(self.grid().cell_size()),
-                2.0*self.agent_radius,
-            ).is_none()
-        })
-        .flat_map(move |of_cell| {
-            // dbg!(of_cell);
-            [-1, 0, 1].into_iter()
-            .flat_map(move |i| {
-                // dbg!(i);
-                [-1, 0, 1].into_iter()
-                .filter(move |j| {
-                    !(i == 0 && *j == 0)
-                })
-                .filter_map(move |j| {
-                    // dbg!(j);
-                    let cell_size = self.grid().cell_size();
-                    let neighbor = of_cell.shifted(i, j);
-                    if self.grid().is_sweep_occupied(
-                        of_cell.to_center_point(cell_size),
-                        neighbor.to_center_point(cell_size),
-                        2.0*self.agent_radius(),
-                    ).is_none() {
-                        Some(neighbor)
-                    } else {
-                        None
-                    }
+        [of_cell]
+            .into_iter()
+            .filter(|of_cell| {
+                self.grid()
+                    .is_square_occupied(
+                        of_cell.to_center_point(self.grid().cell_size()),
+                        2.0 * self.agent_radius,
+                    )
+                    .is_none()
+            })
+            .flat_map(move |of_cell| {
+                // dbg!(of_cell);
+                [-1, 0, 1].into_iter().flat_map(move |i| {
+                    // dbg!(i);
+                    [-1, 0, 1]
+                        .into_iter()
+                        .filter(move |j| !(i == 0 && *j == 0))
+                        .filter_map(move |j| {
+                            // dbg!(j);
+                            let cell_size = self.grid().cell_size();
+                            let neighbor = of_cell.shifted(i, j);
+                            if self
+                                .grid()
+                                .is_sweep_occupied(
+                                    of_cell.to_center_point(cell_size),
+                                    neighbor.to_center_point(cell_size),
+                                    2.0 * self.agent_radius(),
+                                )
+                                .is_none()
+                            {
+                                Some(neighbor)
+                            } else {
+                                None
+                            }
+                        })
                 })
             })
-        })
     }
 
     /// Get a reference to the underlying occupancy grid.
@@ -440,18 +447,18 @@ impl<G: Grid> Visibility<G> {
             self.agent_radius,
             self.cell_shift,
             &mut self.points,
-            &mut self.edges
+            &mut self.edges,
         );
     }
 
     pub fn unstable<'a>(&'a self) -> UnstableVisibilityAPI<'a, G> {
-        return UnstableVisibilityAPI{parent: self};
+        return UnstableVisibilityAPI { parent: self };
     }
 
     fn update_corners<'b>(
         grid: &G,
         confirmed_changes: &ConfirmedChanges,
-        corners: impl IntoIterator<Item=(&'b Cell, &'b CornerStatus)>,
+        corners: impl IntoIterator<Item = (&'b Cell, &'b CornerStatus)>,
         agent_radius: f64,
         cell_shift: i64,
         points: &mut HashMap<Cell, (BlockedBy, CornerStatus)>,
@@ -461,10 +468,8 @@ impl<G: Grid> Visibility<G> {
         let mut new_points = Vec::new();
         for (base_cell, status) in corners {
             for (corner, valid) in status {
-                let cell = base_cell.shifted(
-                    cell_shift * corner.0 as i64,
-                    cell_shift * corner.1 as i64,
-                );
+                let cell =
+                    base_cell.shifted(cell_shift * corner.0 as i64, cell_shift * corner.1 as i64);
 
                 if valid {
                     match points.entry(cell) {
@@ -473,12 +478,15 @@ impl<G: Grid> Visibility<G> {
                             // need to check whether it has any blockers.
                             let blocked_by = grid.is_square_occupied(
                                 cell.to_center_point(grid.cell_size()),
-                                2.0 * agent_radius
+                                2.0 * agent_radius,
                             );
 
-                            entry.insert((blocked_by, Default::default())).1.set(corner, true);
+                            entry
+                                .insert((blocked_by, Default::default()))
+                                .1
+                                .set(corner, true);
                             new_points.push(cell);
-                        },
+                        }
                         hash_map::Entry::Occupied(mut entry) => {
                             entry.get_mut().1.set(corner, true);
                             let mut remove_connections = Vec::new();
@@ -498,7 +506,7 @@ impl<G: Grid> Visibility<G> {
                     match points.entry(cell) {
                         hash_map::Entry::Vacant(_) => {
                             // Nothing needs to be done
-                        },
+                        }
                         hash_map::Entry::Occupied(mut entry) => {
                             entry.get_mut().1.set(corner, false);
                             if !entry.get().1.is_corner() {
@@ -508,9 +516,12 @@ impl<G: Grid> Visibility<G> {
                                 changed = true;
                                 if let Some(remove_from) = edges.remove(&cell) {
                                     for other in remove_from {
-                                        edges.get_mut(&other.0).expect(
-                                            "Missing complementary edge in visibility graph"
-                                        ).remove(&cell);
+                                        edges
+                                            .get_mut(&other.0)
+                                            .expect(
+                                                "Missing complementary edge in visibility graph",
+                                            )
+                                            .remove(&cell);
                                     }
                                 }
                             } else {
@@ -596,7 +607,7 @@ impl<G: Grid> Visibility<G> {
                     let blocked_by = grid.is_sweep_occupied(
                         cell.to_center_point(grid.cell_size()),
                         other.to_center_point(grid.cell_size()),
-                        2.0*agent_radius,
+                        2.0 * agent_radius,
                     );
 
                     // When .insert_entry becomes stable we can change this match block to
@@ -604,7 +615,7 @@ impl<G: Grid> Visibility<G> {
                     match connection_entry {
                         hash_map::Entry::Occupied(mut entry) => {
                             entry.insert(blocked_by);
-                        },
+                        }
                         hash_map::Entry::Vacant(entry) => {
                             entry.insert(blocked_by);
                         }
@@ -614,8 +625,10 @@ impl<G: Grid> Visibility<G> {
                 }
 
                 for (other_cell, blocked_by) in new_connections {
-                    edges.entry(other_cell)
-                        .or_default().insert(cell, blocked_by);
+                    edges
+                        .entry(other_cell)
+                        .or_default()
+                        .insert(cell, blocked_by);
                 }
             }
         }
@@ -626,54 +639,55 @@ impl<G: Grid> Visibility<G> {
             return changed;
         }
 
-        triangular_for(
-            points.iter(),
-            |(cell_i, _), (cell_j, _)| {
+        triangular_for(points.iter(), |(cell_i, _), (cell_j, _)| {
+            for (changed_cell, occupied) in confirmed_changes {
+                let mut changed_blocker: Option<Option<Cell>> = None;
+                if let hash_map::Entry::Occupied(entry) =
+                    &mut edges.entry(**cell_i).or_default().entry(*cell_j)
+                {
+                    if *occupied {
+                        let line = LineSegment::new(
+                            cell_i.to_center_point(grid.cell_size()),
+                            cell_j.to_center_point(grid.cell_size()),
+                        );
 
-                for (changed_cell, occupied) in confirmed_changes {
-                    let mut changed_blocker: Option<Option<Cell>> = None;
-                    if let hash_map::Entry::Occupied(entry) = &mut edges.entry(**cell_i).or_default().entry(*cell_j) {
-                        if *occupied {
-                            let line = LineSegment::new(
-                                cell_i.to_center_point(grid.cell_size()),
-                                cell_j.to_center_point(grid.cell_size()),
-                            );
+                        if line.passes_near_cell(changed_cell, grid.cell_size(), agent_radius) {
+                            entry.insert(Some(*changed_cell));
+                            changed_blocker = Some(Some(*changed_cell));
+                            changed = true;
+                        }
+                    } else {
+                        // Check if this entry was blocked by this newly opened cell
+                        if let Some(blocked_by) = *entry.get() {
+                            if blocked_by == *changed_cell {
+                                let new_blocker = grid.is_sweep_occupied(
+                                    cell_i.to_center_point(grid.cell_size()),
+                                    cell_j.to_center_point(grid.cell_size()),
+                                    2.0 * agent_radius,
+                                );
 
-                            if line.passes_near_cell(changed_cell, grid.cell_size(), agent_radius) {
-                                entry.insert(Some(*changed_cell));
-                                changed_blocker = Some(Some(*changed_cell));
+                                entry.insert(new_blocker);
+                                changed_blocker = Some(new_blocker);
                                 changed = true;
-                            }
-                        } else {
-                            // Check if this entry was blocked by this newly opened cell
-                            if let Some(blocked_by) = *entry.get() {
-                                if blocked_by == *changed_cell {
-                                    let new_blocker = grid.is_sweep_occupied(
-                                        cell_i.to_center_point(grid.cell_size()),
-                                        cell_j.to_center_point(grid.cell_size()),
-                                        2.0 * agent_radius,
-                                    );
-
-                                    entry.insert(new_blocker);
-                                    changed_blocker = Some(new_blocker);
-                                    changed = true;
-                                }
                             }
                         }
                     }
+                }
 
-                    if let Some(new_blocker) = changed_blocker {
-                        edges.entry(*cell_j).or_default().insert(**cell_i, new_blocker);
-                    }
+                if let Some(new_blocker) = changed_blocker {
+                    edges
+                        .entry(*cell_j)
+                        .or_default()
+                        .insert(**cell_i, new_blocker);
                 }
             }
-        );
+        });
 
         return changed;
     }
 
     fn calculate_cell_shift(agent_radius: f64, cell_size: f64) -> i64 {
-        (agent_radius/cell_size + 0.5).ceil() as i64
+        (agent_radius / cell_size + 0.5).ceil() as i64
     }
 }
 
@@ -697,7 +711,9 @@ struct UniqueCellPairSet {
 
 impl UniqueCellPairSet {
     fn new() -> Self {
-        Self{set: Default::default()}
+        Self {
+            set: Default::default(),
+        }
     }
 
     fn insert(&mut self, cell_i: &Cell, cell_j: &Cell) -> bool {
@@ -729,8 +745,13 @@ impl<'a, G: Grid> Iterator for VisibilityEdgeIter<'a, G> {
             if let Some((cell_i, edges)) = &mut self.edge_iter {
                 while let Some((cell_j, blocked_by)) = edges.next() {
                     if blocked_by.is_none() {
-                        if self.visibility.points.get(cell_j)
-                            .expect("Missing visibility point information").0.is_none()
+                        if self
+                            .visibility
+                            .points
+                            .get(cell_j)
+                            .expect("Missing visibility point information")
+                            .0
+                            .is_none()
                         {
                             if self.pair_tracker.insert(cell_i, cell_j) {
                                 return Some((cell_i, cell_j));
@@ -744,8 +765,13 @@ impl<'a, G: Grid> Iterator for VisibilityEdgeIter<'a, G> {
             // the next one.
             self.edge_iter = None;
             while let Some((cell, edges)) = self.point_iter.next() {
-                if self.visibility.points.get(cell)
-                    .expect("Missing visibility point information").0.is_none()
+                if self
+                    .visibility
+                    .points
+                    .get(cell)
+                    .expect("Missing visibility point information")
+                    .0
+                    .is_none()
                 {
                     self.edge_iter = Some((cell, edges.iter()));
                     break;

@@ -18,10 +18,7 @@
 use super::{timed, Interpolation};
 
 pub trait Waypoint:
-    timed::Timed
-    + Interpolation<Self::Position, Self::Velocity>
-    + Clone
-    + std::fmt::Debug
+    timed::Timed + Interpolation<Self::Position, Self::Velocity> + Clone + std::fmt::Debug
 {
     /// What type of spatial position does the waypoint have
     type Position;

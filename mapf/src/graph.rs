@@ -27,7 +27,10 @@ pub trait Graph: std::fmt::Debug {
     type Vertex;
     type Edge: Edge<Self::Key>;
 
-    type EdgeIter<'a>: IntoIterator<Item=Self::Edge> where Self: 'a, Self::Edge: 'a;
+    type EdgeIter<'a>: IntoIterator<Item = Self::Edge>
+    where
+        Self: 'a,
+        Self::Edge: 'a;
 
     // TODO(MXG): Consider if there's a way we can have this API accept a key by
     // reference instead of by value. The current issue is that Node keys need a

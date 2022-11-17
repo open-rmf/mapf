@@ -16,8 +16,8 @@
 */
 
 pub(crate) fn triangular_for<Item>(
-    iterable: impl Iterator<Item=Item> + Clone,
-    mut f: impl FnMut(&Item, Item)
+    iterable: impl Iterator<Item = Item> + Clone,
+    mut f: impl FnMut(&Item, Item),
 ) {
     let mut outer_iter = iterable.into_iter();
     while let Some(outer_value) = outer_iter.next() {
@@ -35,7 +35,7 @@ pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
 
 impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
     pub(crate) fn new(f: F) -> Self {
-        Self{value: None, f}
+        Self { value: None, f }
     }
 
     pub(crate) fn consider(&mut self, other: &T) -> bool {

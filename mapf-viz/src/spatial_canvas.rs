@@ -15,14 +15,17 @@
  *
 */
 
+use super::{toggle::DragToggler, Toggle, Toggler};
 use derivative::Derivative;
 use iced::{
-    Element, Length, Rectangle,
-    canvas::{self, Canvas, Cache, Frame, Geometry, Cursor, Path, event::{self, Event}},
-    mouse, keyboard,
+    canvas::{
+        self,
+        event::{self, Event},
+        Cache, Canvas, Cursor, Frame, Geometry, Path,
+    },
+    keyboard, mouse, Element, Length, Rectangle,
 };
-use lyon::math::{Point, Vector, Transform};
-use super::{Toggle, Toggler, toggle::DragToggler};
+use lyon::math::{Point, Transform, Vector};
 
 pub struct SpatialHUD<'a> {
     base_frame: &'a mut Frame,
@@ -31,10 +34,12 @@ pub struct SpatialHUD<'a> {
 
 impl<'a> SpatialHUD<'a> {
     pub fn at<'b>(&'b mut self, position: iced::Point, f: impl FnOnce(&mut Frame))
-    where 'a: 'b {
+    where
+        'a: 'b,
+    {
         self.base_frame.with_save(|frame| {
             frame.translate(position - iced::Point::ORIGIN);
-            frame.asymmetric_scale(1.0/self.zoom, -1.0/self.zoom);
+            frame.asymmetric_scale(1.0 / self.zoom, -1.0 / self.zoom);
             frame.with_save(f);
         })
     }
@@ -49,10 +54,10 @@ pub enum SpatialCache {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InclusionZone {
     Empty,
-    Some{
+    Some {
         lower: iced::Point,
         upper: iced::Point,
-    }
+    },
 }
 
 pub trait SpatialCanvasProgram<Message>: std::fmt::Debug {
@@ -69,7 +74,7 @@ pub trait SpatialCanvasProgram<Message>: std::fmt::Debug {
         &self,
         _frame: &mut Frame,
         _spatial_bounds: Rectangle,
-        _spatial_cursor: Cursor
+        _spatial_cursor: Cursor,
     ) {
         // Default: Do nothing
     }
@@ -78,7 +83,7 @@ pub trait SpatialCanvasProgram<Message>: std::fmt::Debug {
         &self,
         _hud: &'a mut SpatialHUD<'b>,
         _spatial_bounds: Rectangle,
-        _spatial_cursor: Cursor
+        _spatial_cursor: Cursor,
     ) {
         // Default: Do nothing
     }
@@ -90,9 +95,9 @@ impl InclusionZone {
     pub fn include(&mut self, p: iced::Point) {
         match self {
             Self::Empty => {
-                *self = Self::Some{lower: p, upper: p};
-            },
-            Self::Some{lower, upper} => {
+                *self = Self::Some { lower: p, upper: p };
+            }
+            Self::Some { lower, upper } => {
                 lower.x = lower.x.min(p.x);
                 lower.y = lower.y.min(p.y);
                 upper.x = upper.x.max(p.x);
@@ -104,8 +109,12 @@ impl InclusionZone {
     pub fn merge(&mut self, other: Self) {
         match self {
             Self::Empty => *self = other,
-            Self::Some{lower, upper} => {
-                if let Self::Some{lower: other_lower, upper: other_upper} = other {
+            Self::Some { lower, upper } => {
+                if let Self::Some {
+                    lower: other_lower,
+                    upper: other_upper,
+                } = other
+                {
                     lower.x = lower.x.min(other_lower.x);
                     lower.y = lower.y.min(other_lower.y);
                     upper.x = upper.x.max(other_upper.x);
@@ -122,7 +131,7 @@ pub struct SpatialCanvas<Message, Program: SpatialCanvasProgram<Message>> {
     pub program: Program,
     pub cache: Cache,
     pub zoom: f32,
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub pan_toggler: Option<Box<dyn Toggler>>,
     pub scroll_to_zoom: bool,
     offset: Vector,
@@ -132,9 +141,8 @@ pub struct SpatialCanvas<Message, Program: SpatialCanvasProgram<Message>> {
 }
 
 impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Program> {
-
     pub fn new(program: Program) -> Self {
-        Self{
+        Self {
             program,
             cache: Cache::new(),
             zoom: 1.0,
@@ -155,31 +163,30 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
     }
 
     pub fn fit_to_zone(&mut self, zone: InclusionZone) {
-        let bounds =
-            if let Some(bounds) = &mut self.bounds {
-                bounds
-            } else {
-                return;
-            };
+        let bounds = if let Some(bounds) = &mut self.bounds {
+            bounds
+        } else {
+            return;
+        };
 
-        if let InclusionZone::Some{lower, upper} = zone {
+        if let InclusionZone::Some { lower, upper } = zone {
             let x_zoom = bounds.width / (upper.x - lower.x);
             let y_zoom = bounds.height / (upper.y - lower.y);
             self.zoom = x_zoom.min(y_zoom);
 
-            let bound_center = Point::new(bounds.width/2.0, bounds.height/2.0);
+            let bound_center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
 
-            let space_center = Point::new(
-                (lower.x + upper.x)/2.0,
-                (lower.y + upper.y)/2.0
-            );
+            let space_center = Point::new((lower.x + upper.x) / 2.0, (lower.y + upper.y) / 2.0);
             let s = Transform::scale(self.zoom, -self.zoom);
             self.offset = bound_center - s.transform_point(space_center);
             self.cache.clear();
         }
     }
 
-    pub fn view<'a>(&'a mut self) -> Element<'a, Message> where Message: 'static {
+    pub fn view<'a>(&'a mut self) -> Element<'a, Message>
+    where
+        Message: 'static,
+    {
         Canvas::new(self)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -189,22 +196,26 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
     pub fn transform(&self) -> Transform {
         Transform::translation(self.offset.x, self.offset.y)
             .pre_scale(self.zoom, -self.zoom)
-            .inverse().unwrap()
+            .inverse()
+            .unwrap()
     }
 }
 
-impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Message> for SpatialCanvas<Message, Program> {
+impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Message>
+    for SpatialCanvas<Message, Program>
+{
     fn update(
         &mut self,
         event: Event,
         bounds: Rectangle,
         cursor: Cursor,
     ) -> (event::Status, Option<Message>) {
-
         self.bounds = Some(bounds);
 
         if let Some(p_raw) = cursor.position_in(&bounds) {
-            let p = self.transform().transform_point(Point::new(p_raw.x, p_raw.y));
+            let p = self
+                .transform()
+                .transform_point(Point::new(p_raw.x, p_raw.y));
             let spatial_cursor = Cursor::Available(iced::Point::new(p.x, p.y));
 
             let (cache, status, message) = self.program.update(event, spatial_cursor);
@@ -231,21 +242,22 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
                             self.drag_start_point = Some(p);
                         }
                         return (event::Status::Captured, None);
-                    },
+                    }
                     Toggle::Off => {
                         self.drag_start_point = None;
                         return (event::Status::Captured, None);
-                    },
+                    }
                     Toggle::NoChange => {
                         // Do nothing
                     }
                 }
             }
 
-            if let Event::Mouse(mouse::Event::CursorMoved{..}) = event {
+            if let Event::Mouse(mouse::Event::CursorMoved { .. }) = event {
                 if let Some(p0) = self.drag_start_point {
                     let p_raw = Point::new(p_raw.x, p_raw.y);
-                    self.offset = p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
+                    self.offset =
+                        p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
 
                     self.cache.clear();
                     return (event::Status::Captured, None);
@@ -253,13 +265,15 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
             }
 
             if self.scroll_to_zoom {
-                if let Event::Mouse(mouse::Event::WheelScrolled{delta}) = event {
+                if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event {
                     match delta {
-                        mouse::ScrollDelta::Lines{y, ..} | mouse::ScrollDelta::Pixels{y, ..} => {
+                        mouse::ScrollDelta::Lines { y, .. }
+                        | mouse::ScrollDelta::Pixels { y, .. } => {
                             let p0 = p;
-                            self.zoom = self.zoom*(1.0 + y/10.0);
+                            self.zoom = self.zoom * (1.0 + y / 10.0);
                             let p_raw = Point::new(p_raw.x, p_raw.y);
-                            self.offset = p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
+                            self.offset =
+                                p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
                             self.cache.clear();
                         }
                     }
@@ -293,14 +307,16 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
 
     fn draw(&self, bounds: Rectangle, mut cursor: Cursor) -> Vec<Geometry> {
         if let Some(p_raw) = cursor.position_in(&bounds) {
-            let p = self.transform().transform_point(Point::new(p_raw.x, p_raw.y));
+            let p = self
+                .transform()
+                .transform_point(Point::new(p_raw.x, p_raw.y));
             cursor = Cursor::Available(iced::Point::new(p.x, p.y));
         }
 
         let tf = self.transform();
         let origin = tf.transform_point(Point::origin());
         let corner = tf.transform_point(Point::origin() + Vector::new(bounds.width, bounds.height));
-        let spatial_bounds = Rectangle{
+        let spatial_bounds = Rectangle {
             x: origin.x,
             y: corner.y,
             width: (corner.x - origin.x).abs(),
@@ -317,7 +333,7 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
 
                 self.program.draw_in_space(frame, spatial_bounds, cursor);
                 self.program.draw_on_hud(
-                    &mut SpatialHUD{
+                    &mut SpatialHUD {
                         base_frame: frame,
                         zoom: self.zoom,
                     },

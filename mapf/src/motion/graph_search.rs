@@ -16,23 +16,22 @@
 */
 
 use crate::{
-    Heuristic,
-    graph::{Graph, Edge, VertexOf, KeyOf},
-    expander::{Expander as ExpanderTrait, Aimless, Goal, Targeted, Closable, Solvable},
-    node::{self, Agent, Cost, ClosedSet, Weighted, Timed, PartialKeyed, Keyed, Informed, PathSearch},
-    motion::{
-        Waypoint, Trajectory, Extrapolator,
-        trajectory::CostCalculator,
-        reach::Reachable,
-        movable::{Movable, ArcMovable, StartingPoint},
-    },
     error::{Error, NoError},
-};
-use std::{
-    fmt::Debug,
-    sync::Arc,
+    expander::{Aimless, Closable, Expander as ExpanderTrait, Goal, Solvable, Targeted},
+    graph::{Edge, Graph, KeyOf, VertexOf},
+    motion::{
+        movable::{ArcMovable, Movable, StartingPoint},
+        reach::Reachable,
+        trajectory::CostCalculator,
+        Extrapolator, Trajectory, Waypoint,
+    },
+    node::{
+        self, Agent, ClosedSet, Cost, Informed, Keyed, PartialKeyed, PathSearch, Timed, Weighted,
+    },
+    Heuristic,
 };
 use num::Zero;
+use std::{fmt::Debug, sync::Arc};
 use thiserror::Error as ThisError;
 
 /// A StateKey is a key type that uniquely defines the state that the node
@@ -64,11 +63,11 @@ pub trait Policy: Sized {
     type ClosedSet: ClosedSet<Self::Node>;
     type Graph: Graph;
     type StateKey: StateKey<KeyOf<Self::Graph>, Self::Waypoint>;
-    type Node: Informed + Movable<Self::Waypoint, Key=Self::StateKey>;
+    type Node: Informed + Movable<Self::Waypoint, Key = Self::StateKey>;
     type Extrapolator: Extrapolator<Self::Waypoint, VertexOf<Self::Graph>>;
     type Heuristic;
     type Reach;
-    type CostCalculator: CostCalculator<Self::Waypoint, Cost=NodeCostOf<Self>>;
+    type CostCalculator: CostCalculator<Self::Waypoint, Cost = NodeCostOf<Self>>;
 }
 
 pub type WaypointOf<P> = <P as Policy>::Waypoint;
@@ -78,9 +77,11 @@ pub type NodeCostOf<P> = <NodeOf<P> as Weighted>::Cost;
 pub type GraphOf<P> = <P as Policy>::Graph;
 pub type GraphKeyOf<P> = <GraphOf<P> as Graph>::Key;
 pub type ExtrapolatorOf<P> = <P as Policy>::Extrapolator;
-pub type ExtrapolatorErrorOf<P> = <ExtrapolatorOf<P> as Extrapolator<WaypointOf<P>, VertexOf<GraphOf<P>>>>::Error;
+pub type ExtrapolatorErrorOf<P> =
+    <ExtrapolatorOf<P> as Extrapolator<WaypointOf<P>, VertexOf<GraphOf<P>>>>::Error;
 pub type HeuristicOf<P> = <P as Policy>::Heuristic;
-pub type HeuristicErrorOf<P, G> = <HeuristicOf<P> as Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>>::Error;
+pub type HeuristicErrorOf<P, G> =
+    <HeuristicOf<P> as Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>>::Error;
 pub type ReachOf<P> = <P as Policy>::Reach;
 pub type ReachErrorOf<P, G> = <ReachOf<P> as Reachable<NodeOf<P>, G, WaypointOf<P>>>::ReachError;
 
@@ -150,18 +151,19 @@ impl<C: Cost, K: node::Key, W: Waypoint> Movable<W> for BuiltinNode<C, K, W> {
         motion_from_parent: Option<Trajectory<W>>,
     ) -> Self {
         let cost = parent.cost + cost_from_parent;
-        let state = motion_from_parent.as_ref().map(
-            |t| t.finish().clone()
-        ).unwrap_or(parent.state().clone());
+        let state = motion_from_parent
+            .as_ref()
+            .map(|t| t.finish().clone())
+            .unwrap_or(parent.state().clone());
 
-        BuiltinNode{
+        BuiltinNode {
             cost,
             remaining_cost_estimate,
             total_cost_estimate: cost + remaining_cost_estimate,
             state,
             key,
             motion_from_parent,
-            parent: Some(parent)
+            parent: Some(parent),
         }
     }
 }
@@ -174,19 +176,22 @@ impl<C: Cost, K: node::Key, W: Waypoint> StartingPoint<C, K, W> for BuiltinNode<
         remaining_cost_estimate: C,
         initial_motion: Option<Trajectory<W>>,
     ) -> Self {
-        BuiltinNode{
+        BuiltinNode {
             cost: initial_cost,
             remaining_cost_estimate,
             total_cost_estimate: initial_cost + remaining_cost_estimate,
             state,
             key,
             motion_from_parent: initial_motion,
-            parent: None
+            parent: None,
         }
     }
 }
 
-pub struct Expander<P: Policy> where NodeKeyOf<P>: StateKey<GraphKeyOf<P>, P::Waypoint> {
+pub struct Expander<P: Policy>
+where
+    NodeKeyOf<P>: StateKey<GraphKeyOf<P>, P::Waypoint>,
+{
     pub graph: Arc<P::Graph>,
     pub extrapolator: Arc<P::Extrapolator>,
     pub cost_calculator: Arc<P::CostCalculator>,
@@ -211,12 +216,16 @@ where
         motion_from_parent: Option<Trajectory<P::Waypoint>>,
         parent: Arc<P::Node>,
     ) -> Arc<P::Node> {
-        let cost_from_parent = motion_from_parent.as_ref().map(
-            |t| self.cost_calculator.compute_cost(t)
-        ).unwrap_or(NodeCostOf::<P>::zero());
+        let cost_from_parent = motion_from_parent
+            .as_ref()
+            .map(|t| self.cost_calculator.compute_cost(t))
+            .unwrap_or(NodeCostOf::<P>::zero());
 
         parent.moved_with(
-            key, cost_from_parent, remaining_cost_estimate, motion_from_parent
+            key,
+            cost_from_parent,
+            remaining_cost_estimate,
+            motion_from_parent,
         )
     }
 
@@ -230,34 +239,50 @@ where
     where
         P::Node: StartingPoint<NodeCostOf<P>, P::StateKey, P::Waypoint>,
     {
-        let initial_cost = initial_motion.as_ref().map(
-            |t| self.cost_calculator.compute_cost(t)
-        ).unwrap_or(NodeCostOf::<P>::zero());
+        let initial_cost = initial_motion
+            .as_ref()
+            .map(|t| self.cost_calculator.compute_cost(t))
+            .unwrap_or(NodeCostOf::<P>::zero());
 
-        Arc::new(<P::Node as StartingPoint<NodeCostOf<P>, P::StateKey, P::Waypoint>>::start_from(
-            state, key, initial_cost, remaining_cost_estimate, initial_motion
+        Arc::new(<P::Node as StartingPoint<
+            NodeCostOf<P>,
+            P::StateKey,
+            P::Waypoint,
+        >>::start_from(
+            state,
+            key,
+            initial_cost,
+            remaining_cost_estimate,
+            initial_motion,
         ))
     }
 
-    fn motions_from<'a>(&'a self, parent: &'a Arc<P::Node>, parent_key: &'a NodeKeyOf<P>)
-    -> impl Iterator<Item=Result<MotionInfo<P>, ExtrapolatorErrorOf<P>>> + 'a {
-        self.graph.edges_from_vertex(parent_key.graph_key()).into_iter()
+    fn motions_from<'a>(
+        &'a self,
+        parent: &'a Arc<P::Node>,
+        parent_key: &'a NodeKeyOf<P>,
+    ) -> impl Iterator<Item = Result<MotionInfo<P>, ExtrapolatorErrorOf<P>>> + 'a {
+        self.graph
+            .edges_from_vertex(parent_key.graph_key())
+            .into_iter()
             .filter_map(|edge| -> Option<(KeyOf<P::Graph>, VertexOf<P::Graph>)> {
                 let key = edge.to_vertex().clone();
                 self.graph.vertex((key).clone()).map(|target| (key, target))
             })
             .map(move |(to_key, to_target)| {
-                let trajectory = self.extrapolator.make_trajectory(
-                    parent.state().clone(),
-                    &to_target
-                )?;
+                let trajectory = self
+                    .extrapolator
+                    .make_trajectory(parent.state().clone(), &to_target)?;
 
-                let state = trajectory.as_ref().map(|t| t.finish()).unwrap_or(&parent.state());
+                let state = trajectory
+                    .as_ref()
+                    .map(|t| t.finish())
+                    .unwrap_or(&parent.state());
                 let to_key = NodeKeyOf::<P>::from_state(&to_key, state);
-                Ok(MotionInfo{
+                Ok(MotionInfo {
                     parent_key: parent_key.clone(),
                     to_key,
-                    trajectory
+                    trajectory,
                 })
             })
     }
@@ -268,8 +293,7 @@ impl<P: Policy> ExpanderTrait for Expander<P> {
 }
 
 #[derive(ThisError, Debug)]
-pub enum ExpansionError<E: Error, H: Error, R: Error>
-{
+pub enum ExpansionError<E: Error, H: Error, R: Error> {
     #[error("An error occured during extrapolation:\n{0}")]
     Extrapolator(E),
     #[error("An error occured while computing the heuristic:\n{0}")]
@@ -278,7 +302,8 @@ pub enum ExpansionError<E: Error, H: Error, R: Error>
     Reach(R),
 }
 
-type ExpansionErrorOf<P, G> = ExpansionError<ExtrapolatorErrorOf<P>, HeuristicErrorOf<P, G>, ReachErrorOf<P, G>>;
+type ExpansionErrorOf<P, G> =
+    ExpansionError<ExtrapolatorErrorOf<P>, HeuristicErrorOf<P, G>, ReachErrorOf<P, G>>;
 
 impl<P: Policy> Closable for Expander<P> {
     type ClosedSet = P::ClosedSet;
@@ -286,7 +311,7 @@ impl<P: Policy> Closable for Expander<P> {
 
 impl<P: Policy, G> Targeted<G> for Expander<P>
 where
-    G: Keyed<Key=GraphKeyOf<P>> + Goal<P::Node>,
+    G: Keyed<Key = GraphKeyOf<P>> + Goal<P::Node>,
     P::Heuristic: Heuristic<NodeKeyOf<P>, G, NodeCostOf<P>>,
     P::Reach: Reachable<P::Node, G, P::Waypoint>,
 {
@@ -298,41 +323,62 @@ where
         parent: &'a std::sync::Arc<P::Node>,
         goal: &'a G,
     ) -> Self::TargetedExpansion<'a> {
-        [parent.partial_key()].into_iter()
-        .filter_map(|x| x)
-        .flat_map(move |parent_key| {
-            self.motions_from(parent, parent_key)
-            .map(|r| r.map_err(ExpansionError::Extrapolator))
-            .map(move |r| {
-                r.and_then(|MotionInfo{parent_key: _, to_key, trajectory}| {
-                    let h = self.heuristic.estimate_cost(
-                        &to_key, goal
-                    ).map_err(ExpansionError::Heuristic)?;
-
-                    Ok(h.map(|h| self.make_child_node(
-                        Some(to_key), h, trajectory, parent.clone())
-                    ))
-                })
-            })
-            .filter_map(|r| r.transpose())
-        })
-        .chain(
-            [parent.partial_key()].into_iter()
+        [parent.partial_key()]
+            .into_iter()
             .filter_map(|x| x)
-            .flat_map(|parent_key| {
-                self.reacher.reach_for(parent.as_ref(), goal).into_iter()
-                .map(|r| {
-                    r.and_then(|trajectory| {
-                        // We assume the goal is reached, because otherwise
-                        // the Reachable trait was implemented incorrectly.
-                        let to_key = NodeKeyOf::<P>::from_state(goal.key(), trajectory.finish());
-                        Ok(self.make_child_node(
-                            Some(to_key), NodeCostOf::<P>::zero(), Some(trajectory), parent.clone()
-                        ))
-                    }).map_err(ExpansionError::Reach)
-                })
+            .flat_map(move |parent_key| {
+                self.motions_from(parent, parent_key)
+                    .map(|r| r.map_err(ExpansionError::Extrapolator))
+                    .map(move |r| {
+                        r.and_then(
+                            |MotionInfo {
+                                 parent_key: _,
+                                 to_key,
+                                 trajectory,
+                             }| {
+                                let h = self
+                                    .heuristic
+                                    .estimate_cost(&to_key, goal)
+                                    .map_err(ExpansionError::Heuristic)?;
+
+                                Ok(h.map(|h| {
+                                    self.make_child_node(
+                                        Some(to_key),
+                                        h,
+                                        trajectory,
+                                        parent.clone(),
+                                    )
+                                }))
+                            },
+                        )
+                    })
+                    .filter_map(|r| r.transpose())
             })
-        )
+            .chain(
+                [parent.partial_key()]
+                    .into_iter()
+                    .filter_map(|x| x)
+                    .flat_map(|parent_key| {
+                        self.reacher
+                            .reach_for(parent.as_ref(), goal)
+                            .into_iter()
+                            .map(|r| {
+                                r.and_then(|trajectory| {
+                                    // We assume the goal is reached, because otherwise
+                                    // the Reachable trait was implemented incorrectly.
+                                    let to_key =
+                                        NodeKeyOf::<P>::from_state(goal.key(), trajectory.finish());
+                                    Ok(self.make_child_node(
+                                        Some(to_key),
+                                        NodeCostOf::<P>::zero(),
+                                        Some(trajectory),
+                                        parent.clone(),
+                                    ))
+                                })
+                                .map_err(ExpansionError::Reach)
+                            })
+                    }),
+            )
     }
 }
 
@@ -340,25 +386,28 @@ impl<P: Policy> Aimless for Expander<P> {
     type AimlessError = ExtrapolatorErrorOf<P>;
     type AimlessExpansion<'a> = impl Iterator<Item=Result<Arc<P::Node>, Self::AimlessError>> + 'a where P: 'a;
 
-    fn aimless_expand<'a>(
-        &'a self,
-        parent: &'a Arc<Self::Node>,
-    ) -> Self::AimlessExpansion<'a> {
-        [parent.partial_key()].into_iter()
-        .filter_map(|x| x)
-        .flat_map(move |parent_key| {
-            self.motions_from(parent, parent_key)
-            .map(move |r| {
-                r.and_then(|MotionInfo{parent_key: _, to_key, trajectory}| {
-                    Ok(self.make_child_node(
-                        Some(to_key),
-                        NodeCostOf::<P>::zero(),
-                        trajectory,
-                        parent.clone()
-                    ))
+    fn aimless_expand<'a>(&'a self, parent: &'a Arc<Self::Node>) -> Self::AimlessExpansion<'a> {
+        [parent.partial_key()]
+            .into_iter()
+            .filter_map(|x| x)
+            .flat_map(move |parent_key| {
+                self.motions_from(parent, parent_key).map(move |r| {
+                    r.and_then(
+                        |MotionInfo {
+                             parent_key: _,
+                             to_key,
+                             trajectory,
+                         }| {
+                            Ok(self.make_child_node(
+                                Some(to_key),
+                                NodeCostOf::<P>::zero(),
+                                trajectory,
+                                parent.clone(),
+                            ))
+                        },
+                    )
                 })
             })
-        })
     }
 }
 
@@ -370,15 +419,15 @@ pub struct Solution<P: Policy> {
 impl<P: Policy> Debug for Solution<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("motion::graph_search::Solution")
-        .field("cost", &self.cost)
-        .field("motion", &self.motion)
-        .finish()
+            .field("cost", &self.cost)
+            .field("motion", &self.motion)
+            .finish()
     }
 }
 
 impl<P: Policy> Clone for Solution<P> {
     fn clone(&self) -> Self {
-        Self{
+        Self {
             cost: self.cost.clone(),
             motion: self.motion.clone(),
         }
@@ -411,7 +460,12 @@ pub struct ReconstructMotion<N, W> {
 
 impl<W: Waypoint, N: Agent<W, Trajectory<W>>> ReconstructMotion<N, W> {
     pub fn new(root: Arc<N>) -> Self {
-        Self{node: Some(root), index: 0, shift: time_point::Duration::zero(), _ignore: Default::default()}
+        Self {
+            node: Some(root),
+            index: 0,
+            shift: time_point::Duration::zero(),
+            _ignore: Default::default(),
+        }
     }
 
     pub fn shifted(mut self, shift: time_point::Duration) -> Self {
@@ -448,9 +502,15 @@ impl<P: Policy> Solvable for Expander<P> {
     type Solution = Solution<P>;
     type SolveError = NoError;
 
-    fn make_solution(&self, solution_node: &Arc<P::Node>) -> Result<Self::Solution, Self::SolveError> {
+    fn make_solution(
+        &self,
+        solution_node: &Arc<P::Node>,
+    ) -> Result<Self::Solution, Self::SolveError> {
         let motion = Trajectory::from_iter(ReconstructMotion::new(solution_node.clone())).ok();
-        let cost = motion.as_ref().map(|t| self.cost_calculator.compute_cost(t)).unwrap_or(NodeCostOf::<P>::zero());
-        Ok(Solution{cost, motion})
+        let cost = motion
+            .as_ref()
+            .map(|t| self.cost_calculator.compute_cost(t))
+            .unwrap_or(NodeCostOf::<P>::zero());
+        Ok(Solution { cost, motion })
     }
 }

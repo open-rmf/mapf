@@ -28,14 +28,17 @@ pub struct SimpleGraph<Vertex: std::fmt::Debug + Clone> {
 }
 
 impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
-
     pub fn new(vertices: Vec<Vertex>, edges: Vec<Vec<usize>>) -> Self {
-        Self{vertices, edges, _placeholder: Vec::new()}
+        Self {
+            vertices,
+            edges,
+            _placeholder: Vec::new(),
+        }
     }
 
     pub fn from_iters(
-        vertices: impl IntoIterator<Item=Vertex>,
-        input_edges: impl IntoIterator<Item=(usize, usize)>,
+        vertices: impl IntoIterator<Item = Vertex>,
+        input_edges: impl IntoIterator<Item = (usize, usize)>,
     ) -> Self {
         let mut edges = Vec::new();
         for edge in input_edges {
@@ -46,7 +49,11 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
             edges.get_mut(edge.0).unwrap().push(edge.1);
         }
 
-        Self{vertices: Vec::from_iter(vertices), edges, _placeholder: Vec::new()}
+        Self {
+            vertices: Vec::from_iter(vertices),
+            edges,
+            _placeholder: Vec::new(),
+        }
     }
 
     pub fn reverse(&self) -> Self {
@@ -58,7 +65,7 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
             }
         }
 
-        Self{
+        Self {
             vertices: self.vertices.clone(),
             edges: r_edges,
             _placeholder: Vec::new(),
@@ -83,15 +90,13 @@ impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
 
     type EdgeIter<'a>  = impl Iterator<Item=(usize, usize)> + 'a where Self: 'a;
 
-    fn vertex (&self, key: usize) -> Option<V> {
+    fn vertex(&self, key: usize) -> Option<V> {
         self.vertices.get(key).cloned()
     }
 
     fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a> {
         let copy_from_key = from_key;
-        let make_edge = move |to_key: &usize| {
-            (copy_from_key, to_key.clone())
-        };
+        let make_edge = move |to_key: &usize| (copy_from_key, to_key.clone());
 
         if let Some(to_vertices) = self.edges.get(from_key) {
             return to_vertices.iter().map(make_edge);

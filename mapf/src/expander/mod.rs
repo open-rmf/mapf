@@ -25,4 +25,4 @@ pub mod closure;
 pub use closure::Closure;
 
 pub mod constrain;
-pub use constrain::{AimlessConstraint, TargetedConstraint, Constrain, Constrainable};
+pub use constrain::{AimlessConstraint, Constrain, Constrainable, TargetedConstraint};

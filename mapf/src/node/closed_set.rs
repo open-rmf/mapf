@@ -16,8 +16,8 @@
 */
 
 use crate::node::traits::*;
+use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
-use std::collections::hash_map::{HashMap, Entry};
 
 /// The result of attempting to add a node to the Closed Set.
 pub enum CloseResult<N> {
@@ -27,7 +27,7 @@ pub enum CloseResult<N> {
 
     /// A node with an equivalent state was previous closed. This contains a
     /// reference to that node.
-    Prior(Arc<N>)
+    Prior(Arc<N>),
 }
 
 impl<N> CloseResult<N> {
@@ -47,7 +47,7 @@ impl<N> CloseResult<N> {
 // TODO(MXG): Consider returning an &Arc<N> to reduce reference counting overhead
 pub enum ClosedStatus<N> {
     Open,
-    Closed(Arc<N>)
+    Closed(Arc<N>),
 }
 
 impl<N> ClosedStatus<N> {
@@ -67,8 +67,10 @@ impl<N> ClosedStatus<N> {
 /// unnecessary search effort. They keep track of the lowest cost node which has
 /// visited a certain location.
 pub trait ClosedSet<N>: Default {
-
-    type Iter<'a>: IntoIterator<Item=&'a Arc<N>> where Self: 'a, N: 'a;
+    type Iter<'a>: IntoIterator<Item = &'a Arc<N>>
+    where
+        Self: 'a,
+        N: 'a;
 
     /// Tell the closed set to close this node.
     fn close(&mut self, node: &Arc<N>) -> CloseResult<N>;
@@ -90,14 +92,14 @@ pub trait KeyedSet<N> {
 }
 
 pub struct PartialKeyedClosedSet<N: Weighted + PartialKeyed> {
-    closed_set: HashMap<N::Key, Arc<N>>
+    closed_set: HashMap<N::Key, Arc<N>>,
 }
 
 impl<N: Weighted + PartialKeyed> Default for PartialKeyedClosedSet<N> {
     fn default() -> Self {
         return PartialKeyedClosedSet {
-            closed_set: Default::default()
-        }
+            closed_set: Default::default(),
+        };
     }
 }
 
@@ -114,7 +116,7 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
 
                     occupied.insert(node.clone());
                     return CloseResult::Closed;
-                },
+                }
                 Entry::Vacant(vacant) => {
                     vacant.insert(node.clone());
                     return CloseResult::Closed;
@@ -130,10 +132,8 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
             match self.closed_set.get(key) {
                 Some(value) => {
                     return ClosedStatus::Closed(value.clone());
-                },
-                None => {
-                    return ClosedStatus::Open
                 }
+                None => return ClosedStatus::Open,
             }
         }
 
@@ -146,7 +146,6 @@ impl<N: Weighted + PartialKeyed> ClosedSet<N> for PartialKeyedClosedSet<N> {
 }
 
 impl<N: Weighted + PartialKeyed> KeyedSet<N> for PartialKeyedClosedSet<N> {
-
     type Key = N::Key;
 
     fn get(&self, key: &Self::Key) -> Option<&Arc<N>> {
@@ -164,7 +163,10 @@ pub struct TimeVariantPartialKeyedClosetSet<N: Weighted + PartialKeyed + Timed> 
 // same key type for either time variant or invariant scenarios.
 impl<N: Weighted + PartialKeyed + Timed> Default for TimeVariantPartialKeyedClosetSet<N> {
     fn default() -> Self {
-        Self{closed_set: Default::default(), time_thresh: 100_000_000}
+        Self {
+            closed_set: Default::default(),
+            time_thresh: 100_000_000,
+        }
     }
 }
 
@@ -185,13 +187,13 @@ impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeye
 
                             occupied.insert(node.clone());
                             return CloseResult::Closed;
-                        },
+                        }
                         Entry::Vacant(vacant) => {
                             vacant.insert(node.clone());
                             return CloseResult::Closed;
                         }
                     }
-                },
+                }
                 Entry::Vacant(vacant) => {
                     let t_map = vacant.insert(Default::default());
                     t_map.insert(t_key, node.clone());
@@ -211,12 +213,12 @@ impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeye
                     match t_map.get(&t_key) {
                         Some(value) => {
                             return ClosedStatus::Closed(value.clone());
-                        },
+                        }
                         None => {
                             return ClosedStatus::Open;
                         }
                     }
-                },
+                }
                 None => {
                     return ClosedStatus::Open;
                 }
@@ -227,10 +229,12 @@ impl<N: Weighted + PartialKeyed + Timed> ClosedSet<N> for TimeVariantPartialKeye
     }
 
     fn iter<'a>(&'a self) -> Self::Iter<'a> {
-        self.closed_set.iter().flat_map(|(_, t_map)| t_map).map(|(_, n)| n)
+        self.closed_set
+            .iter()
+            .flat_map(|(_, t_map)| t_map)
+            .map(|(_, n)| n)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -277,45 +281,47 @@ mod tests {
 
     #[test]
     fn hashable_node_can_enter_closed_set() {
-
         let mut closed_set = PartialKeyedClosedSet::<TestNode>::default();
 
-        let node_1 = Arc::<TestNode>::new(
-            TestNode{
-                graph_index: 0,
-                cost: 10,
-                remaining_cost_estimate: 6,
-                parent: None
-            }
-        );
+        let node_1 = Arc::<TestNode>::new(TestNode {
+            graph_index: 0,
+            cost: 10,
+            remaining_cost_estimate: 6,
+            parent: None,
+        });
 
         assert!(matches!(closed_set.status(&node_1), ClosedStatus::Open));
         assert!(matches!(closed_set.close(&node_1), CloseResult::Closed));
-        assert!(matches!(closed_set.status(&node_1), ClosedStatus::Closed(_)));
+        assert!(matches!(
+            closed_set.status(&node_1),
+            ClosedStatus::Closed(_)
+        ));
 
-        let node_2 = Arc::<TestNode>::new(
-            TestNode {
-                graph_index: 0,
-                cost: 12,
-                remaining_cost_estimate: 6,
-                parent: Some(node_1.clone())
-            }
-        );
+        let node_2 = Arc::<TestNode>::new(TestNode {
+            graph_index: 0,
+            cost: 12,
+            remaining_cost_estimate: 6,
+            parent: Some(node_1.clone()),
+        });
 
-        assert!(matches!(closed_set.status(&node_2), ClosedStatus::Closed(_)));
+        assert!(matches!(
+            closed_set.status(&node_2),
+            ClosedStatus::Closed(_)
+        ));
         assert!(matches!(closed_set.close(&node_2), CloseResult::Prior(_)));
 
-        let node_3 = Arc::<TestNode>::new(
-            TestNode {
-                graph_index: 1,
-                cost: 2,
-                remaining_cost_estimate: 3,
-                parent: Some(node_2.clone())
-            }
-        );
+        let node_3 = Arc::<TestNode>::new(TestNode {
+            graph_index: 1,
+            cost: 2,
+            remaining_cost_estimate: 3,
+            parent: Some(node_2.clone()),
+        });
 
         assert!(matches!(closed_set.status(&node_3), ClosedStatus::Open));
         assert!(matches!(closed_set.close(&node_3), CloseResult::Closed));
-        assert!(matches!(closed_set.status(&node_3), ClosedStatus::Closed(_)));
+        assert!(matches!(
+            closed_set.status(&node_3),
+            ClosedStatus::Closed(_)
+        ));
     }
 }

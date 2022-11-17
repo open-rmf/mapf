@@ -17,8 +17,8 @@
 
 pub mod timed;
 
-pub mod se2;
 pub mod r2;
+pub mod se2;
 
 pub mod waypoint;
 pub use waypoint::Waypoint;
@@ -31,13 +31,13 @@ pub use extrapolator::Extrapolator;
 
 pub mod graph_search;
 
-pub mod reach;
 pub mod hold;
 pub mod movable;
+pub mod reach;
 
 pub mod collide;
 
-pub use time_point::{TimePoint, Duration};
+pub use time_point::{Duration, TimePoint};
 
 /// The default translational threshold is 1mm
 pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
@@ -57,7 +57,6 @@ pub enum InterpError {
 }
 
 pub trait Motion<Position, Velocity> {
-
     /// Compute the position of this motion at a specific time. If the requested
     /// time is outside the bounds of the motion, then this will return an Err.
     fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError>;

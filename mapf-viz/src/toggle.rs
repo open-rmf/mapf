@@ -15,17 +15,14 @@
  *
 */
 
-use iced::{
-    canvas::event::Event,
-    mouse, keyboard
-};
+use iced::{canvas::event::Event, keyboard, mouse};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Toggle {
     On,
     Off,
-    NoChange
+    NoChange,
 }
 
 impl Toggle {
@@ -52,7 +49,6 @@ pub struct DragToggler {
 }
 
 impl DragToggler {
-
     pub fn new(
         main_button: Option<mouse::Button>,
         alt_button: Option<(keyboard::Modifiers, mouse::Button)>,
@@ -66,11 +62,14 @@ impl DragToggler {
             buttons.insert(alt_button.0, alt_button.1);
         }
 
-        Self{buttons, active_modifiers: keyboard::Modifiers::empty(), state: Toggle::Off}
+        Self {
+            buttons,
+            active_modifiers: keyboard::Modifiers::empty(),
+            state: Toggle::Off,
+        }
     }
 
     fn button_matches(&self, button: mouse::Button) -> bool {
-
         if let Some(expected_button) = self.buttons.get(&self.active_modifiers) {
             if *expected_button == button {
                 return true;
@@ -107,7 +106,7 @@ impl Toggler for DragToggler {
                         return self.state.change_to(Toggle::Off);
                     }
                 }
-            },
+            }
             Event::Keyboard(event) => {
                 if let keyboard::Event::ModifiersChanged(modifiers) = event {
                     if modifiers != self.active_modifiers {
@@ -134,11 +133,12 @@ pub struct FillToggler<On: Toggler, Off: Toggler> {
 }
 
 impl<On: Toggler, Off: Toggler> FillToggler<On, Off> {
-    pub fn new(
-        on: On,
-        off: Off,
-    ) -> Self {
-        Self{on, off, state: Toggle::NoChange}
+    pub fn new(on: On, off: Off) -> Self {
+        Self {
+            on,
+            off,
+            state: Toggle::NoChange,
+        }
     }
 }
 
@@ -174,18 +174,15 @@ pub struct KeyToggler {
 
 impl KeyToggler {
     pub fn for_key(key: keyboard::KeyCode) -> Self {
-        Self{
+        Self {
             key,
             modifiers: None,
             state: Toggle::Off,
         }
     }
 
-    pub fn for_key_with_modifiers(
-        key: keyboard::KeyCode,
-        modifiers: keyboard::Modifiers
-    ) -> Self {
-        Self{
+    pub fn for_key_with_modifiers(key: keyboard::KeyCode, modifiers: keyboard::Modifiers) -> Self {
+        Self {
             key,
             modifiers: Some(modifiers),
             state: Toggle::Off,
@@ -193,7 +190,11 @@ impl KeyToggler {
     }
 
     pub fn key_toggle(&mut self, event: keyboard::Event) -> Toggle {
-        if let keyboard::Event::KeyPressed{key_code, modifiers} = event {
+        if let keyboard::Event::KeyPressed {
+            key_code,
+            modifiers,
+        } = event
+        {
             if let Some(expected_modifiers) = self.modifiers {
                 if expected_modifiers != modifiers {
                     return self.state.change_to(Toggle::Off);
@@ -205,7 +206,7 @@ impl KeyToggler {
             }
         }
 
-        if let keyboard::Event::KeyReleased{key_code, ..} = event {
+        if let keyboard::Event::KeyReleased { key_code, .. } = event {
             if key_code == self.key {
                 return self.state.change_to(Toggle::Off);
             }

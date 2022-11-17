@@ -16,8 +16,8 @@
 */
 
 use crate::{
-    motion::{Trajectory, Waypoint},
     error::{Error, NoError},
+    motion::{Trajectory, Waypoint},
 };
 
 /// Reachable is a trait to describe attempts to reach directly from a node
@@ -26,8 +26,12 @@ use crate::{
 /// for how to reach the goal with a single motion decision.
 pub trait Reachable<Node, Goal, W: Waypoint> {
     type ReachError: Error;
-    type Reaching<'a>: IntoIterator<Item=Result<Trajectory<W>, Self::ReachError>>
-    where Self: 'a, W: 'a, Node: 'a, Goal: 'a;
+    type Reaching<'a>: IntoIterator<Item = Result<Trajectory<W>, Self::ReachError>>
+    where
+        Self: 'a,
+        W: 'a,
+        Node: 'a,
+        Goal: 'a;
 
     fn reach_for<'a>(&'a self, parent: &'a Node, goal: &'a Goal) -> Self::Reaching<'a>;
 }

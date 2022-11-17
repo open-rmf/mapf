@@ -46,29 +46,35 @@ impl<W: Timed> std::cmp::PartialEq<Self> for TimeCmp<W> {
     }
 }
 
-impl<W: Timed> std::cmp::Eq for TimeCmp<W> { }
+impl<W: Timed> std::cmp::Eq for TimeCmp<W> {}
 
 impl<W: Timed> std::cmp::PartialOrd<TimePoint> for TimeCmp<W> {
     fn partial_cmp(&self, other: &TimePoint) -> Option<std::cmp::Ordering> {
-        return self.0.time().nanos_since_zero.partial_cmp(
-            &other.nanos_since_zero
-        );
+        return self
+            .0
+            .time()
+            .nanos_since_zero
+            .partial_cmp(&other.nanos_since_zero);
     }
 }
 
 impl<W: Timed> std::cmp::PartialOrd<Self> for TimeCmp<W> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        return self.0.time().nanos_since_zero.partial_cmp(
-            &other.0.time().nanos_since_zero
-        );
+        return self
+            .0
+            .time()
+            .nanos_since_zero
+            .partial_cmp(&other.0.time().nanos_since_zero);
     }
 }
 
 impl<W: Timed> std::cmp::Ord for TimeCmp<W> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        return self.0.time().nanos_since_zero.cmp(
-            &other.0.time().nanos_since_zero
-        );
+        return self
+            .0
+            .time()
+            .nanos_since_zero
+            .cmp(&other.0.time().nanos_since_zero);
     }
 }
 

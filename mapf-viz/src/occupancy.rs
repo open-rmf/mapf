@@ -15,23 +15,25 @@
  *
 */
 
+use super::{
+    spatial_canvas::{self, InclusionZone, SpatialCache, SpatialCanvasProgram},
+    toggle::{DragToggler, FillToggler, Toggle, Toggler},
+};
 use derivative::Derivative;
 use iced::{
-    Rectangle,
-    canvas::{Path, Stroke, Frame, Cursor, event::{self, Event}},
-    keyboard, mouse,
+    canvas::{
+        event::{self, Event},
+        Cursor, Frame, Path, Stroke,
+    },
+    keyboard, mouse, Rectangle,
 };
-use super::{
-    spatial_canvas::{self, InclusionZone, SpatialCanvasProgram, SpatialCache},
-    toggle::{Toggle, Toggler, FillToggler, DragToggler},
-};
-use mapf::occupancy::{Grid, Visibility, SparseGrid, Cell, Point};
+use mapf::occupancy::{Cell, Grid, Point, SparseGrid, Visibility};
 use std::collections::HashMap;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct OccupancyVisual<Message, G: Grid> {
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     occupancy: Visibility<G>,
 
     // NOTE: After changing one of the public fields below, you must clear the
@@ -43,30 +45,29 @@ pub struct OccupancyVisual<Message, G: Grid> {
     pub show_visibility_graph: bool,
     pub show_details: bool,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub cell_toggler: Option<Box<dyn Toggler>>,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub corner_select_toggler: Option<Box<dyn Toggler>>,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
 
     _msg: std::marker::PhantomData<Message>,
 }
 
 impl<Message, G: Grid> OccupancyVisual<Message, G> {
-
     pub fn new(
         grid: G,
         robot_radius: f32,
         on_corner_select: Option<Box<dyn Fn(Cell, bool) -> Message>>,
         on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
     ) -> Self {
-        Self{
+        Self {
             occupancy: Visibility::new(grid, robot_radius as f64),
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
             default_visibility_color: iced::Color::from_rgb8(230, 166, 33),
@@ -75,11 +76,17 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
             show_details: false,
             cell_toggler: Some(Box::new(FillToggler::new(
                 DragToggler::new(Some(mouse::Button::Left), None),
-                DragToggler::new(None, Some((keyboard::Modifiers::SHIFT, mouse::Button::Left))),
+                DragToggler::new(
+                    None,
+                    Some((keyboard::Modifiers::SHIFT, mouse::Button::Left)),
+                ),
             ))),
             corner_select_toggler: Some(Box::new(FillToggler::new(
                 DragToggler::new(Some(mouse::Button::Right), None),
-                DragToggler::new(None, Some((keyboard::Modifiers::SHIFT, mouse::Button::Right))),
+                DragToggler::new(
+                    None,
+                    Some((keyboard::Modifiers::SHIFT, mouse::Button::Right)),
+                ),
             ))),
             on_corner_select,
             on_occupancy_change,
@@ -111,14 +118,17 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
 
     fn toggle(&mut self, p: iced::Point) -> bool {
         if let Some(cell_toggler) = &self.cell_toggler {
-            let cell = Cell::from_point([p.x as f64, p.y as f64].into(), self.occupancy.grid().cell_size());
+            let cell = Cell::from_point(
+                [p.x as f64, p.y as f64].into(),
+                self.occupancy.grid().cell_size(),
+            );
             match cell_toggler.state() {
                 Toggle::On => {
                     return self.occupancy.change_cells(&[(cell, true)].into());
-                },
+                }
                 Toggle::Off => {
                     return self.occupancy.change_cells(&[(cell, false)].into());
-                },
+                }
                 Toggle::NoChange => {
                     return false;
                 }
@@ -157,7 +167,6 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         event: Event,
         cursor: Cursor,
     ) -> (SpatialCache, event::Status, Option<Message>) {
-
         if let Some(cell_toggler) = &mut self.cell_toggler {
             cell_toggler.toggle(event);
         }
@@ -167,7 +176,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
                 return (
                     SpatialCache::Refresh,
                     event::Status::Captured,
-                    self.on_occupancy_change.as_ref().map(|x| x())
+                    self.on_occupancy_change.as_ref().map(|x| x()),
                 );
             }
 
@@ -180,19 +189,19 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
                                 return (
                                     SpatialCache::Unchanged,
                                     event::Status::Captured,
-                                    Some(on_corner_select(cell, true))
+                                    Some(on_corner_select(cell, true)),
                                 );
                             }
-                        },
+                        }
                         Toggle::Off => {
                             if let Some(cell) = self.find_closest(p) {
                                 return (
                                     SpatialCache::Unchanged,
                                     event::Status::Captured,
-                                    Some(on_corner_select(cell, false))
+                                    Some(on_corner_select(cell, false)),
                                 );
                             }
-                        },
+                        }
                         Toggle::NoChange => {
                             // Do nothing
                         }
@@ -204,12 +213,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         (SpatialCache::Unchanged, event::Status::Ignored, None)
     }
 
-    fn draw_in_space(
-        &self,
-        frame: &mut Frame,
-        _: Rectangle,
-        _: Cursor
-    ) {
+    fn draw_in_space(&self, frame: &mut Frame, _: Rectangle, _: Cursor) {
         let cell_size = self.occupancy.grid().cell_size();
         let robot_radius = self.occupancy.agent_radius() as f32;
         for cell in self.occupancy.grid().occupied_cells() {
@@ -224,7 +228,9 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         if self.show_visibility_graph {
             for (cell, _) in self.occupancy.iter_points() {
                 let p = cell.to_center_point(cell_size);
-                let color = self.special_visibility_color.get(cell)
+                let color = self
+                    .special_visibility_color
+                    .get(cell)
                     .unwrap_or(&self.default_visibility_color);
 
                 frame.fill(
@@ -241,11 +247,11 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
                         [p_i.x as f32, p_i.y as f32].into(),
                         [p_j.x as f32, p_j.y as f32].into(),
                     ),
-                    Stroke{
+                    Stroke {
                         color: self.default_visibility_color,
                         width: 5_f32,
                         ..Default::default()
-                    }
+                    },
                 );
 
                 // if self.show_details {
@@ -321,7 +327,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         &self,
         hud: &'a mut spatial_canvas::SpatialHUD<'b>,
         bound: Rectangle,
-        _: Cursor
+        _: Cursor,
     ) {
         if !self.show_details {
             return;
@@ -334,12 +340,9 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
             let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
 
             if bound.contains(p) {
-                hud.at(
-                    p,
-                    |frame| {
-                        frame.fill_text(format!("({}, {})", cell.x, cell.y).to_string());
-                    }
-                );
+                hud.at(p, |frame| {
+                    frame.fill_text(format!("({}, {})", cell.x, cell.y).to_string());
+                });
             }
         }
     }

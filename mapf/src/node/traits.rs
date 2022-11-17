@@ -15,13 +15,13 @@
  *
 */
 
-use std::hash::Hash;
-use std::sync::Arc;
-use std::ops::Add;
-use std::cmp::Ord;
-use std::fmt::Debug;
 use num::traits::Zero;
+use std::cmp::Ord;
 use std::cmp::Ordering;
+use std::fmt::Debug;
+use std::hash::Hash;
+use std::ops::Add;
+use std::sync::Arc;
 use time_point::TimePoint;
 
 /// A trait for nodes that are used by path search algorithms. The expectation
@@ -41,8 +41,8 @@ pub trait Agent<State, Action>: PathSearch {
 }
 
 /// A trait that describes what is needed to define a cost.
-pub trait Cost: Ord + Add<Output=Self> + Sized + Copy + Zero + Debug { }
-impl<T: Ord + Add<Output=Self> + Sized + Copy + Zero + Debug> Cost for T { }
+pub trait Cost: Ord + Add<Output = Self> + Sized + Copy + Zero + Debug {}
+impl<T: Ord + Add<Output = Self> + Sized + Copy + Zero + Debug> Cost for T {}
 
 /// A trait for nodes that have a cost associated with them.
 pub trait Weighted: Sized {
@@ -56,7 +56,6 @@ pub trait Weighted: Sized {
 
 /// A subset of Node which has an informed estimate of how far it is from its goal
 pub trait Informed: Weighted {
-
     /// Get the estimate of the remaining cost from the goal
     fn remaining_cost_estimate(&self) -> Self::Cost;
 
@@ -81,19 +80,18 @@ pub trait Timed {
 pub trait Reversible: PartialKeyed {
     /// The reversed type of this Node. Its key type must match the key type of
     /// the forward node so that they can be compared against each other.
-    type Reverse: PartialKeyed<Key=<Self as PartialKeyed>::Key>;
+    type Reverse: PartialKeyed<Key = <Self as PartialKeyed>::Key>;
 }
 
 pub type ReverseOf<N> = <N as Reversible>::Reverse;
 
 /// The set of traits required for a Key
-pub trait Key: Hash + Eq + Clone + Debug + Send + Sync + 'static { }
-impl<T: Hash + Eq + Clone + Debug + Send + Sync + 'static> Key for T { }
+pub trait Key: Hash + Eq + Clone + Debug + Send + Sync + 'static {}
+impl<T: Hash + Eq + Clone + Debug + Send + Sync + 'static> Key for T {}
 
 /// A trait for nodes that can sometimes provide a unique key but other times
 /// cannot.
 pub trait PartialKeyed {
-
     type Key: Key;
 
     /// Attempt to get a key that uniquely identifies the state of this node.
@@ -124,7 +122,7 @@ impl<T: Key> PartialKeyed for T {
 }
 
 /// If an object is itself a Key then it can be considered Keyed.
-impl<T: Key> Keyed for T { }
+impl<T: Key> Keyed for T {}
 
 pub struct CostCmp<N: Weighted>(pub Arc<N>);
 
@@ -146,7 +144,7 @@ impl<N: Weighted> PartialEq for CostCmp<N> {
     }
 }
 
-impl<N: Weighted> Eq for CostCmp<N> { }
+impl<N: Weighted> Eq for CostCmp<N> {}
 
 #[derive(Debug)]
 pub struct TotalCostEstimateCmp<N: Informed>(pub Arc<N>);
@@ -159,23 +157,32 @@ impl<N: Informed> Clone for TotalCostEstimateCmp<N> {
 
 impl<N: Informed> Ord for TotalCostEstimateCmp<N> {
     fn cmp(&self, other: &Self) -> Ordering {
-        return self.0.total_cost_estimate().cmp(&other.0.total_cost_estimate());
+        return self
+            .0
+            .total_cost_estimate()
+            .cmp(&other.0.total_cost_estimate());
     }
 }
 
 impl<N: Informed> PartialOrd for TotalCostEstimateCmp<N> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        return self.0.total_cost_estimate().partial_cmp(&other.0.total_cost_estimate());
+        return self
+            .0
+            .total_cost_estimate()
+            .partial_cmp(&other.0.total_cost_estimate());
     }
 }
 
 impl<N: Informed> PartialEq for TotalCostEstimateCmp<N> {
     fn eq(&self, other: &Self) -> bool {
-        return self.0.total_cost_estimate().eq(&other.0.total_cost_estimate());
+        return self
+            .0
+            .total_cost_estimate()
+            .eq(&other.0.total_cost_estimate());
     }
 }
 
-impl<N: Informed> Eq for TotalCostEstimateCmp<N> { }
+impl<N: Informed> Eq for TotalCostEstimateCmp<N> {}
 
 pub type KeyOf<N> = <N as PartialKeyed>::Key;
 pub type CostOf<N> = <N as Weighted>::Cost;

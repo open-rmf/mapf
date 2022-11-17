@@ -15,13 +15,13 @@
  *
 */
 
-use time_point::{TimePoint, Duration};
-use crate::{
-    motion::{self, timed, extrapolator, Interpolation, InterpError, Extrapolator, se2},
-    error::NoError,
-};
 use super::{Position, Velocity};
+use crate::{
+    error::NoError,
+    motion::{self, extrapolator, se2, timed, Extrapolator, InterpError, Interpolation},
+};
 use arrayvec::ArrayVec;
+use time_point::{Duration, TimePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -41,10 +41,10 @@ impl timed::Timed for Waypoint {
 
 impl Waypoint {
     pub fn new(time: TimePoint, x: f64, y: f64) -> Self {
-        return Waypoint{
+        return Waypoint {
             time,
             position: Position::new(x, y),
-        }
+        };
     }
 }
 
@@ -60,11 +60,14 @@ pub struct Motion {
 }
 
 impl Motion {
-
     fn new(initial_wp: Waypoint, final_wp: Waypoint) -> Self {
         let dx = final_wp.position - initial_wp.position;
         let dt = (final_wp.time - initial_wp.time).as_secs_f64();
-        Self{initial_wp, final_wp, v: dx/dt}
+        Self {
+            initial_wp,
+            final_wp,
+            v: dx / dt,
+        }
     }
 
     pub fn in_range(&self, time: &TimePoint) -> Result<(), InterpError> {
@@ -84,7 +87,7 @@ impl crate::motion::Motion<Position, Velocity> for Motion {
     fn compute_position(&self, time: &TimePoint) -> Result<Position, InterpError> {
         self.in_range(time)?;
         let delta_t = (*time - self.initial_wp.time).as_secs_f64();
-        Ok(self.initial_wp.position + self.v*delta_t)
+        Ok(self.initial_wp.position + self.v * delta_t)
     }
 
     fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError> {
@@ -114,7 +117,11 @@ impl LineFollow {
             return Err(());
         }
 
-        Ok(LineFollow{speed, direction: 1.0, distance_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD})
+        Ok(LineFollow {
+            speed,
+            direction: 1.0,
+            distance_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
+        })
     }
 
     pub fn set_speed(&mut self, value: f64) -> Result<(), ()> {
@@ -138,7 +145,7 @@ impl Extrapolator<Waypoint, Position> for LineFollow {
     fn extrapolate<'a>(
         &'a self,
         from_waypoint: &Waypoint,
-        to_target: &Position
+        to_target: &Position,
     ) -> Result<ArrayVec<Waypoint, 1>, Self::Error> {
         let dx = (to_target - from_waypoint.position).norm();
         if dx <= self.distance_threshold {
@@ -146,7 +153,11 @@ impl Extrapolator<Waypoint, Position> for LineFollow {
         }
 
         let t = Duration::from_secs_f64(self.direction * dx / self.speed) + from_waypoint.time;
-        Ok(ArrayVec::from_iter([Waypoint::new(t, to_target.x, to_target.y)]))
+        Ok(ArrayVec::from_iter([Waypoint::new(
+            t,
+            to_target.x,
+            to_target.y,
+        )]))
     }
 }
 
@@ -155,7 +166,7 @@ impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
     type Error = NoError;
 
     fn reverse(&self) -> Result<Self::Reverse, NoError> {
-        Ok(Self{
+        Ok(Self {
             speed: self.speed,
             direction: -1.0 * self.direction,
             distance_threshold: self.distance_threshold,
@@ -166,15 +177,15 @@ impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
 impl From<&se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
     fn from(other: &se2::timed_position::DifferentialDriveLineFollow) -> Self {
         LineFollow::new(other.translational_speed())
-        .expect("corrupt speed in DifferentialDriveLineFollow")
+            .expect("corrupt speed in DifferentialDriveLineFollow")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use motion::Motion;
     use approx::assert_relative_eq;
+    use motion::Motion;
 
     #[test]
     fn test_interpolation() {
@@ -184,14 +195,14 @@ mod tests {
         let wp1 = Waypoint::new(t1, 1.0, 10.0);
 
         let motion = wp0.interpolate(&wp1);
-        let t = (t1 - t0)/2_f64 + t0;
+        let t = (t1 - t0) / 2_f64 + t0;
         let p = motion.compute_position(&t).ok().unwrap();
         assert_relative_eq!(p[0], 1_f64, max_relative = 0.001);
         assert_relative_eq!(p[1], 7.5_f64, max_relative = 0.001);
 
         let v = motion.compute_velocity(&t).ok().unwrap();
         assert_relative_eq!(v[0], 0_f64, max_relative = 0.001);
-        assert_relative_eq!(v[1], 5.0/2.0, max_relative = 0.001);
+        assert_relative_eq!(v[1], 5.0 / 2.0, max_relative = 0.001);
     }
 
     #[test]
@@ -200,26 +211,23 @@ mod tests {
         let wp0 = Waypoint::new(t0, 1.0, -3.0);
         let movement = LineFollow::new(2.0).expect("Failed to make LineFollow");
         let p_target = Position::new(1.0, 3.0);
-        let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
+        let waypoints = movement
+            .extrapolate(&wp0, &p_target)
+            .expect("Failed to extrapolate");
         assert_eq!(waypoints.len(), 1);
         assert_relative_eq!(
             waypoints.last().unwrap().time.as_secs_f64(),
-            (t0 + Duration::from_secs_f64(6.0/2.0)).as_secs_f64()
+            (t0 + Duration::from_secs_f64(6.0 / 2.0)).as_secs_f64()
         );
 
-        assert_relative_eq!(
-            waypoints.last().unwrap().position[0],
-            p_target[0]
-        );
+        assert_relative_eq!(waypoints.last().unwrap().position[0], p_target[0]);
 
-        assert_relative_eq!(
-            waypoints.last().unwrap().position[1],
-            p_target[1]
-        );
+        assert_relative_eq!(waypoints.last().unwrap().position[1], p_target[1]);
 
         let trajectory = motion::r2::LinearTrajectory::from_iter(
-            [wp0].into_iter().chain(waypoints.iter().map(|wp| *wp))
-        ).expect("Failed to create trajectory");
+            [wp0].into_iter().chain(waypoints.iter().map(|wp| *wp)),
+        )
+        .expect("Failed to create trajectory");
         assert_eq!(trajectory.len(), 2);
     }
 }

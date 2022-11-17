@@ -16,29 +16,28 @@
 */
 
 use crate::{
-    Trace,
     algorithm::{self, Status},
-    expander::{Expander, Targeted, InitTargeted, Solvable, Closable, Goal, CostOf, InitTargetedErrorOf, ExpansionErrorOf, SolveErrorOf},
-    node::{Informed, TotalCostEstimateCmp as NodeCmp, ClosedSet, CloseResult, ClosedStatus},
     error::NoError,
+    expander::{
+        Closable, CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, InitTargetedErrorOf,
+        Solvable, SolveErrorOf, Targeted,
+    },
+    node::{CloseResult, ClosedSet, ClosedStatus, Informed, TotalCostEstimateCmp as NodeCmp},
+    Trace,
 };
-use std::{
-    collections::BinaryHeap,
-    sync::Arc,
-    cmp::Reverse,
-};
+use std::{cmp::Reverse, collections::BinaryHeap, sync::Arc};
 
 pub struct Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable
+    E: Expander<Node = N> + Closable,
 {
     closed_set: <E as Closable>::ClosedSet,
     queue: BinaryHeap<Reverse<NodeCmp<N>>>,
     expander: Arc<E>,
 }
 
-impl<N: Informed, E: Expander<Node=N> + Closable> Memory<N, E> {
+impl<N: Informed, E: Expander<Node = N> + Closable> Memory<N, E> {
     pub fn queue(&self) -> &BinaryHeap<Reverse<NodeCmp<N>>> {
         &self.queue
     }
@@ -47,7 +46,7 @@ impl<N: Informed, E: Expander<Node=N> + Closable> Memory<N, E> {
 impl<N, E> algorithm::Memory for Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable,
+    E: Expander<Node = N> + Closable,
 {
     fn node_count(&self) -> usize {
         return self.queue.len();
@@ -57,10 +56,10 @@ where
 impl<N, E> algorithm::WeightSorted<E> for Memory<N, E>
 where
     N: Informed,
-    E: Expander<Node=N> + Closable,
+    E: Expander<Node = N> + Closable,
 {
     fn top_cost_estimate(&self) -> Option<CostOf<E>> {
-        self.queue.peek().map(|x| x.0.0.total_cost_estimate())
+        self.queue.peek().map(|x| x.0 .0.total_cost_estimate())
     }
 }
 
@@ -70,7 +69,7 @@ pub struct Algorithm;
 impl<N, E> algorithm::Algorithm<E> for Algorithm
 where
     N: Informed,
-    E: Expander<Node=N> + Closable + Solvable,
+    E: Expander<Node = N> + Closable + Solvable,
 {
     type Memory = Memory<N, E>;
     type InitError = NoError;
@@ -81,9 +80,11 @@ where
         expander: Arc<E>,
         start: &S,
         goal: &G,
-        tracker: &mut T
+        tracker: &mut T,
     ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G> {
+    where
+        E: InitTargeted<S, G>,
+    {
         let mut queue = BinaryHeap::default();
         for node in expander.start(start, goal) {
             let node = node.map_err(algorithm::InitError::Expander)?;
@@ -91,7 +92,7 @@ where
             queue.push(Reverse(NodeCmp(node)));
         }
 
-        return Ok(Memory{
+        return Ok(Memory {
             closed_set: E::ClosedSet::default(),
             queue,
             expander,
@@ -103,13 +104,20 @@ where
         memory: &mut Self::Memory,
         goal: &G,
         tracker: &mut T,
-    ) -> Result<Status<E::Solution>, algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
-    where E: Targeted<G> {
-
-        if let Some(top) = memory.queue.pop().map(|x| x.0.0) {
+    ) -> Result<
+        Status<E::Solution>,
+        algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>,
+    >
+    where
+        E: Targeted<G>,
+    {
+        if let Some(top) = memory.queue.pop().map(|x| x.0 .0) {
             if goal.is_satisfied(&top) {
                 tracker.solution_found_from(&top);
-                let solution = memory.expander.make_solution(&top).map_err(algorithm::StepError::Solve)?;
+                let solution = memory
+                    .expander
+                    .make_solution(&top)
+                    .map_err(algorithm::StepError::Solve)?;
                 return Ok(Status::Solved(solution));
             }
 

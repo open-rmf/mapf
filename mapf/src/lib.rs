@@ -33,20 +33,19 @@ pub use heuristic::Heuristic;
 pub mod node;
 
 pub mod algorithm;
-pub use algorithm::{InitError, StepError, Algorithm};
+pub use algorithm::{Algorithm, InitError, StepError};
 
 pub mod trace;
 pub use trace::Trace;
 
 pub mod tree;
 
-pub mod motion;
 pub mod directed;
+pub mod motion;
 
 pub mod a_star;
 
-pub mod occupancy;
 pub mod error;
+pub mod occupancy;
 
 mod util;
-

@@ -15,9 +15,9 @@
  *
 */
 
-use std::collections::{hash_set, HashSet, hash_map, HashMap, BTreeSet, btree_map, BTreeMap};
-use super::{Point, Vector, Cell, Corner, CornerStatus, ConfirmedChanges, ChangedCorners, Grid};
-use super::util::{SearchF64, LineSegment};
+use super::util::{LineSegment, SearchF64};
+use super::{Cell, ChangedCorners, ConfirmedChanges, Corner, CornerStatus, Grid, Point, Vector};
+use std::collections::{btree_map, hash_map, hash_set, BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct SparseGrid {
@@ -30,7 +30,7 @@ pub struct SparseGrid {
 impl SparseGrid {
     /// Create a new empty grid where nothing is occupied
     pub fn new(cell_size: f64) -> SparseGrid {
-        Self{
+        Self {
             cell_size,
             occupied: HashSet::default(),
             corners: HashMap::default(),
@@ -38,11 +38,7 @@ impl SparseGrid {
         }
     }
 
-    fn update_corner_status(
-        &mut self,
-        delta: &mut ChangedCorners,
-        cell: &Cell,
-    ) {
+    fn update_corner_status(&mut self, delta: &mut ChangedCorners, cell: &Cell) {
         if !self.is_occupied(cell) {
             if self.corners.remove(cell).is_some() {
                 delta.push((*cell, CornerStatus::default()));
@@ -78,7 +74,7 @@ impl SparseGrid {
                 hash_map::Entry::Vacant(entry) => {
                     entry.insert(status);
                     delta.push((*cell, status));
-                },
+                }
                 hash_map::Entry::Occupied(mut entry) => {
                     let existing_corner = entry.get_mut();
                     let changed = status != *existing_corner;
@@ -95,15 +91,10 @@ impl SparseGrid {
         }
     }
 
-    fn update_cell(
-        &mut self,
-        cell: &Cell,
-        occupied: bool,
-    ) -> bool {
+    fn update_cell(&mut self, cell: &Cell, occupied: bool) -> bool {
         if occupied {
             if self.occupied.insert(*cell) {
-                self.occupancy_map.entry(cell.x)
-                    .or_default().insert(cell.y);
+                self.occupancy_map.entry(cell.x).or_default().insert(cell.y);
 
                 return true;
             }
@@ -115,8 +106,12 @@ impl SparseGrid {
                     btree_map::Entry::Vacant(_) => {
                         // This should never be vacant if the cell value was in
                         // the set of occupied cells
-                        assert!(false, "Vacant column for cell {:?} that was in the occupied set", cell);
-                    },
+                        assert!(
+                            false,
+                            "Vacant column for cell {:?} that was in the occupied set",
+                            cell
+                        );
+                    }
                     btree_map::Entry::Occupied(mut entry) => {
                         let empty_column = {
                             let column = entry.get_mut();
@@ -142,16 +137,15 @@ impl SparseGrid {
 }
 
 impl Grid for SparseGrid {
-
     type OccupiedIterator<'a> = hash_set::Iter<'a, Cell>;
     type CornerIterator<'a> = hash_map::Iter<'a, Cell, CornerStatus>;
 
     /// Change whether a cell is occupied or not. Returns true if a change
     /// happened, otherwise returns false if the cell already had this value.
-    fn change_cells(&mut self, changes: &HashMap<Cell, bool>) -> (
-        ConfirmedChanges,
-        ChangedCorners,
-     ) {
+    fn change_cells(
+        &mut self,
+        changes: &HashMap<Cell, bool>,
+    ) -> (ConfirmedChanges, ChangedCorners) {
         let mut confirmed_changes = Vec::new();
         confirmed_changes.reserve(changes.len());
 
@@ -203,18 +197,18 @@ impl Grid for SparseGrid {
     }
 
     fn is_square_occupied(&self, p: Point, width: f64) -> Option<Cell> {
-        let d = width/2.0;
+        let d = width / 2.0;
         let delta = Vector::new(d, d);
         let min_p = p - delta;
         let max_p = p + delta;
         let min_cell = Cell::from_point(min_p, self.cell_size);
-        let max_cell = Cell{
-            x: (max_p.x/self.cell_size).ceil() as i64,
-            y: (max_p.y/self.cell_size).ceil() as i64,
+        let max_cell = Cell {
+            x: (max_p.x / self.cell_size).ceil() as i64,
+            y: (max_p.y / self.cell_size).ceil() as i64,
         };
 
-        for (i, column) in self.occupancy_map.range(min_cell.x .. max_cell.x) {
-            for j in column.range(min_cell.y .. max_cell.y) {
+        for (i, column) in self.occupancy_map.range(min_cell.x..max_cell.x) {
+            for j in column.range(min_cell.y..max_cell.y) {
                 return Some(Cell::new(*i, *j));
             }
         }
@@ -223,16 +217,16 @@ impl Grid for SparseGrid {
     }
 
     fn is_sweep_occupied(&self, p0: Point, p1: Point, width: f64) -> Option<Cell> {
-        let d = width/2.0;
+        let d = width / 2.0;
         let dist = (p1 - p0).norm();
         if dist < 1e-8 {
             return self.is_point_occupied(p0);
         }
 
-        let v = (p1 - p0)/dist;
+        let v = (p1 - p0) / dist;
         let n = Vector::new(-v.y, v.x);
 
-        let points = [p0 + n*d, p0 - n*d, p1 + n*d, p1 - n*d];
+        let points = [p0 + n * d, p0 - n * d, p1 + n * d, p1 - n * d];
 
         let lines = [
             LineSegment::new(points[0], points[1]),
@@ -241,19 +235,23 @@ impl Grid for SparseGrid {
             LineSegment::new(points[2], points[3]),
         ];
 
-        let cell_x_min = (
-            points.iter().min_by(
-                |p_l, p_r| p_l.x.partial_cmp(&p_r.x).unwrap()
-            ).unwrap().x / self.cell_size
-        ).floor() as i64;
+        let cell_x_min = (points
+            .iter()
+            .min_by(|p_l, p_r| p_l.x.partial_cmp(&p_r.x).unwrap())
+            .unwrap()
+            .x
+            / self.cell_size)
+            .floor() as i64;
 
-        let cell_x_max = (
-            points.iter().max_by(
-                |p_l, p_r| p_l.x.partial_cmp(&p_r.x).unwrap()
-            ).unwrap().x / self.cell_size
-        ).ceil() as i64;
+        let cell_x_max = (points
+            .iter()
+            .max_by(|p_l, p_r| p_l.x.partial_cmp(&p_r.x).unwrap())
+            .unwrap()
+            .x
+            / self.cell_size)
+            .ceil() as i64;
 
-        for (cell_x, column) in self.occupancy_map.range(cell_x_min .. cell_x_max) {
+        for (cell_x, column) in self.occupancy_map.range(cell_x_min..cell_x_max) {
             let x_low = *cell_x as f64 * self.cell_size;
             let x_high = (cell_x + 1) as f64 * self.cell_size;
             let mut y_low = SearchF64::new();
@@ -278,7 +276,7 @@ impl Grid for SparseGrid {
             if let (Some(y_low), Some(y_high)) = (y_low.value, y_high.value) {
                 let cell_y_min = (y_low / self.cell_size).floor() as i64;
                 let cell_y_max = (y_high / self.cell_size).ceil() as i64;
-                for cell_y in column.range(cell_y_min .. cell_y_max) {
+                for cell_y in column.range(cell_y_min..cell_y_max) {
                     return Some(Cell::new(*cell_x, *cell_y));
                 }
             }

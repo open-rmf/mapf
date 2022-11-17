@@ -16,11 +16,11 @@
 */
 
 use iced::{
+    canvas::{Cursor, Frame},
     Point, Rectangle,
-    canvas::{Frame, Cursor}
 };
 
-use super::{SpatialCanvasProgram, spatial_canvas::InclusionZone};
+use super::{spatial_canvas::InclusionZone, SpatialCanvasProgram};
 
 #[derive(Debug)]
 pub struct InfiniteGrid<Message> {
@@ -31,12 +31,11 @@ pub struct InfiniteGrid<Message> {
 }
 
 impl<Message> InfiniteGrid<Message> {
-
     pub fn new(cell_size: f32) -> Self {
-        Self{
+        Self {
             origin: Point::ORIGIN,
             cell_size,
-            width: cell_size/10_f32,
+            width: cell_size / 10_f32,
             _msg: Default::default(),
         }
     }
@@ -47,7 +46,7 @@ impl<Message> InfiniteGrid<Message> {
         origin_v: f32,
         v_min: f32,
         v_max: f32,
-        f: impl Fn(f32, &mut Frame)
+        f: impl Fn(f32, &mut Frame),
     ) {
         let mut v = origin_v;
         while v >= v_min {
@@ -70,39 +69,28 @@ impl<Message> InfiniteGrid<Message> {
 }
 
 impl<Message: std::fmt::Debug> SpatialCanvasProgram<Message> for InfiniteGrid<Message> {
-    fn draw_in_space(
-        &self,
-        frame: &mut Frame,
-        spatial_bounds: Rectangle,
-        _: Cursor
-    ) {
+    fn draw_in_space(&self, frame: &mut Frame, spatial_bounds: Rectangle, _: Cursor) {
         let x_min = spatial_bounds.x;
         let x_max = spatial_bounds.x + spatial_bounds.width;
         let y_min = spatial_bounds.y;
         let y_max = spatial_bounds.y + spatial_bounds.height;
         let line_color = iced::Color::from_rgb8(200, 204, 213);
 
-        self.traverse(
-            frame, self.origin.x, x_min, x_max,
-            |x, frame| {
-                frame.fill_rectangle(
-                    iced::Point::new(x - self.width/2.0, y_min),
-                    iced::Size::new(self.width, y_max - y_min),
-                    line_color,
-                );
-            }
-        );
+        self.traverse(frame, self.origin.x, x_min, x_max, |x, frame| {
+            frame.fill_rectangle(
+                iced::Point::new(x - self.width / 2.0, y_min),
+                iced::Size::new(self.width, y_max - y_min),
+                line_color,
+            );
+        });
 
-        self.traverse(
-            frame, self.origin.y, y_min, y_max,
-            |y, frame| {
-                frame.fill_rectangle(
-                    iced::Point::new(x_min, y - self.width/2.0),
-                    iced::Size::new(x_max - x_min, self.width),
-                    line_color,
-                );
-            }
-        );
+        self.traverse(frame, self.origin.y, y_min, y_max, |y, frame| {
+            frame.fill_rectangle(
+                iced::Point::new(x_min, y - self.width / 2.0),
+                iced::Size::new(x_max - x_min, self.width),
+                line_color,
+            );
+        });
     }
 
     fn estimate_bounds(&self) -> InclusionZone {

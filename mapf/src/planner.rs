@@ -15,17 +15,14 @@
  *
 */
 
-use std::{
-    sync::Arc,
-    cell::RefCell,
-};
 use crate::{
-    progress::{self, Progress, Options, BasicOptions},
-    expander::{Goal, InitTargeted, Targeted, Solvable, InitTargetedErrorOf},
     algorithm::{Algorithm, InitError},
-    trace::{Trace, NoTrace},
+    expander::{Goal, InitTargeted, InitTargetedErrorOf, Solvable, Targeted},
+    progress::{self, BasicOptions, Options, Progress},
+    trace::{NoTrace, Trace},
 };
 use anyhow;
+use std::{cell::RefCell, sync::Arc};
 
 /// The Planner class manages an (algorithm, expander) pair to generate plans.
 /// Splitting the implementation of the Planner into algorithm and expander
@@ -34,8 +31,7 @@ use anyhow;
 /// The Planner::plan(start, goal) function will create a Progress object which
 /// manages the planning progress and allows you to tweak planning settings
 /// during runtime as needed.
-pub struct Planner<E: Solvable, A: Algorithm<E>, O: Options<E, A> = BasicOptions>   {
-
+pub struct Planner<E: Solvable, A: Algorithm<E>, O: Options<E, A> = BasicOptions> {
     /// The object which determines the search pattern
     algorithm: Arc<A>,
 
@@ -47,12 +43,14 @@ pub struct Planner<E: Solvable, A: Algorithm<E>, O: Options<E, A> = BasicOptions
 }
 
 impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
-
     /// Construct a new planner with the given configuration and a set of
     /// default options.
     pub fn new(expander: Arc<E>) -> Self
-    where A: Default, O: Default {
-        Self{
+    where
+        A: Default,
+        O: Default,
+    {
+        Self {
             algorithm: Arc::new(A::default()),
             expander,
             default_options: Default::default(),
@@ -62,21 +60,37 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
     /// If the algorithm being used is configurable, this function can be used
     /// to configure its settings while constructing the planner.
     pub fn from_algorithm(expander: Arc<E>, algorithm: Arc<A>) -> Self
-    where O: Default {
-        Self{algorithm, expander, default_options: Default::default()}
+    where
+        O: Default,
+    {
+        Self {
+            algorithm,
+            expander,
+            default_options: Default::default(),
+        }
     }
 
     /// If you want custom default options, this function can be used to set
     /// those options while constructing the planner.
     pub fn from_options(expander: Arc<E>, default_options: O) -> Self
-    where A: Default {
-        Self{algorithm: Arc::new(A::default()), expander, default_options}
+    where
+        A: Default,
+    {
+        Self {
+            algorithm: Arc::new(A::default()),
+            expander,
+            default_options,
+        }
     }
 
     /// If every part of the planner should be customized, use this to construct
     /// it.
     pub fn from_parts(expander: Arc<E>, algorithm: Arc<A>, default_options: O) -> Self {
-        Self{algorithm, expander, default_options}
+        Self {
+            algorithm,
+            expander,
+            default_options,
+        }
     }
 
     /// Begin planning from the start conditions to the goal conditions.
@@ -85,7 +99,9 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         start: &S,
         goal: G,
     ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G> + Targeted<G> {
+    where
+        E: InitTargeted<S, G> + Targeted<G>,
+    {
         self.plan_with_options(start, goal, self.default_options.clone())
     }
 
@@ -95,13 +111,21 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         goal: G,
         options: O,
     ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G> + Targeted<G> {
+    where
+        E: InitTargeted<S, G> + Targeted<G>,
+    {
         let mut trace = NoTrace::default();
-        let memory = self.algorithm.initialize(
-            self.expander.clone(), &start, &goal, &mut trace
-        )?;
+        let memory = self
+            .algorithm
+            .initialize(self.expander.clone(), &start, &goal, &mut trace)?;
 
-        Ok(Progress::new(memory, self.algorithm.clone(), options, goal, trace))
+        Ok(Progress::new(
+            memory,
+            self.algorithm.clone(),
+            options,
+            goal,
+            trace,
+        ))
     }
 
     /// Perform a planning job while tracking the behavior, usually for debugging purposes.
@@ -111,7 +135,9 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         goal: G,
         trace: T,
     ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G> + Targeted<G> {
+    where
+        E: InitTargeted<S, G> + Targeted<G>,
+    {
         self.trace_with_options(start, goal, self.default_options.clone(), trace)
     }
 
@@ -122,12 +148,20 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         options: O,
         mut trace: T,
     ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G> + Targeted<G> {
-        let memory = self.algorithm.initialize(
-            self.expander.clone(), &start, &goal, &mut trace
-        )?;
+    where
+        E: InitTargeted<S, G> + Targeted<G>,
+    {
+        let memory = self
+            .algorithm
+            .initialize(self.expander.clone(), &start, &goal, &mut trace)?;
 
-        Ok(Progress::new(memory, self.algorithm.clone(), options, goal, trace))
+        Ok(Progress::new(
+            memory,
+            self.algorithm.clone(),
+            options,
+            goal,
+            trace,
+        ))
     }
 
     pub fn into_abstract<S, G>(self) -> Abstract<S, G, E::Solution>
@@ -137,7 +171,9 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
         O: 'static,
         G: Goal<E::Node> + 'static,
     {
-        Abstract{implementation: Box::new(RefCell::new(self))}
+        Abstract {
+            implementation: Box::new(RefCell::new(self)),
+        }
     }
 }
 
@@ -149,11 +185,7 @@ pub fn make_planner<E: Solvable, A: Algorithm<E>>(
 }
 
 pub trait Interface<S, G, Solution> {
-    fn plan(
-        &self,
-        start: &S,
-        goal: G,
-    ) -> anyhow::Result<progress::Abstract<Solution>>;
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<Solution>>;
 }
 
 impl<E, A, O, S, G> Interface<S, G, E::Solution> for Planner<E, A, O>
@@ -163,14 +195,10 @@ where
     O: Options<E, A> + 'static,
     G: Goal<E::Node> + 'static,
 {
-    fn plan(
-        &self,
-        start: &S,
-        goal: G,
-    ) -> anyhow::Result<progress::Abstract<E::Solution>> {
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<E::Solution>> {
         Planner::plan(self, start, goal)
-        .map(Progress::into_abstract)
-        .map_err(anyhow::Error::new)
+            .map(Progress::into_abstract)
+            .map_err(anyhow::Error::new)
     }
 }
 
@@ -179,11 +207,7 @@ pub struct Abstract<S, G, Solution> {
 }
 
 impl<S, G, Solution> Interface<S, G, Solution> for Abstract<S, G, Solution> {
-    fn plan(
-        &self,
-        start: &S,
-        goal: G,
-    ) -> anyhow::Result<progress::Abstract<Solution>> {
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<Solution>> {
         self.implementation.borrow_mut().plan(start, goal)
     }
 }
@@ -193,10 +217,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        node::{self, traits::*},
-        expander::{Expander, InitTargeted, Targeted, Solvable, Closable, Goal, CostOf, ExpansionErrorOf},
-        algorithm::{WeightSorted, Memory, Status, StepError},
+        algorithm::{Memory, Status, StepError, WeightSorted},
         error::NoError,
+        expander::{
+            Closable, CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, Solvable, Targeted,
+        },
+        node::{self, traits::*},
     };
 
     struct CountingNode {
@@ -240,7 +266,7 @@ mod tests {
     struct CountingExpander;
 
     struct CountingGoal {
-        value: u64
+        value: u64,
     }
 
     impl Goal<CountingNode> for CountingGoal {
@@ -282,21 +308,20 @@ mod tests {
         fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialTargetedNodes<'a> {
             if *start <= goal.value {
                 return CountingExpansion {
-                    next_node: Some(
-                        Arc::new(
-                            CountingNode{
-                                value: *start,
-                                cost: 0u64,
-                                remaining_cost_estimate: goal.value - start,
-                                parent: None
-                            }
-                        )
-                    ),
+                    next_node: Some(Arc::new(CountingNode {
+                        value: *start,
+                        cost: 0u64,
+                        remaining_cost_estimate: goal.value - start,
+                        parent: None,
+                    })),
                     _ignore: Default::default(),
                 };
             }
 
-            return CountingExpansion{next_node: None, _ignore: Default::default()};
+            return CountingExpansion {
+                next_node: None,
+                _ignore: Default::default(),
+            };
         }
     }
 
@@ -310,22 +335,21 @@ mod tests {
             goal: &CountingGoal,
         ) -> Self::TargetedExpansion<'a> {
             if parent.value <= goal.value {
-                return CountingExpansion{
-                    next_node: Some(
-                        Arc::new(
-                            CountingNode{
-                                value: parent.value+1,
-                                cost: parent.cost+1,
-                                remaining_cost_estimate: goal.value - parent.value,
-                                parent: Some(parent.clone())
-                            }
-                        )
-                    ),
+                return CountingExpansion {
+                    next_node: Some(Arc::new(CountingNode {
+                        value: parent.value + 1,
+                        cost: parent.cost + 1,
+                        remaining_cost_estimate: goal.value - parent.value,
+                        parent: Some(parent.clone()),
+                    })),
                     _ignore: Default::default(),
                 };
             }
 
-            return CountingExpansion{next_node: None, _ignore: Default::default()};
+            return CountingExpansion {
+                next_node: None,
+                _ignore: Default::default(),
+            };
         }
     }
 
@@ -345,9 +369,9 @@ mod tests {
             }
 
             solution.reverse();
-            Ok(CountingSolution{
+            Ok(CountingSolution {
                 cost: solution_node.cost,
-                sequence: solution
+                sequence: solution,
             })
         }
     }
@@ -391,7 +415,9 @@ mod tests {
             goal: &G,
             trace: &mut T,
         ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
-        where E: InitTargeted<S, G> {
+        where
+            E: InitTargeted<S, G>,
+        {
             let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
             for node in expander.start(start, goal) {
                 let node = node.map_err(InitError::Expander)?;
@@ -399,21 +425,28 @@ mod tests {
                 queue.push(node);
             }
 
-            Ok(Self::Memory{expander, queue})
+            Ok(Self::Memory { expander, queue })
         }
 
         fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
             &self,
             memory: &mut Self::Memory,
             goal: &G,
-            tracker: &mut T
-        ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>>
-        where E: Targeted<G> {
+            tracker: &mut T,
+        ) -> Result<
+            Status<E::Solution>,
+            StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>,
+        >
+        where
+            E: Targeted<G>,
+        {
             let top_opt = memory.queue.pop();
             if let Some(top) = top_opt {
                 if goal.is_satisfied(&top) {
                     tracker.solution_found_from(&top);
-                    return memory.expander.make_solution(&top)
+                    return memory
+                        .expander
+                        .make_solution(&top)
                         .map(Status::Solved)
                         .map_err(StepError::Solve);
                 }
@@ -428,7 +461,6 @@ mod tests {
                 }
 
                 return Ok(Status::Incomplete);
-
             } else {
                 return Ok(Status::Impossible);
             }
@@ -439,10 +471,14 @@ mod tests {
 
     #[test]
     fn counting_expander_can_reach_a_higher_goal() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
         let start = 5;
         let goal = 10;
-        let result = planner.plan(&start, CountingGoal{value: goal}).unwrap().solve().unwrap();
+        let result = planner
+            .plan(&start, CountingGoal { value: goal })
+            .unwrap()
+            .solve()
+            .unwrap();
         assert!(matches!(result, Status::Solved(_)));
         if let Status::Solved(solution) = result {
             assert!(solution.sequence.len() == (goal - start + 1) as usize);
@@ -453,19 +489,23 @@ mod tests {
 
     #[test]
     fn counting_expander_finds_lower_goal_impossible() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
         let start = 10;
         let goal = 5;
-        let result = planner.plan(&start, CountingGoal{value: goal}).unwrap().solve().unwrap();
+        let result = planner
+            .plan(&start, CountingGoal { value: goal })
+            .unwrap()
+            .solve()
+            .unwrap();
         assert!(matches!(result, Status::Impossible));
     }
 
     #[test]
     fn planner_incomplete_after_insufficient_steps() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander{}));
+        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
         let start = 5;
         let goal = 10;
-        let mut progress = planner.plan(&start, CountingGoal{value: goal}).unwrap();
+        let mut progress = planner.plan(&start, CountingGoal { value: goal }).unwrap();
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));

@@ -15,16 +15,16 @@
  *
 */
 
-use crate::{
-    expander::traits::*,
-    error::Error,
-};
-use std::{
-    sync::Arc,
-    fmt::Debug,
-};
+use crate::{error::Error, expander::traits::*};
+use std::{fmt::Debug, sync::Arc};
 
-pub struct Closure<N, G: Goal<N>, Err: Debug, Exp: IntoIterator<Item=Result<Arc<N>, Err>>, F: Fn(&Arc<N>, &G) -> Exp> {
+pub struct Closure<
+    N,
+    G: Goal<N>,
+    Err: Debug,
+    Exp: IntoIterator<Item = Result<Arc<N>, Err>>,
+    F: Fn(&Arc<N>, &G) -> Exp,
+> {
     closure: F,
     _ignore: std::marker::PhantomData<(N, G, Err, Exp)>,
 }
@@ -33,11 +33,14 @@ impl<N, G, Err, Exp, F> Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
     Err: Debug,
-    Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
-    F: Fn(&Arc<N>, &G) -> Exp
+    Exp: IntoIterator<Item = Result<Arc<N>, Err>>,
+    F: Fn(&Arc<N>, &G) -> Exp,
 {
     pub fn new(closure: F) -> Self {
-        Self{closure, _ignore: Default::default()}
+        Self {
+            closure,
+            _ignore: Default::default(),
+        }
     }
 }
 
@@ -45,7 +48,7 @@ impl<N, G, Err, Exp, F> Expander for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
     Err: Debug,
-    Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
+    Exp: IntoIterator<Item = Result<Arc<N>, Err>>,
     F: Fn(&Arc<N>, &G) -> Exp,
 {
     type Node = N;
@@ -55,8 +58,8 @@ impl<N, G, Err, Exp, F> Targeted<G> for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
     Err: Error,
-    Exp: IntoIterator<Item=Result<Arc<N>, Err>>,
-    F: Fn(&Arc<N>, &G) -> Exp
+    Exp: IntoIterator<Item = Result<Arc<N>, Err>>,
+    F: Fn(&Arc<N>, &G) -> Exp,
 {
     type TargetedError = Err;
     type TargetedExpansion<'a> = Exp where Self: 'a;

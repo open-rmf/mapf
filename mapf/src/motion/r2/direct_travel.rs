@@ -16,20 +16,19 @@
 */
 
 use crate::{
-    node::Keyed,
-    motion::{
-        Extrapolator, TimePoint,
-        trajectory::CostCalculator,
-        r2,
-    },
-    heuristic::Heuristic,
     graph::Graph,
+    heuristic::Heuristic,
+    motion::{r2, trajectory::CostCalculator, Extrapolator, TimePoint},
+    node::Keyed,
 };
 use num::Zero;
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct DirectTravelHeuristic<G: Graph<Vertex=r2::Position>, C: CostCalculator<r2::timed_position::Waypoint>> {
+pub struct DirectTravelHeuristic<
+    G: Graph<Vertex = r2::Position>,
+    C: CostCalculator<r2::timed_position::Waypoint>,
+> {
     pub graph: Arc<G>,
     pub cost_calculator: Arc<C>,
     pub extrapolator: r2::timed_position::LineFollow,
@@ -37,12 +36,15 @@ pub struct DirectTravelHeuristic<G: Graph<Vertex=r2::Position>, C: CostCalculato
 
 impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for DirectTravelHeuristic<G, C>
 where
-    G: Graph<Vertex=r2::Position>,
+    G: Graph<Vertex = r2::Position>,
     C: CostCalculator<r2::timed_position::Waypoint>,
     S: Into<G::Key> + Clone,
-    Goal: Keyed<Key=G::Key>,
+    Goal: Keyed<Key = G::Key>,
 {
-    type Error = <r2::timed_position::LineFollow as Extrapolator<r2::timed_position::Waypoint, r2::Position>>::Error;
+    type Error = <r2::timed_position::LineFollow as Extrapolator<
+        r2::timed_position::Waypoint,
+        r2::Position,
+    >>::Error;
 
     fn estimate_cost(
         &self,
@@ -67,12 +69,14 @@ where
             }
         };
 
-        let wp0 = r2::timed_position::Waypoint{
+        let wp0 = r2::timed_position::Waypoint {
             time: TimePoint::zero(),
             position: p0,
         };
 
-        let cost = self.extrapolator.make_trajectory(wp0, &p1)?
+        let cost = self
+            .extrapolator
+            .make_trajectory(wp0, &p1)?
             .map(|t| self.cost_calculator.compute_cost(&t))
             .unwrap_or(C::Cost::zero());
         Ok(Some(cost))

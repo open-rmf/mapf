@@ -16,14 +16,14 @@
 */
 
 use crate::{
-    node::Informed,
-    expander::traits::{Expander, Targeted, Goal},
-    motion::{
-        Duration, Waypoint, Trajectory,
-        trajectory::CostCalculator,
-        movable::{Movable, ArcMovable},
-    },
     error::NoError,
+    expander::traits::{Expander, Goal, Targeted},
+    motion::{
+        movable::{ArcMovable, Movable},
+        trajectory::CostCalculator,
+        Duration, Trajectory, Waypoint,
+    },
+    node::Informed,
 };
 use std::sync::Arc;
 
@@ -37,10 +37,10 @@ pub struct Hold<W: Waypoint, C: CostCalculator<W>, N> {
 
 impl<W: Waypoint, C: CostCalculator<W>, N: Movable<W>> Hold<W, C, N> {
     pub fn new(cost_calculator: Arc<C>) -> Self {
-        Self{
+        Self {
             cost_calculator,
             duration: Duration::from_secs(DEFAULT_HOLD_SECS),
-            _ignore: Default::default()
+            _ignore: Default::default(),
         }
     }
 
@@ -58,15 +58,13 @@ impl<W: Waypoint, C: CostCalculator<W>, N> Expander for Hold<W, C, N> {
     type Node = N;
 }
 
-impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, G: Goal<N>> Targeted<G> for Hold<W, C, N> {
+impl<W: Waypoint, C: CostCalculator<W, Cost = N::Cost>, N: Informed + Movable<W>, G: Goal<N>>
+    Targeted<G> for Hold<W, C, N>
+{
     type TargetedError = NoError;
     type TargetedExpansion<'a> = impl Iterator<Item=Result<Arc<N>, NoError>> where W: 'a, N: 'a, C: 'a, G: 'a ;
 
-    fn expand<'a>(
-        &'a self,
-        parent: &'a Arc<N>,
-        _: &'a G,
-    ) -> Self::TargetedExpansion<'a> {
+    fn expand<'a>(&'a self, parent: &'a Arc<N>, _: &'a G) -> Self::TargetedExpansion<'a> {
         // SAFETY: The value check on for_duration makes sure that duration is
         // always positive so the hold will always be valid.
         let until_time = *parent.state().time() + self.duration;
@@ -77,6 +75,7 @@ impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, 
             cost_from_parent,
             parent.remaining_cost_estimate(),
             Some(trajectory),
-        ))].into_iter()
+        ))]
+        .into_iter()
     }
 }

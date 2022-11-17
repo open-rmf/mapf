@@ -42,6 +42,8 @@ pub trait Backtrackable {
 impl<N: PathSearch> Backtrackable for Arc<N> {
     type Node = N;
     fn backtrack(&self) -> Backtrack<Self::Node> {
-        Backtrack{next_node: Some(self.clone())}
+        Backtrack {
+            next_node: Some(self.clone()),
+        }
     }
 }

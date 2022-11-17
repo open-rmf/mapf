@@ -15,17 +15,13 @@
  *
 */
 
-use std::{
-    sync::Arc,
-    ops::Fn,
-    cell::RefCell,
-};
 use anyhow;
+use std::{cell::RefCell, ops::Fn, sync::Arc};
 
 use crate::{
+    algorithm::{Algorithm, Memory, Status, StepError, WeightSorted},
+    expander::{CostOf, Expander, ExpansionErrorOf, Goal, Solvable, SolveErrorOf, Targeted},
     node::Weighted,
-    expander::{Goal, Expander, Targeted, Solvable, CostOf, ExpansionErrorOf, SolveErrorOf},
-    algorithm::{Algorithm, WeightSorted, Status, Memory, StepError},
     trace::Trace,
 };
 
@@ -55,26 +51,37 @@ where
     G: Goal<E::Node>,
     T: Trace<E::Node>,
 {
-    pub fn new(
-        memory: A::Memory,
-        algorithm: Arc<A>,
-        options: O,
-        goal: G,
-        trace: T,
-    ) -> Self {
-        Self{memory, algorithm, options, goal, trace}
+    pub fn new(memory: A::Memory, algorithm: Arc<A>, options: O, goal: G, trace: T) -> Self {
+        Self {
+            memory,
+            algorithm,
+            options,
+            goal,
+            trace,
+        }
     }
 
     pub fn into_abstract(self) -> Abstract<E::Solution>
-    where E: 'static, A: 'static, O: 'static, G: 'static, T: 'static {
-        Abstract{implementation: Box::new(RefCell::new(self))}
+    where
+        E: 'static,
+        A: 'static,
+        O: 'static,
+        G: 'static,
+        T: 'static,
+    {
+        Abstract {
+            implementation: Box::new(RefCell::new(self)),
+        }
     }
 
     /// Tell the planner to attempt to solve the problem. This will run the
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(&mut self) -> Result<Status<E::Solution>, StepError<A::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>> {
+    pub fn solve(
+        &mut self,
+    ) -> Result<Status<E::Solution>, StepError<A::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    {
         loop {
             if self.options.need_to_interrupt(self) {
                 return Ok(Status::Incomplete);
@@ -89,8 +96,13 @@ where
         }
     }
 
-    pub fn step(&mut self) -> Result<Status<E::Solution>, StepError<A::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>> {
-        return self.algorithm.step(&mut self.memory, &self.goal, &mut self.trace);
+    pub fn step(
+        &mut self,
+    ) -> Result<Status<E::Solution>, StepError<A::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
+    {
+        return self
+            .algorithm
+            .step(&mut self.memory, &self.goal, &mut self.trace);
     }
 
     pub fn memory(&self) -> &A::Memory {
@@ -117,7 +129,10 @@ impl<E: Solvable, A: Algorithm<E>, G, T: Trace<E::Node>> Progress<E, A, BasicOpt
 pub trait Options<E: Solvable, A: Algorithm<E>>: Clone {
     /// Check whether the current progress should be interrupted according to
     /// the current set of options.
-    fn need_to_interrupt<G, T: Trace<E::Node>>(&self, progress: &Progress<E, A, Self, G, T>) -> bool;
+    fn need_to_interrupt<G, T: Trace<E::Node>>(
+        &self,
+        progress: &Progress<E, A, Self, G, T>,
+    ) -> bool;
 }
 
 pub trait WithOptions<O> {
@@ -135,7 +150,7 @@ where
     A: Algorithm<E>,
     G: Goal<E::Node>,
     O: Options<E, A>,
-    T: Trace<E::Node>
+    T: Trace<E::Node>,
 {
     fn with_options(mut self, options: O) -> Self {
         self.options = options;
@@ -155,7 +170,7 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Interruption {
     Continue,
-    Stop
+    Stop,
 }
 
 /// Signature for an object that can interrupt the planner.
@@ -197,7 +212,10 @@ where
     E: Solvable,
     A: Algorithm<E>,
 {
-    fn need_to_interrupt<G, T: Trace<E::Node>>(&self, progress: &Progress<E, A, Self, G, T>) -> bool {
+    fn need_to_interrupt<G, T: Trace<E::Node>>(
+        &self,
+        progress: &Progress<E, A, Self, G, T>,
+    ) -> bool {
         self.internal_need_to_interrupt(&progress.memory)
     }
 }
@@ -292,7 +310,6 @@ where
 }
 
 pub struct WeightedOptions<E: Expander<Node: Weighted>> {
-
     /// The maximum total cost estimate that the top node can reach before
     /// the solve attempt quits.
     pub max_cost_estimate: Option<CostOf<E>>,
@@ -320,7 +337,10 @@ where
     E: Solvable<Node: Weighted>,
     A: Algorithm<E, Memory: WeightSorted<E>>,
 {
-    fn need_to_interrupt<G, T: Trace<E::Node>>(&self, progress: &Progress<E, A, Self, G, T>) -> bool {
+    fn need_to_interrupt<G, T: Trace<E::Node>>(
+        &self,
+        progress: &Progress<E, A, Self, G, T>,
+    ) -> bool {
         self.internal_need_to_interrupt(&progress.memory)
     }
 }
@@ -385,13 +405,16 @@ impl<E: Expander<Node: Weighted>> Default for WeightedOptions<E> {
         return Self {
             max_cost_estimate: None,
             basic: Default::default(),
-        }
+        };
     }
 }
 
 impl<E: Expander<Node: Weighted>> Clone for WeightedOptions<E> {
     fn clone(&self) -> Self {
-        Self { max_cost_estimate: self.max_cost_estimate, basic: self.basic.clone() }
+        Self {
+            max_cost_estimate: self.max_cost_estimate,
+            basic: self.basic.clone(),
+        }
     }
 }
 
@@ -440,12 +463,17 @@ where
     }
 }
 
-pub trait InterfaceWithOptions<Solution, Options>: Interface<Solution> + WithOptions<Options> { }
+pub trait InterfaceWithOptions<Solution, Options>:
+    Interface<Solution> + WithOptions<Options>
+{
+}
 
 /// Everything that implements Interface<Solution> and WithOptions<Options>
 /// automatically implements InterfaceWithOptions<Solution, Options>
 impl<Solution, Options, T: Interface<Solution> + WithOptions<Options>>
-InterfaceWithOptions<Solution, Options> for T { }
+    InterfaceWithOptions<Solution, Options> for T
+{
+}
 
 pub struct Abstract<Solution> {
     implementation: Box<RefCell<dyn Interface<Solution>>>,

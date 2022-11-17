@@ -15,13 +15,13 @@
  *
 */
 
-use time_point::TimePoint;
+use super::{Point, Position, Vector, Velocity};
 use crate::{
-    motion::{self, timed, Interpolation, InterpError, Extrapolator, r2},
     error::NoError,
+    motion::{self, r2, timed, Extrapolator, InterpError, Interpolation},
 };
-use super::{Position, Point, Vector, Velocity};
 use arrayvec::ArrayVec;
+use time_point::TimePoint;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -41,13 +41,10 @@ impl timed::Timed for Waypoint {
 
 impl Waypoint {
     pub fn new(time: TimePoint, x: f64, y: f64, yaw: f64) -> Self {
-        return Waypoint{
+        return Waypoint {
             time,
-            position: Position::new(
-                Vector::new(x, y),
-                yaw
-            )
-        }
+            position: Position::new(Vector::new(x, y), yaw),
+        };
     }
 }
 
@@ -58,7 +55,7 @@ impl motion::Waypoint for Waypoint {
 
 impl From<Waypoint> for r2::timed_position::Waypoint {
     fn from(se2_wp: Waypoint) -> Self {
-        r2::timed_position::Waypoint{
+        r2::timed_position::Waypoint {
             time: se2_wp.time,
             position: se2_wp.position.translation.vector.into(),
         }
@@ -90,7 +87,10 @@ impl motion::Motion<Position, Velocity> for Motion {
         self.in_time_range(time)?;
         let delta_t = (*time - self.initial_wp.time).as_secs_f64();
         let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
-        return Ok(self.initial_wp.position.lerp_slerp(&self.final_wp.position, delta_t/t_range));
+        return Ok(self
+            .initial_wp
+            .position
+            .lerp_slerp(&self.final_wp.position, delta_t / t_range));
     }
 
     fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError> {
@@ -101,17 +101,15 @@ impl motion::Motion<Position, Velocity> for Motion {
         let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
         let p0 = &self.initial_wp.position.translation.vector;
         let p1 = &self.final_wp.position.translation.vector;
-        let linear_v = (p1 - p0)/t_range;
+        let linear_v = (p1 - p0) / t_range;
 
         let r0 = &self.initial_wp.position.rotation;
         let r1 = &self.final_wp.position.rotation;
-        let angular_v = (r1/r0).angle()/t_range;
-        return Ok(
-            Velocity{
-                translational: linear_v,
-                rotational: angular_v,
-            }
-        );
+        let angular_v = (r1 / r0).angle() / t_range;
+        return Ok(Velocity {
+            translational: linear_v,
+            rotational: angular_v,
+        });
     }
 }
 
@@ -119,13 +117,12 @@ impl Interpolation<Position, Velocity> for Waypoint {
     type Motion = Motion;
 
     fn interpolate(&self, up_to: &Self) -> Self::Motion {
-        return Self::Motion{
+        return Self::Motion {
             initial_wp: self.clone(),
-            final_wp: up_to.clone()
-        }
+            final_wp: up_to.clone(),
+        };
     }
 }
-
 
 /// What kind of steering does the agent have
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -136,7 +133,7 @@ pub enum Steering {
 
     /// The agent has holonomic motion, meaning it can translate and rotate
     /// simultaneously and independently.
-    Holonomic
+    Holonomic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -157,12 +154,10 @@ pub struct DifferentialDriveLineFollow {
 }
 
 impl DifferentialDriveLineFollow {
-
     /// Make a new movement description. If one of the requested values is
     /// invalid, then an error will be returned. Make sure both values are
     /// greater than zero.
     pub fn new(translational_speed: f64, rotational_speed: f64) -> Result<Self, ()> {
-
         if translational_speed <= 0.0 {
             return Err(());
         }
@@ -176,7 +171,7 @@ impl DifferentialDriveLineFollow {
             rotational_speed,
             translational_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
             rotational_threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
-        })
+        });
     }
 
     pub fn set_translational_speed(&mut self, value: f64) -> Result<(), ()> {
@@ -250,31 +245,35 @@ impl DifferentialDriveLineFollow {
         let distance = delta_p.norm();
         if distance > self.translational_threshold {
             let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
-            let delta_yaw_abs = (approach_yaw / from_waypoint.position.rotation).angle().abs();
+            let delta_yaw_abs = (approach_yaw / from_waypoint.position.rotation)
+                .angle()
+                .abs();
             if delta_yaw_abs > self.rotational_threshold {
-                current_time += time_point::Duration::from_secs_f64(delta_yaw_abs/self.rotational_speed);
+                current_time +=
+                    time_point::Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
                 output.push(Waypoint {
                     time: current_time,
                     position: Position::from_parts(
                         from_waypoint.position.translation,
-                        approach_yaw
-                    )
+                        approach_yaw,
+                    ),
                 });
             }
 
             current_yaw = approach_yaw;
-            current_time += time_point::Duration::from_secs_f64(distance/self.translational_speed);
-            output.push(Waypoint{
+            current_time +=
+                time_point::Duration::from_secs_f64(distance / self.translational_speed);
+            output.push(Waypoint {
                 time: current_time,
-                position: Position::new(p1.coords, approach_yaw.angle())
+                position: Position::new(p1.coords, approach_yaw.angle()),
             });
         }
 
-        return Ok(ReachedTarget{
+        return Ok(ReachedTarget {
             waypoints: output,
             time: current_time,
-            yaw: current_yaw
-        })
+            yaw: current_yaw,
+        });
     }
 }
 
@@ -291,22 +290,20 @@ impl Extrapolator<Waypoint, Position> for DifferentialDriveLineFollow {
     fn extrapolate(
         &self,
         from_waypoint: &Waypoint,
-        to_position: &Position
+        to_position: &Position,
     ) -> Result<ArrayVec<Waypoint, 3>, NoError> {
-        let mut arrival = self.move_towards_target(
-            from_waypoint, &Point::from(to_position.translation.vector)
-        )?;
+        let mut arrival =
+            self.move_towards_target(from_waypoint, &Point::from(to_position.translation.vector))?;
 
         let delta_yaw_abs = (to_position.rotation / arrival.yaw).angle().abs();
         if delta_yaw_abs > self.rotational_threshold {
             // Rotate towards the target orientation if we're not already facing
             // it.
-            arrival.time += time_point::Duration::from_secs_f64(
-                delta_yaw_abs/self.rotational_speed
-            );
-            arrival.waypoints.push(Waypoint{
+            arrival.time +=
+                time_point::Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
+            arrival.waypoints.push(Waypoint {
                 time: arrival.time,
-                position: *to_position
+                position: *to_position,
             });
         }
 
@@ -323,17 +320,16 @@ impl Extrapolator<Waypoint, Point> for DifferentialDriveLineFollow {
         from_waypoint: &Waypoint,
         to_target: &Point,
     ) -> Result<ArrayVec<Waypoint, 3>, NoError> {
-        self.move_towards_target(
-            from_waypoint, to_target
-        ).map(|arrival| arrival.waypoints )
+        self.move_towards_target(from_waypoint, to_target)
+            .map(|arrival| arrival.waypoints)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use motion::Motion;
     use approx::assert_relative_eq;
+    use motion::Motion;
 
     #[test]
     fn test_interpolation() {
@@ -343,7 +339,7 @@ mod tests {
         let wp1 = Waypoint::new(t1, 1.0, 10.0, -20f64.to_radians());
 
         let motion = wp0.interpolate(&wp1);
-        let t = (t1 - t0)/2f64 + t0;
+        let t = (t1 - t0) / 2f64 + t0;
         let p = motion.compute_position(&t).ok().unwrap();
         assert_relative_eq!(p.translation.vector[0], 1f64, max_relative = 0.001);
         assert_relative_eq!(p.translation.vector[1], 7.5f64, max_relative = 0.001);
@@ -351,24 +347,33 @@ mod tests {
 
         let v = motion.compute_velocity(&t).ok().unwrap();
         assert_relative_eq!(v.translational[0], 0f64, max_relative = 0.001);
-        assert_relative_eq!(v.translational[1], 5.0/2.0, max_relative = 0.001);
-        assert_relative_eq!(v.rotational, -30f64.to_radians()/2.0, max_relative = 0.001);
+        assert_relative_eq!(v.translational[1], 5.0 / 2.0, max_relative = 0.001);
+        assert_relative_eq!(
+            v.rotational,
+            -30f64.to_radians() / 2.0,
+            max_relative = 0.001
+        );
     }
 
     #[test]
     fn test_extrapolation() {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
         let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
-        let movement = DifferentialDriveLineFollow::new(2.0, 3.0).expect("Failed to make DifferentialLineFollow");
+        let movement = DifferentialDriveLineFollow::new(2.0, 3.0)
+            .expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
-        let waypoints = movement.extrapolate(&wp0, &p_target).expect("Failed to extrapolate");
+        let waypoints = movement
+            .extrapolate(&wp0, &p_target)
+            .expect("Failed to extrapolate");
         assert_eq!(waypoints.len(), 3);
         assert_relative_eq!(
             waypoints.last().unwrap().time.as_secs_f64(),
             (t0 + time_point::Duration::from_secs_f64(
-                ((90f64 - (-40f64)).abs() + (60f64 - 90f64).abs()).to_radians() / movement.rotational_speed()
-                + 6f64 / movement.translational_speed
-            )).as_secs_f64()
+                ((90f64 - (-40f64)).abs() + (60f64 - 90f64).abs()).to_radians()
+                    / movement.rotational_speed()
+                    + 6f64 / movement.translational_speed
+            ))
+            .as_secs_f64()
         );
 
         assert_relative_eq!(

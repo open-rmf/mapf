@@ -16,8 +16,8 @@
 */
 
 use crate::{
-    motion::{Waypoint, Trajectory},
     error::Error,
+    motion::{Trajectory, Waypoint},
 };
 
 /// Can extrapolate the motion from a waypoint towards a target.
@@ -27,7 +27,9 @@ pub trait Extrapolator<W: Waypoint, Target> {
 
     /// An iterator that produces a sequence of waypoints representing a motion
     /// through time.
-    type Extrapolation<'a>: IntoIterator<Item=W> where Self: 'a;
+    type Extrapolation<'a>: IntoIterator<Item = W>
+    where
+        Self: 'a;
 
     /// Extrapolate a new waypoint from this one given a target waypoint and
     /// a movement description.
@@ -56,9 +58,7 @@ pub trait Extrapolator<W: Waypoint, Target> {
         to_target: &Target,
     ) -> Result<Option<Trajectory<W>>, Self::Error> {
         let motion = self.extrapolate(&from_waypoint, to_target)?;
-        Ok(Trajectory::from_iter(
-            [from_waypoint].into_iter().chain(motion.into_iter())
-        ).ok())
+        Ok(Trajectory::from_iter([from_waypoint].into_iter().chain(motion.into_iter())).ok())
     }
 }
 

@@ -16,15 +16,15 @@
 */
 
 use crate::{
-    node,
-    expander::{Goal, Expander, InitTargeted, Targeted, Solvable, CostOf, InitTargetedErrorOf, ExpansionErrorOf, SolveErrorOf},
-    trace::Trace,
     error::Error,
+    expander::{
+        CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, InitTargetedErrorOf, Solvable,
+        SolveErrorOf, Targeted,
+    },
+    node,
+    trace::Trace,
 };
-use std::{
-    sync::Arc,
-    fmt::Debug,
-};
+use std::{fmt::Debug, sync::Arc};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -75,13 +75,18 @@ pub trait Algorithm<E: Solvable>: Sized {
         goal: &G,
         trace: &mut T,
     ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
-    where E: InitTargeted<S, G>;
+    where
+        E: InitTargeted<S, G>;
 
     fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
         &self,
         memory: &mut Self::Memory,
         goal: &G,
         tracker: &mut T,
-    ) -> Result<Status<E::Solution>, StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>>
-    where E: Targeted<G>;
+    ) -> Result<
+        Status<E::Solution>,
+        StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>,
+    >
+    where
+        E: Targeted<G>;
 }
