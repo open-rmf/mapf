@@ -60,7 +60,7 @@ impl<W: Waypoint, C: CostCalculator<W>, N> Expander for Hold<W, C, N> {
 
 impl<W: Waypoint, C: CostCalculator<W, Cost=N::Cost>, N: Informed + Movable<W>, G: Goal<N>> Targeted<G> for Hold<W, C, N> {
     type TargetedError = NoError;
-    type TargetedExpansion<'a> where W: 'a, N: 'a, C: 'a, G: 'a = impl Iterator<Item=Result<Arc<N>, NoError>>;
+    type TargetedExpansion<'a> = impl Iterator<Item=Result<Arc<N>, NoError>> where W: 'a, N: 'a, C: 'a, G: 'a ;
 
     fn expand<'a>(
         &'a self,

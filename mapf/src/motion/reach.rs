@@ -35,7 +35,7 @@ pub trait Reachable<Node, Goal, W: Waypoint> {
 pub struct NoReach;
 impl<N, G, W: Waypoint> Reachable<N, G, W> for NoReach {
     type ReachError = NoError;
-    type Reaching<'a> where N: 'a, G: 'a, W: 'a = impl Iterator<Item=Result<Trajectory<W>, NoError>>;
+    type Reaching<'a> = impl Iterator<Item=Result<Trajectory<W>, NoError>> where N: 'a, G: 'a, W: 'a ;
 
     fn reach_for<'a>(&'a self, _: &'a N, _: &'a G) -> Self::Reaching<'a> {
         [].into_iter()
