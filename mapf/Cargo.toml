@@ -17,7 +17,7 @@ time-point = "0.1"
 sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
 simba = "*"
 num-complex = "*"
-cached = "0.34"
+cached = "0.40"
 approx = "*"
 num = "*"
 arrayvec = "0.7.1"
