@@ -1,6 +1,6 @@
 [package]
 name = "mapf"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Base traits and utilities for multi-agent planning"
 license = "Apache-2.0"
