@@ -128,7 +128,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// has a waypoint at an equivalent time, then the value of this waypoint
     /// gets assigned to the old one.
     pub fn insert_or_assign(&mut self, waypoint: W) -> usize {
-        return self.waypoints.insert(TimeCmp(waypoint));
+        return self.waypoints.replace(TimeCmp(waypoint)).0;
     }
 
     /// Attempt to remove the waypoint at the specified index. If the erasure
