@@ -16,6 +16,8 @@
 */
 #![feature(associated_type_bounds, type_alias_impl_trait)]
 
+pub mod domain;
+
 pub mod progress;
 
 pub mod planner;
@@ -49,3 +51,7 @@ pub mod error;
 pub mod occupancy;
 
 mod util;
+
+pub mod prelude {
+    pub use super::domain::prelude::*;
+}
