@@ -128,21 +128,6 @@ where
                 |result| {
                     result
                         .map_err(Into::into)
-                        // .map(|action| {
-                        //     self.prop.map_actions(from_state, action)
-                        //         .into_iter()
-                        //         // .map(|r| r
-                        //         //     .map_err(|_| "hello")
-                        //         //     .map(Into::into))
-                        // })
-                        // .flat_result_map(
-                        //     // |x: <<Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::ToActions<'a> as IntoIterator>::IntoIter| x
-                        //     |x: Result<
-                        //         <Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::ToAction,
-                        //         <Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::Error
-                        //     >| x
-                        //         // .map(Into::into)
-                        // )
                         .flat_result_map(|action| {
                             self.prop.map_actions(from_state, action)
                                 .into_iter()
@@ -151,24 +136,7 @@ where
                                     .map(Into::into)
                                 )
                         })
-                        .map(|x:
-                            Result<
-                                Result<
-                                    // <Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::ToAction,
-                                    <Base as Domain>::Action,
-                                    // <Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::Error,
-                                    <Base as Domain>::Error,
-                                >,
-                                <Base as Domain>::Error,
-                            >|
-                            // Result<
-                            //     // <Base as Domain>::Action,
-                            //     <Prop as ActionMap<Base::State, <Base as Activity<Base::State>>::Action>>::ToAction,
-                            //     <Base as Domain>::Error,
-                            // >|
-                            // x.map(Into::into)
-                            x.flatten()
-                        )
+                        .map(|x| x.flatten())
                 }
             )
     }
@@ -199,8 +167,7 @@ mod test {
     struct Multiplier(u64);
     impl ActionMap<u64, Interval> for Multiplier {
         type ToAction = Interval;
-        // type Error = NoError;
-        type Error = anyhow::Error;
+        type Error = NoError;
         type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
         fn map_actions<'a>(
             &'a self,
@@ -208,13 +175,26 @@ mod test {
             from_action: Interval,
         ) -> Self::ToActions<'a> {
             [Ok(Interval(from_action.0 * self.0))]
-            // [from_action]
-            //     .into_iter()
-            //     .map(|a| if a.0 & 1 != 0 {
-            //         Ok(Interval(a.0 * self.0))
-            //     } else {
-            //         Err(anyhow::Error::msg("whaaat"))
-            //     })
+        }
+    }
+
+    struct DoubleTheOdds;
+    impl ActionMap<u64, Interval> for DoubleTheOdds {
+        type ToAction = Interval;
+        type Error = NoError;
+        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
+        fn map_actions<'a>(
+            &'a self,
+            from_state: &'a u64,
+            from_action: Interval,
+        ) -> Self::ToActions<'a> {
+            [if from_state & 1 != 0 {
+                // If the value is odd, double it
+                Ok(Interval(from_action.0 * 2))
+            } else {
+                // If the value is even, leave it alone
+                Ok(from_action)
+            }]
         }
     }
 
@@ -263,5 +243,18 @@ mod test {
         let domain = domain.map(MapToTestError);
         let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
         assert!(choices.is_err());
+    }
+
+    #[test]
+    fn test_state_dependent_activity_map() {
+        let domain = DefineTrait::<u64, Interval>::new()
+            .with(Count { by_interval: vec![2, 3, 4, 5]})
+            .map(DoubleTheOdds);
+
+        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        assert_eq!(choices.unwrap(), [2, 3, 4, 5].into_iter().map(Interval).collect::<Vec<_>>());
+
+        let choices: Result<Vec<_>, _> = domain.choices(&13).collect();
+        assert_eq!(choices.unwrap(), vec![4, 6, 8, 10].into_iter().map(Interval).collect::<Vec<_>>());
     }
 }
