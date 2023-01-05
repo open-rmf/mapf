@@ -15,6 +15,8 @@
  *
 */
 
+use crate::error::NoError;
+
 /// The ActionMap trait describes a domain property that can modify the
 /// choices produced by activities. This can be used to apply constraints or
 /// transformations to activities within a domain.
@@ -39,4 +41,66 @@ pub trait ActionMap<State, FromAction> {
         from_state: &'a State,
         from_action: FromAction,
     ) -> Self::ToActions<'a>;
+}
+
+/// This struct implements ActionMap for any action that implements Into<ToAction>
+pub struct ActionInto<ToAction> {
+    _ignore: std::marker::PhantomData<ToAction>,
+}
+
+impl<ToAction> ActionInto<ToAction> {
+    pub fn new() -> Self {
+        Self { _ignore: Default::default() }
+    }
+}
+
+impl<S, FromAction, ToAction> ActionMap<S, FromAction> for ActionInto<ToAction>
+where
+    FromAction: Into<ToAction>
+{
+    type ToAction = ToAction;
+    type Error = NoError;
+    type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
+    where
+        ToAction: 'a,
+        S: 'a;
+
+    fn map_actions<'a>(
+        &'a self,
+        _: &'a S,
+        from_action: FromAction,
+    ) -> Self::ToActions<'a> {
+        Some(Ok(from_action.into())).into_iter()
+    }
+}
+
+/// This struct implements ActionMap for any action that implements Into<Option<ToAction>>
+pub struct ActionMaybeInto<ToAction> {
+    _ignore: std::marker::PhantomData<ToAction>
+}
+
+impl<ToAction> ActionMaybeInto<ToAction> {
+    pub fn new() -> Self {
+        Self { _ignore: Default::default() }
+    }
+}
+
+impl<S, FromAction, ToAction> ActionMap<S, FromAction> for ActionMaybeInto<ToAction>
+where
+    FromAction: Into<Option<ToAction>>,
+{
+    type ToAction = ToAction;
+    type Error = NoError;
+    type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
+    where
+        ToAction: 'a,
+        S: 'a;
+
+    fn map_actions<'a>(
+        &'a self,
+        _: &'a S,
+        from_action: FromAction,
+    ) -> Self::ToActions<'a> {
+        Ok(from_action.into()).transpose().into_iter()
+    }
 }
