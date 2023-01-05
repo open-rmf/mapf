@@ -142,7 +142,8 @@ where
     }
 }
 
-mod test {
+#[cfg(test)]
+mod tests {
     use super::*;
     use crate::error::NoError;
     use thiserror::Error as ThisError;

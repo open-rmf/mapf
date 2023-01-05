@@ -18,7 +18,6 @@ sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
 simba = "*"
 num-complex = "*"
 cached = "0.40"
-approx = "*"
 num = "*"
 arrayvec = "0.7.1"
 bitfield = "*"
@@ -26,3 +25,5 @@ derivative = "*"
 anyhow = "*"
 thiserror = "*"
 
+[dev-dependencies]
+approx = "*"
