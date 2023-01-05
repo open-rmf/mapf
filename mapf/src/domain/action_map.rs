@@ -18,7 +18,7 @@
 /// The ActionMap trait describes a domain property that can modify the
 /// choices produced by activities. This can be used to apply constraints or
 /// transformations to activities within a domain.
-pub trait ActionMap<State, FromAction, FromError> {
+pub trait ActionMap<State, FromAction> {
     /// What kind of action is produced after mapping this activity
     type ToAction;
 
@@ -26,7 +26,7 @@ pub trait ActionMap<State, FromAction, FromError> {
     type Error;
 
     /// Conrete type for the returned container of actions
-    type IterActions<'a>: IntoIterator<Item = Result<Self::ToAction, Self::Error>>
+    type ToActions<'a>: IntoIterator<Item = Result<Self::ToAction, Self::Error>>
     where
         Self: 'a,
         Self::ToAction: 'a,
@@ -37,6 +37,6 @@ pub trait ActionMap<State, FromAction, FromError> {
     fn map_actions<'a>(
         &'a self,
         from_state: &'a State,
-        with_actions: impl IntoIterator<Item=Result<FromAction, FromError>>,
-    ) -> Self::IterActions<'a>;
+        from_action: FromAction,
+    ) -> Self::ToActions<'a>;
 }

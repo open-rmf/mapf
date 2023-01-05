@@ -35,7 +35,7 @@ pub trait Dynamics<State, Action> {
 }
 
 trait NoDynamics { }
-impl<S, A, E> NoDynamics for DefineDomain<S, A, E> { }
+impl<S, A, E> NoDynamics for DefineTrait<S, A, E> { }
 
 impl<Base, Prop> Dynamics<Base::State, Base::Action> for Incorporated<Base, Prop>
 where
@@ -63,4 +63,11 @@ where
             .map_err(Into::into)
             .and_then(|state| self.prop.advance(state, action).map_err(Into::into))
     }
+}
+
+mod test {
+    use super::*;
+    use crate::error::NoError;
+
+    
 }
