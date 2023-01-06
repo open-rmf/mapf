@@ -137,14 +137,22 @@ where
     Lifter: StateMap<Base::State> + ActionMap<Base::State, Base::Action>,
     Prop: Dynamics<Lifter::ProjectedState, Lifter::ToAction>,
     Base::State: Clone,
+    Base::Action: Clone,
     Prop::Error: Into<Base::Error>,
 {
     type Error = Base::Error;
     fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
         let original_state = state.clone();
-        let projected_state = self.lifter.project(state);
-        // for action in self.lifter.ma
-        Ok(None)
+        let mut projected_state = self.lifter.project(state);
+        for action in self.lifter.map_actions(&original_state, action.clone()) {
+            let action = action.map_err(Into::into)?;
+            projected_state = match self.prop.advance(projected_state, &action).map_err(Into::into)? {
+                Some(state) => state,
+                None => return Ok(None),
+            };
+        }
+
+        self.lifter.lift(original_state, projected_state)
     }
 }
 
