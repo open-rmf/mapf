@@ -124,15 +124,77 @@ pub trait Map {
     /// provided property. This can be used to apply constraints to a domain
     /// or to project/lift a sub/super domain.
     ///
-    /// Each domain trait may have one, many, or no modifier traits that can map
-    /// its behavior. Usually the modifying trait is a different trait from the
-    /// one that is being modified. For example the Activity trait can be mapped
-    /// by the ActionMap trait.
+    /// Each domain trait may a modifier trait that can map its behavior.
+    /// Usually the modifying trait is a different trait from the one that is
+    /// being modified. For example the Activity trait can be mapped by the
+    /// ActionMap trait.
     fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop> where Self: Sized;
 }
 
 impl<D: Domain> Map for D {
     fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop> where Self: Sized  {
         Mapped { base: self, prop }
+    }
+}
+
+pub struct Lifted<Base, Lifter, Prop> {
+    pub base: Base,
+    pub lifter: Lifter,
+    pub prop: Prop,
+}
+impl<Base: Domain, Lifter, Prop> Domain for Lifted<Base, Lifter, Prop> {
+    type State = Base::State;
+    type Action = Base::Action;
+    type Error = Base::Error;
+}
+
+pub trait Lift {
+    /// Lifts from the domain of property into the base domain using Lifter.
+    ///
+    /// This can be used to incorporate subspace behaviors or projected domains
+    /// into your domain.
+    fn lift<Lifter, Prop>(
+        self,
+        lifter: Lifter,
+        prop: Prop,
+    ) -> Lifted<Self, Lifter, Prop> where Self: Sized;
+
+    /// Chains a lifted property.
+    fn chain_lift<Lifter, Prop>(
+        self,
+        lifter: Lifter,
+        prop: Prop
+    ) -> ChainedLift<Self, Lifter, Prop>
+    where
+        Self: Sized + Domain;
+}
+
+type ChainedLift<Base, Lifter, Prop> = Chained<
+    Base,
+    Lifted<
+        DefineTrait<<Base as Domain>::State, <Base as Domain>::Action, <Base as Domain>::Error>,
+        Lifter,
+        Prop,
+    >,
+>;
+
+impl<D: Domain> Lift for D {
+    fn lift<Lifter, Prop>(
+        self,
+        lifter: Lifter,
+        prop: Prop,
+    ) -> Lifted<Self, Lifter, Prop> where Self: Sized {
+        Lifted { base: self, lifter, prop }
+    }
+
+    fn chain_lift<Lifter, Prop>(
+        self,
+        lifter: Lifter,
+        prop: Prop,
+    ) -> ChainedLift<Self, Lifter, Prop> where Self: Sized {
+        self.chain(
+            DefineTrait::<D::State, D::Action, D::Error>::new()
+            .lift(lifter, prop)
+        )
     }
 }

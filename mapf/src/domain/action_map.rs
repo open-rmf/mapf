@@ -18,8 +18,8 @@
 use crate::error::NoError;
 
 /// The ActionMap trait describes a domain property that can modify the
-/// choices produced by activities. This can be used to apply constraints or
-/// transformations to activities within a domain.
+/// actions produced or used by activities. This can be used to apply
+/// constraints or transformations to activities within a domain.
 pub trait ActionMap<State, FromAction> {
     /// What kind of action is produced after mapping this activity
     type ToAction;
@@ -33,14 +33,17 @@ pub trait ActionMap<State, FromAction> {
         Self: 'a,
         Self::ToAction: 'a,
         Self::Error: 'a,
-        State: 'a;
+        State: 'a,
+        FromAction: 'a;
 
     /// Implement this function to modify a set of actions.
     fn map_actions<'a>(
         &'a self,
         from_state: &'a State,
         from_action: FromAction,
-    ) -> Self::ToActions<'a>;
+    ) -> Self::ToActions<'a>
+    where
+        FromAction: 'a;
 }
 
 /// This struct implements ActionMap for any action that implements Into<ToAction>
@@ -63,13 +66,17 @@ where
     type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
-        S: 'a;
+        S: 'a,
+        FromAction: 'a;
 
     fn map_actions<'a>(
         &'a self,
         _: &'a S,
         from_action: FromAction,
-    ) -> Self::ToActions<'a> {
+    ) -> Self::ToActions<'a>
+    where
+        FromAction: 'a,
+    {
         Some(Ok(from_action.into())).into_iter()
     }
 }
@@ -94,13 +101,42 @@ where
     type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
-        S: 'a;
+        S: 'a,
+        FromAction: 'a;
 
     fn map_actions<'a>(
         &'a self,
         _: &'a S,
         from_action: FromAction,
-    ) -> Self::ToActions<'a> {
+    ) -> Self::ToActions<'a>
+    where
+        FromAction: 'a,
+    {
         Ok(from_action.into()).transpose().into_iter()
+    }
+}
+
+/// NoActionMap is a trait that provides a no-op implementation of an ActionMap
+/// that can be "implemented" by structs that need to have an ActionMap trait
+/// but don't need to actually need to map any actions.
+pub trait NoActionMap {}
+impl<T: NoActionMap, State, Action> ActionMap<State, Action> for T {
+    type Error = NoError;
+    type ToAction = Action;
+    type ToActions<'a> = Option<Result<Action, NoError>>
+    where
+        T: 'a,
+        State: 'a,
+        Action: 'a;
+
+    fn map_actions<'a>(
+        &'a self,
+        _: &'a State,
+        from_action: Action,
+    ) -> Self::ToActions<'a>
+    where
+        Action: 'a,
+    {
+        Some(Ok(from_action))
     }
 }

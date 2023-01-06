@@ -131,6 +131,23 @@ where
     }
 }
 
+impl<Base, Lifter, Prop> Dynamics<Base::State, Base::Action> for Lifted<Base, Lifter, Prop>
+where
+    Base: Domain,
+    Lifter: StateMap<Base::State> + ActionMap<Base::State, Base::Action>,
+    Prop: Dynamics<Lifter::ProjectedState, Lifter::ToAction>,
+    Base::State: Clone,
+    Prop::Error: Into<Base::Error>,
+{
+    type Error = Base::Error;
+    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
+        let original_state = state.clone();
+        let projected_state = self.lifter.project(state);
+        // for action in self.lifter.ma
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

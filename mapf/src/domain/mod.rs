@@ -33,6 +33,7 @@ pub mod action_map;
 pub mod activity;
 pub mod define_trait;
 pub mod dynamics;
+pub mod state_map;
 
 pub mod prelude {
     pub use super::*;
@@ -40,4 +41,5 @@ pub mod prelude {
     pub use super::action_map::*;
     pub use super::define_trait::*;
     pub use super::dynamics::*;
+    pub use super::state_map::*;
 }
