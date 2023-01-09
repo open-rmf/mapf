@@ -174,7 +174,10 @@ mod tests {
             &'a self,
             _: &'a u64,
             from_action: Interval,
-        ) -> Self::ToActions<'a> {
+        ) -> Self::ToActions<'a>
+        where
+            Interval: 'a,
+        {
             [Ok(Interval(from_action.0 * self.0))]
         }
     }
@@ -188,7 +191,10 @@ mod tests {
             &'a self,
             from_state: &'a u64,
             from_action: Interval,
-        ) -> Self::ToActions<'a> {
+        ) -> Self::ToActions<'a>
+        where
+            Interval: 'a,
+        {
             [if from_state & 1 != 0 {
                 // If the value is odd, double it
                 Ok(Interval(from_action.0 * 2))
@@ -212,7 +218,10 @@ mod tests {
             &'a self,
             _: &'a u64,
             _: Interval,
-        ) -> Self::ToActions<'a> {
+        ) -> Self::ToActions<'a>
+        where
+            Interval: 'a,
+        {
             [Err(TestError)]
         }
     }

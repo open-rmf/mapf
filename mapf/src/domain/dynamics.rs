@@ -70,30 +70,6 @@ where
     }
 }
 
-// impl<Base, Prop> Dynamics<Base::State, Base::Action> for Mapped<Base, Prop>
-// where
-//     Base: Domain + ActionMap<Base::State, <Base as Domain>::Action>,
-//     <Base as ActionMap<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
-//     Base::State: Clone,
-//     Base::Action: Clone,
-//     Prop: Dynamics<Base::State, Base::ToAction>,
-//     Prop::Error: Into<<Base as Domain>::Error>,
-// {
-//     type Error = <Base as Domain>::Error;
-//     fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
-//         let input_state = state.clone();
-//         for action in self.base.map_actions(&input_state, action.clone()) {
-//             let action = action.map_err(Into::into)?;
-//             state = match self.prop.advance(state, &action).map_err(Into::into)? {
-//                 Some(state) => state,
-//                 None => return Ok(None),
-//             };
-//         }
-
-//         Ok(Some(state))
-//     }
-// }
-
 impl<Base, Prop> Dynamics<Base::State, Base::Action> for Mapped<Base, Prop>
 where
     Base: Domain + Dynamics<Base::State, Prop::ToAction>,
@@ -105,18 +81,6 @@ where
     Prop::Error: Into<<Base as Domain>::Error>,
 {
     type Error = <Base as Domain>::Error;
-    // fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
-    //     let input_state = state.clone();
-    //     for action in self.base.map_actions(&input_state, action.clone()) {
-    //         let action = action.map_err(Into::into)?;
-    //         state = match self.prop.advance(state, &action).map_err(Into::into)? {
-    //             Some(state) => state,
-    //             None => return Ok(None),
-    //         };
-    //     }
-
-    //     Ok(Some(state))
-    // }
     fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
         let input_state = state.clone();
         for action in self.prop.map_actions(&input_state, action.clone()) {
@@ -135,6 +99,9 @@ impl<Base, Lifter, Prop> Dynamics<Base::State, Base::Action> for Lifted<Base, Li
 where
     Base: Domain,
     Lifter: StateMap<Base::State> + ActionMap<Base::State, Base::Action>,
+    Lifter::Error: Into<Base::Error>,
+    Lifter::ProjectionError: Into<Base::Error>,
+    Lifter::LiftError: Into<Base::Error>,
     Prop: Dynamics<Lifter::ProjectedState, Lifter::ToAction>,
     Base::State: Clone,
     Base::Action: Clone,
@@ -143,7 +110,11 @@ where
     type Error = Base::Error;
     fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
         let original_state = state.clone();
-        let mut projected_state = self.lifter.project(state);
+        let mut projected_state = match self.lifter.project(state).map_err(Into::into)? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
         for action in self.lifter.map_actions(&original_state, action.clone()) {
             let action = action.map_err(Into::into)?;
             projected_state = match self.prop.advance(projected_state, &action).map_err(Into::into)? {
@@ -152,7 +123,7 @@ where
             };
         }
 
-        self.lifter.lift(original_state, projected_state)
+        self.lifter.lift(original_state, projected_state).map_err(Into::into)
     }
 }
 
@@ -243,6 +214,17 @@ mod tests {
     struct Move(f64 /* distance in meters */);
 
     struct MoveBatteryDrain(f64 /* charge per meter */);
+    impl Dynamics<Battery, Move> for MoveBatteryDrain {
+        type Error = NoError;
+        fn advance(&self, mut state: Battery, action: &Move) -> Result<Option<Battery>, Self::Error> {
+            state.0 -= self.0 * action.0;
+            if state.0 < 0.0 {
+                Ok(None)
+            } else {
+                Ok(Some(state))
+            }
+        }
+    }
 
     #[derive(Clone)]
     enum HybridAction {
@@ -268,32 +250,100 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct Battery(f64);
+    struct BatterySubspace;
+    impl StateSubspace for BatterySubspace {
+        type ProjectedState = Battery;
+    }
+    impl ProjectState<TestState> for BatterySubspace {
+        type ProjectionError = NoError;
+        fn project(
+            &self,
+            state: TestState
+        ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
+            Ok(Some(Battery(state.battery)))
+        }
+    }
+    impl LiftState<TestState> for BatterySubspace {
+        type LiftError = NoError;
+        fn lift(
+            &self,
+            original: TestState,
+            projection: Self::ProjectedState
+        ) -> Result<Option<TestState>, Self::LiftError> {
+            Ok(Some(TestState {
+                battery: projection.0,
+                ..original
+            }))
+        }
+    }
+
+    struct ChargeBattery(f64 /* charge per second */);
+    impl Dynamics<Battery, TimeDelta> for ChargeBattery {
+        type Error = NoError;
+        fn advance(&self, mut state: Battery, action: &TimeDelta) -> Result<Option<Battery>, Self::Error> {
+            state.0 += action.0 * self.0;
+            state.0 = state.0.max(1.0);
+            Ok(Some(state))
+        }
+    }
+
+    impl Dynamics<Battery, HybridAction> for ChargeBattery {
+        type Error = NoError;
+        fn advance(&self, mut state: Battery, action: &HybridAction) -> Result<Option<Battery>, Self::Error> {
+            match action {
+                HybridAction::Time(time) => {
+                    state.0 += time.0 * self.0;
+                    state.0 = state.0.min(1.0);
+                }
+                _ => { }
+            }
+            Ok(Some(state))
+        }
+    }
+
     #[test]
-    fn test_hybrid_dynamics() {
+    fn test_lifted_dynamics() {
         // TODO(MXG): Figure out how to make action mapping work for dynamics
         let domain = DefineTrait::<TestState, HybridAction>::new()
-            // .with(
-            //     DefineTrait::<TestState, HybridAction>::new()
-            //     .map(ActionMaybeInto::<TimeDelta>::new())
-            //     .with(TimeBatteryDrain(0.02))
-            // )
-            // .chain(
-            //     DefineTrait::<TestState, HybridAction>::new()
-            //     .map(ActionMaybeInto::<Move>::new())
-            //     .with(MoveBatteryDrain(0.1))
-            // );
-
-            // .with(TimeBatteryDrain(0.02))
-            // .map(ActionMaybeInto::<TimeDelta>::new());
-
-            .with(
+            .lift(
+                DefineDomainMap::for_subspace(BatterySubspace),
+                ChargeBattery(0.2),
+            )
+            .chain_lift(
+                DefineDomainMap::<TestState>::for_actions(
+                    ActionMaybeInto::<TimeDelta>::new()
+                ),
                 DefineTrait::<TestState, TimeDelta>::new()
-                    .with(TimeBatteryDrain(0.02))
-                    .map(ActionMaybeInto::<TimeDelta>::new())
+                    .with(TimeBatteryDrain(0.1))
+                    .chain(TimePassage),
+            )
+            .chain_lift(
+                DefineDomainMap::with(
+                    BatterySubspace,
+                    ActionMaybeInto::<Move>::new(),
+                ),
+                MoveBatteryDrain(0.02),
             );
 
-        // let initial_state = TestState { time: 0.1, battery: 1.0 };
-        // let action = HybridAction::Time(TimeDelta(4.0));
-        // domain.advance(initial_state.clone(), &action);
+        let initial_time = 0.1;
+        let initial_battery = 0.3;
+        let initial_state = TestState {
+            time: initial_time,
+            battery: initial_battery
+        };
+
+        let action = HybridAction::Time(TimeDelta(0.1));
+        let next_state = domain.advance(initial_state.clone(), &action).unwrap().unwrap();
+        let expected_time = initial_time + 0.1;
+        let expected_battery = initial_battery + 0.1 * (0.2 - 0.1);
+        assert_relative_eq!(next_state.battery, expected_battery);
+        assert_relative_eq!(next_state.time, expected_time);
+
+        let action = HybridAction::Move(Move(10.0));
+        let next_state = domain.advance(next_state, &action).unwrap().unwrap();
+        let expected_battery = expected_battery - 0.02 * 10.0;
+        assert_relative_eq!(next_state.battery, expected_battery);
     }
 }

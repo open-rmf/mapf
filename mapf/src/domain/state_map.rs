@@ -25,36 +25,25 @@ pub trait ProjectState<State>: StateSubspace {
     /// What kind of error can happen if a bad state is provided
     type ProjectionError;
 
-    type Projections<'a>: IntoIterator<Item = Result<Self::ProjectedState, Self::ProjectionError>>
-    where
-        Self: 'a,
-        Self::ProjectedState: 'a,
-        Self::ProjectionError: 'a,
-        State: 'a;
-
     /// Project a state down to the target state space.
-    fn project<'a>(&'a self, state: State) -> Self::Projections<'a>
-    where
-        State: 'a;
+    fn project(
+        &self,
+        state: State
+    ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
 }
 
 pub trait LiftState<State>: StateSubspace {
     /// What kind of error can happen if a bad state is provided
     type LiftError;
 
-    type States<'a>: IntoIterator<Item = Result<State, Self::LiftError>>
-    where
-        Self: 'a,
-        Self::ProjectedState: 'a,
-        Self::LiftError: 'a,
-        State: 'a;
-
     /// Lift a projected state back to the original state space. An original
     /// state is provided for reference, to fill in information that might be
     /// otherwise missing.
-    fn lift<'a>(&'a self, original: State, projection: Self::ProjectedState) -> Self::States<'a>
-    where
-        State: 'a;
+    fn lift(
+        &self,
+        original: State,
+        projection: Self::ProjectedState
+    ) -> Result<Option<State>, Self::LiftError>;
 }
 
 /// The StateMap trait describes a domain property that can project the state of
@@ -63,43 +52,30 @@ pub trait LiftState<State>: StateSubspace {
 pub trait StateMap<State>: ProjectState<State> + LiftState<State> {}
 impl<State, T: ProjectState<State> + LiftState<State>> StateMap<State> for T {}
 
-/// NoStateSubspace is a trait that can be attached to structs that are
-/// required to implement ProjectState<State> or LiftState<State but do not
-/// actually have a subspace.
-pub trait NoStateSubspace {
-    type State;
+/// NoStateSubspace is a struct that provides a no-op implementation of
+/// StateSubspace, ProjectState, and LiftState. Used by DomainMap when an
+/// ActionMap is not needed.
+pub struct NoStateSubspace<State> {
+    _ignore: std::marker::PhantomData<State>,
 }
-impl<T: NoStateSubspace> StateSubspace for T {
-    type ProjectedState = T::State;
-}
-impl<T: NoStateSubspace> ProjectState<T::State> for T {
-    type ProjectionError = NoError;
-    type Projections<'a> = Option<Result<T::State, NoError>>
-    where
-        T: 'a,
-        T::State: 'a,
-        <T as StateSubspace>::ProjectedState: 'a;
-
-    fn project<'a>(&'a self, state: T::State) -> Self::Projections<'a>
-    where
-        T::State: 'a,
-    {
-        Some(Ok(state))
+impl<State> NoStateSubspace<State> {
+    pub fn new() -> Self {
+        Self { _ignore: Default::default() }
     }
 }
-impl<T: NoStateSubspace> LiftState<T::State> for T {
+impl<State> StateSubspace for NoStateSubspace<State> {
+    type ProjectedState = State;
+}
+impl<State> ProjectState<State> for NoStateSubspace<State> {
+    type ProjectionError = NoError;
+    fn project(&self, state: State) -> Result<Option<State>, NoError> {
+        Ok(Some(state))
+    }
+}
+impl<State> LiftState<State> for NoStateSubspace<State> {
     type LiftError = NoError;
-    type States<'a> = Option<Result<T::State, NoError>>
-    where
-        T: 'a,
-        T::State: 'a,
-        <T as StateSubspace>::ProjectedState: 'a;
-
-    fn lift<'a>(&'a self, _: T::State, projection: T::State) -> Self::States<'a>
-    where
-        T::State: 'a,
-    {
-        Some(Ok(projection))
+    fn lift(&self, _: State, projection: State) -> Result<Option<State>, NoError> {
+        Ok(Some(projection))
     }
 }
 
@@ -111,38 +87,16 @@ pub struct StateInto<ProjectedState> {
 impl<ProjectedState> StateSubspace for StateInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
-impl<State, ProjectedState> ProjectState<State> for StateInto<ProjectedState>
-where
-    State: Into<ProjectedState>,
-{
+impl<State: Into<ProjectedState>, ProjectedState> ProjectState<State> for StateInto<ProjectedState> {
     type ProjectionError = NoError;
-    type Projections<'a> = Option<Result<ProjectedState, NoError>>
-    where
-        State: 'a,
-        ProjectedState: 'a;
-
-    fn project<'a>(&'a self, state: State) -> Self::Projections<'a>
-    where
-        State: 'a,
-    {
-        Some(Ok(state.into()))
+    fn project(&self, state: State) -> Result<Option<ProjectedState>, NoError> {
+        Ok(Some(state.into()))
     }
 }
-impl<State, ProjectedState> LiftState<State> for StateInto<ProjectedState>
-where
-    ProjectedState: Into<State>,
-{
+impl<State, ProjectedState: Into<State>> LiftState<State> for StateInto<ProjectedState> {
     type LiftError = NoError;
-    type States<'a> = Option<Result<State, NoError>>
-    where
-        State: 'a,
-        ProjectedState: 'a;
-
-    fn lift<'a>(&'a self, _: State, projection: Self::ProjectedState) -> Self::States<'a>
-    where
-        State: 'a
-    {
-        Some(Ok(projection.into()))
+    fn lift(&self, _: State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
+        Ok(Some(projection.into()))
     }
 }
 
@@ -159,16 +113,8 @@ where
     State: Into<Option<ProjectedState>>,
 {
     type ProjectionError = NoError;
-    type Projections<'a> = Option<Result<ProjectedState, NoError>>
-    where
-        State: 'a,
-        ProjectedState: 'a;
-
-    fn project<'a>(&'a self, state: State) -> Self::Projections<'a>
-    where
-        State: 'a,
-    {
-        Ok(state.into()).transpose()
+    fn project(&self, state: State) -> Result<Option<ProjectedState>, NoError> {
+        Ok(state.into())
     }
 }
 impl<State, ProjectedState> LiftState<State> for StateMaybeInto<ProjectedState>
@@ -176,15 +122,7 @@ where
     ProjectedState: Into<Option<State>>,
 {
     type LiftError = NoError;
-    type States<'a> = Option<Result<State, NoError>>
-    where
-        State: 'a,
-        ProjectedState: 'a;
-
-    fn lift<'a>(&'a self, _: State, projection: Self::ProjectedState) -> Self::States<'a>
-    where
-        State: 'a,
-    {
-        Ok(projection.into()).transpose()
+    fn lift(&self, _: State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
+        Ok(projection.into())
     }
 }

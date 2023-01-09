@@ -32,6 +32,7 @@ pub trait Domain {
 pub mod action_map;
 pub mod activity;
 pub mod define_trait;
+pub mod domain_map;
 pub mod dynamics;
 pub mod state_map;
 
@@ -40,6 +41,7 @@ pub mod prelude {
     pub use super::activity::*;
     pub use super::action_map::*;
     pub use super::define_trait::*;
+    pub use super::domain_map::*;
     pub use super::dynamics::*;
     pub use super::state_map::*;
 }

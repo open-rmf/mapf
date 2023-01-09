@@ -16,6 +16,7 @@
 */
 
 use crate::error::NoError;
+use super::prelude::*;
 
 /// The ActionMap trait describes a domain property that can modify the
 /// actions produced or used by activities. This can be used to apply
@@ -116,16 +117,14 @@ where
     }
 }
 
-/// NoActionMap is a trait that provides a no-op implementation of an ActionMap
-/// that can be "implemented" by structs that need to have an ActionMap trait
-/// but don't need to actually need to map any actions.
-pub trait NoActionMap {}
-impl<T: NoActionMap, State, Action> ActionMap<State, Action> for T {
+/// NoActionMap is a struct that provides a no-op implementation of ActionMap.
+/// Used by DomainMap when an ActionMap is not needed.
+pub struct NoActionMap;
+impl<State, Action> ActionMap<State, Action> for NoActionMap {
     type Error = NoError;
     type ToAction = Action;
     type ToActions<'a> = Option<Result<Action, NoError>>
     where
-        T: 'a,
         State: 'a,
         Action: 'a;
 
