@@ -83,7 +83,7 @@ where
     type Error = <Base as Domain>::Error;
     fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
         let input_state = state.clone();
-        for action in self.prop.map_actions(&input_state, action.clone()) {
+        for action in self.prop.map_actions(input_state, action.clone()) {
             let action = action.map_err(Into::into)?;
             state = match self.base.advance(state, &action).map_err(Into::into)? {
                 Some(state) => state,
@@ -115,7 +115,7 @@ where
             None => return Ok(None),
         };
 
-        for action in self.lifter.map_actions(&original_state, action.clone()) {
+        for action in self.lifter.map_actions(original_state.clone(), action.clone()) {
             let action = action.map_err(Into::into)?;
             projected_state = match self.prop.advance(projected_state, &action).map_err(Into::into)? {
                 Some(state) => state,

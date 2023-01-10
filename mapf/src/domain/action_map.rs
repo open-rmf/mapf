@@ -40,11 +40,12 @@ pub trait ActionMap<State, FromAction> {
     /// Implement this function to modify a set of actions.
     fn map_actions<'a>(
         &'a self,
-        from_state: &'a State,
+        from_state: State,
         from_action: FromAction,
     ) -> Self::ToActions<'a>
     where
-        FromAction: 'a;
+        FromAction: 'a,
+        State: 'a;
 }
 
 /// This struct implements ActionMap for any action that implements Into<ToAction>
@@ -72,11 +73,12 @@ where
 
     fn map_actions<'a>(
         &'a self,
-        _: &'a S,
+        _: S,
         from_action: FromAction,
     ) -> Self::ToActions<'a>
     where
         FromAction: 'a,
+        S: 'a,
     {
         Some(Ok(from_action.into())).into_iter()
     }
@@ -107,11 +109,12 @@ where
 
     fn map_actions<'a>(
         &'a self,
-        _: &'a S,
+        _: S,
         from_action: FromAction,
     ) -> Self::ToActions<'a>
     where
         FromAction: 'a,
+        S: 'a,
     {
         Ok(from_action.into()).transpose().into_iter()
     }
@@ -130,11 +133,12 @@ impl<State, Action> ActionMap<State, Action> for NoActionMap {
 
     fn map_actions<'a>(
         &'a self,
-        _: &'a State,
+        _: State,
         from_action: Action,
     ) -> Self::ToActions<'a>
     where
         Action: 'a,
+        State: 'a,
     {
         Some(Ok(from_action))
     }

@@ -43,7 +43,7 @@ pub trait Activity<State> {
         State: 'a;
 
     /// What choices can be made related to this activity from the provided state
-    fn choices<'a>(&'a self, from_state: &'a State) -> Self::Choices<'a>;
+    fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>;
 }
 
 impl<Base, Prop> Activity<Base::State> for Incorporated<Base, Prop>
@@ -64,7 +64,7 @@ where
         Self::Error: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: &'a Base::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
         self.prop.choices(from_state)
             .into_iter()
             .map(|c| c.map(Into::into).map_err(Into::into))
@@ -74,6 +74,7 @@ where
 impl<Base, Prop> Activity<Base::State> for Chained<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
+    Base::State: Clone,
     <Base as Activity<Base::State>>::Action: Into<<Base as Domain>::Action>,
     <Base as Activity<Base::State>>::Error: Into<<Base as Domain>::Error>,
     Prop: Activity<Base::State>,
@@ -91,8 +92,8 @@ where
         Self::Error: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: &'a Base::State) -> Self::Choices<'a> {
-        self.base.choices(from_state)
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+        self.base.choices(from_state.clone())
             .into_iter()
             .map(|c| c.map(Into::into).map_err(Into::into))
             .chain(
@@ -105,6 +106,7 @@ where
 impl<Base, Prop> Activity<Base::State> for Mapped<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
+    Base::State: Clone,
     <Base as Activity<Base::State>>::Error: Into<<Base as Domain>::Error>,
     Prop: ActionMap<Base::State, <Base as Activity<Base::State>>::Action>,
     Prop::ToAction: Into<<Base as Domain>::Action>,
@@ -121,15 +123,16 @@ where
         Self::Error: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: &'a Base::State) -> Self::Choices<'a> {
-        self.base.choices(from_state)
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+        self.base.choices(from_state.clone())
             .into_iter()
             .flat_map(
-                |result| {
+                move |result| {
+                    let from_state = from_state.clone();
                     result
                         .map_err(Into::into)
-                        .flat_result_map(|action| {
-                            self.prop.map_actions(from_state, action)
+                        .flat_result_map(move |action| {
+                            self.prop.map_actions(from_state.clone(), action)
                                 .into_iter()
                                 .map(|r| r
                                     .map_err(Into::into)
@@ -145,23 +148,54 @@ where
 impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: StateMap<Base::State> + ActionMap<Lifter::ProjectedState, Prop::Action, ToAction=Base::Action>,
+    Lifter: StateMap<Base::State> + ActionMap<Base::State, Prop::Action, ToAction=Base::Action>,
     Lifter::Error: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
+    Lifter::ToAction: Into<Base::Action>,
     Lifter::LiftError: Into<Base::Error>,
     Prop: Activity<Lifter::ProjectedState>,
     Base::State: Clone,
     Prop::Error: Into<Base::Error>,
 {
+    type Action = Lifter::ToAction;
     type Error = Base::Error;
-    fn choices<'a>(&'a self, from_state: &'a Base::State) -> Self::Choices<'a> {
-        let original_state = from_state.clone();
-        let projected_state = match self.lifter.project(original_state) {
-            Ok()
-        }
-        self.prop.choices(projected_state)
-            .map(|action| {
+    type Choices<'a> = impl Iterator<Item=Result<Self::Action, Self::Error>> + 'a
+    where
+        Self: 'a,
+        Base: 'a,
+        Prop: 'a,
+        Self::Action: 'a,
+        Self::Error: 'a,
+        Base::State: 'a;
 
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+        [self.lifter.project(from_state.clone())]
+            .into_iter()
+            .filter_map(|r: Result<Option<Lifter::ProjectedState>, Lifter::ProjectionError>| r.transpose())
+            .flat_map(move |r: Result<Lifter::ProjectedState, Lifter::ProjectionError>| {
+                let from_state = from_state.clone();
+                r
+                .map_err(Into::into)
+                .flat_result_map(move |projected_state| {
+                    let from_state = from_state.clone();
+                    self.prop.choices(projected_state)
+                        .into_iter()
+                        .flat_map(move |r: Result<Prop::Action, Prop::Error>| {
+                            let from_state = from_state.clone();
+                            r
+                            .map_err(Into::into)
+                            .flat_result_map(move |action| {
+                                self.lifter.map_actions(from_state.clone(), action)
+                                    .into_iter()
+                                    .map(|r| r
+                                        .map_err(Into::into)
+                                        .map(Into::into)
+                                    )
+                            })
+                            .map(|x: Result<Result<Self::Action, Self::Error>, Self::Error>| x.flatten())
+                        })
+                })
+                .map(|x: Result<Result<Self::Action, Self::Error>, Self::Error>| x.flatten())
             })
     }
 }
@@ -184,7 +218,7 @@ mod tests {
         type Error = NoError;
         type Choices<'a> = impl Iterator<Item=Result<Interval, NoError>> + 'a;
 
-        fn choices<'a>(&'a self, _: &'a u64) -> Self::Choices<'a> {
+        fn choices<'a>(&'a self, _: u64) -> Self::Choices<'a> {
             self.by_interval.iter().map(|interval| Ok(Interval(*interval)))
         }
     }
@@ -196,7 +230,7 @@ mod tests {
         type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
         fn map_actions<'a>(
             &'a self,
-            _: &'a u64,
+            _: u64,
             from_action: Interval,
         ) -> Self::ToActions<'a>
         where
@@ -213,7 +247,7 @@ mod tests {
         type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
         fn map_actions<'a>(
             &'a self,
-            from_state: &'a u64,
+            from_state: u64,
             from_action: Interval,
         ) -> Self::ToActions<'a>
         where
@@ -240,7 +274,7 @@ mod tests {
         type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
         fn map_actions<'a>(
             &'a self,
-            _: &'a u64,
+            _: u64,
             _: Interval,
         ) -> Self::ToActions<'a>
         where
@@ -255,27 +289,27 @@ mod tests {
         let domain = DefineTrait::<u64, Interval>::new()
             .with(Count { by_interval: vec![1, 2, 3]});
 
-        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
         assert_eq!(choices.unwrap(), vec![Interval(1), Interval(2), Interval(3)]);
 
         let domain = domain.chain(
             Count { by_interval: vec![10, 20, 30] }
         );
-        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
         assert_eq!(choices.unwrap(), vec![
             Interval(1), Interval(2), Interval(3),
             Interval(10), Interval(20), Interval(30),
         ]);
 
         let domain = domain.map(Multiplier(2));
-        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
         assert_eq!(choices.unwrap(), vec![
             Interval(2), Interval(4), Interval(6),
             Interval(20), Interval(40), Interval(60),
         ]);
 
         let domain = domain.map(MapToTestError);
-        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
         assert!(choices.is_err());
     }
 
@@ -285,10 +319,10 @@ mod tests {
             .with(Count { by_interval: vec![2, 3, 4, 5]})
             .map(DoubleTheOdds);
 
-        let choices: Result<Vec<_>, _> = domain.choices(&0).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
         assert_eq!(choices.unwrap(), [2, 3, 4, 5].into_iter().map(Interval).collect::<Vec<_>>());
 
-        let choices: Result<Vec<_>, _> = domain.choices(&13).collect();
+        let choices: Result<Vec<_>, _> = domain.choices(13).collect();
         assert_eq!(choices.unwrap(), vec![4, 6, 8, 10].into_iter().map(Interval).collect::<Vec<_>>());
     }
 }

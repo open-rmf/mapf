@@ -90,7 +90,7 @@ where
 
     fn map_actions<'a>(
         &'a self,
-        from_state: &'a State,
+        from_state: State,
         from_action: FromAction,
     ) -> Self::ToActions<'a>
     where
