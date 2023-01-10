@@ -142,6 +142,30 @@ where
     }
 }
 
+impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
+where
+    Base: Domain,
+    Lifter: StateMap<Base::State> + ActionMap<Lifter::ProjectedState, Prop::Action, ToAction=Base::Action>,
+    Lifter::Error: Into<Base::Error>,
+    Lifter::ProjectionError: Into<Base::Error>,
+    Lifter::LiftError: Into<Base::Error>,
+    Prop: Activity<Lifter::ProjectedState>,
+    Base::State: Clone,
+    Prop::Error: Into<Base::Error>,
+{
+    type Error = Base::Error;
+    fn choices<'a>(&'a self, from_state: &'a Base::State) -> Self::Choices<'a> {
+        let original_state = from_state.clone();
+        let projected_state = match self.lifter.project(original_state) {
+            Ok()
+        }
+        self.prop.choices(projected_state)
+            .map(|action| {
+
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
