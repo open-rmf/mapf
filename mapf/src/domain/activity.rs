@@ -205,6 +205,7 @@ mod tests {
     use super::*;
     use crate::error::NoError;
     use thiserror::Error as ThisError;
+    use std::collections::HashSet;
 
     struct Count {
         by_interval: Vec<u64>,
@@ -324,5 +325,205 @@ mod tests {
 
         let choices: Result<Vec<_>, _> = domain.choices(13).collect();
         assert_eq!(choices.unwrap(), vec![4, 6, 8, 10].into_iter().map(Interval).collect::<Vec<_>>());
+    }
+
+    #[derive(Clone, Copy)]
+    struct Inventory {
+        apples: u64,
+        bananas: u64,
+        budget: u64,
+    }
+
+    #[derive(Clone, Copy)]
+    struct Item {
+        count: u64,
+        budget: u64,
+    }
+
+    #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+    struct Buy(u64 /* price per unit */);
+    impl Activity<Item> for Buy {
+        type Action = Buy;
+        type Error = NoError;
+        type Choices<'a> = Option<Result<Buy, NoError>>;
+        fn choices<'a>(&'a self, from_state: Item) -> Option<Result<Buy, NoError>> {
+            if from_state.budget < self.0 {
+                None
+            } else {
+                Some(Ok(*self))
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+    struct Sell(u64 /* price per unit */);
+    impl Activity<Item> for Sell {
+        type Action = Sell;
+        type Error = NoError;
+        type Choices<'a> = Option<Result<Sell, NoError>>;
+        fn choices<'a>(&'a self, from_state: Item) -> Self::Choices<'a> {
+            if from_state.count <= 0 {
+                None
+            } else {
+                Some(Ok(*self))
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+    enum Transaction {
+        Buy(Buy),
+        Sell(Sell),
+    }
+    impl From<Buy> for Transaction {
+        fn from(value: Buy) -> Self {
+            Transaction::Buy(value)
+        }
+    }
+    impl From<Sell> for Transaction {
+        fn from(value: Sell) -> Self {
+            Transaction::Sell(value)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+    enum Order {
+        Apples(Transaction),
+        Bananas(Transaction),
+    }
+
+    struct JustApples;
+    impl StateSubspace for JustApples {
+        type ProjectedState = Item;
+    }
+    impl ProjectState<Inventory> for JustApples {
+        type ProjectionError = NoError;
+        fn project(
+            &self,
+            state: Inventory,
+        ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
+            Ok(Some(Item {
+                count: state.apples,
+                budget: state.budget,
+            }))
+        }
+    }
+    impl LiftState<Inventory> for JustApples {
+        type LiftError = NoError;
+        fn lift(
+            &self,
+            original: Inventory,
+            projection: Self::ProjectedState
+        ) -> Result<Option<Inventory>, Self::LiftError> {
+            Ok(Some(Inventory {
+                apples: projection.count,
+                budget: projection.budget,
+                ..original
+            }))
+        }
+    }
+    impl ActionMap<Inventory, Transaction> for JustApples {
+        type Error = NoError;
+        type ToAction = Order;
+        type ToActions<'a> = Option<Result<Order, NoError>>;
+        fn map_actions<'a>(
+            &'a self,
+            _: Inventory,
+            from_action: Transaction,
+        ) -> Self::ToActions<'a>
+        where
+            Transaction: 'a,
+            Inventory: 'a
+        {
+            Some(Ok(Order::Apples(from_action)))
+        }
+    }
+
+    struct JustBananas;
+    impl StateSubspace for JustBananas {
+        type ProjectedState = Item;
+    }
+    impl ProjectState<Inventory> for JustBananas {
+        type ProjectionError = NoError;
+        fn project(
+            &self,
+            state: Inventory
+        ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
+            Ok(Some(Item {
+                count: state.bananas,
+                budget: state.budget,
+            }))
+        }
+    }
+    impl LiftState<Inventory> for JustBananas {
+        type LiftError = NoError;
+        fn lift(
+            &self,
+            original: Inventory,
+            projection: Self::ProjectedState
+        ) -> Result<Option<Inventory>, Self::LiftError> {
+            Ok(Some(Inventory {
+                bananas: projection.count,
+                budget: projection.budget,
+                ..original
+            }))
+        }
+    }
+    impl ActionMap<Inventory, Transaction> for JustBananas {
+        type Error = NoError;
+        type ToAction = Order;
+        type ToActions<'a> = Option<Result<Order, NoError>>;
+        fn map_actions<'a>(
+            &'a self,
+            _: Inventory,
+            from_action: Transaction,
+        ) -> Self::ToActions<'a>
+        where
+            Transaction: 'a,
+            Inventory: 'a
+        {
+            Some(Ok(Order::Bananas(from_action)))
+        }
+    }
+
+    #[test]
+    fn test_lifted_activity() {
+        let domain = DefineTrait::<Inventory, Order>::new()
+            .lift(
+                JustApples,
+                DefineTrait::<Item, Transaction>::new()
+                    .with(Buy(20))
+                    .chain(Sell(60))
+            )
+            .chain_lift(
+                JustBananas,
+                DefineTrait::<Item, Transaction>::new()
+                    .with(Buy(30))
+                    .chain(Sell(80))
+            );
+
+        let inventory = Inventory {
+            apples: 5,
+            bananas: 3,
+            budget: 25,
+        };
+        let choices: Result<HashSet<_>, _> = domain.choices(inventory).collect();
+        let choices = choices.unwrap();
+        assert_eq!(choices.len(), 3);
+        assert!(choices.contains(&Order::Apples(Transaction::Buy(Buy(20)))));
+        assert!(choices.contains(&Order::Apples(Transaction::Sell(Sell(60)))));
+        assert!(choices.contains(&Order::Bananas(Transaction::Sell(Sell(80)))));
+
+        let inventory = Inventory {
+            apples: 0,
+            bananas: 3,
+            budget: 40,
+        };
+        let choices: Result<HashSet<_>, _> = domain.choices(inventory).collect();
+        let choices = choices.unwrap();
+        assert_eq!(choices.len(), 3);
+        assert!(choices.contains(&Order::Apples(Transaction::Buy(Buy(20)))));
+        assert!(choices.contains(&Order::Bananas(Transaction::Buy(Buy(30)))));
+        assert!(choices.contains(&Order::Bananas(Transaction::Sell(Sell(80)))));
     }
 }
