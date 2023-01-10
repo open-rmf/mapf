@@ -1,0 +1,312 @@
+/*
+ * Copyright (C) 2023 Open Source Robotics Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+*/
+
+use super::prelude::*;
+use crate::error::NoError;
+
+/// The `Weighted` trait describes how to calculate the cost of an action.
+pub trait Weighted<State, Action> {
+    /// How is cost represented. E.g. f32, f64, or u64
+    type Cost;
+
+    /// What kind of error can happen if a bad state or activity is provided
+    type Error;
+
+    /// Calculate the cost for performing `action` which transitions `from_state`
+    /// to `to_state`.
+    ///
+    /// When cost returns `None` that implies the state is too expensive for
+    /// consideration.
+    fn cost(
+        &self,
+        from_state: &State,
+        action: &Action,
+        to_state: &State
+    ) -> Result<Option<Self::Cost>, Self::Error>;
+}
+
+/// The `CostModifier` trait can be used with `.map` to modify the output of a
+/// `Weighted` trait.
+pub trait CostModifier<State, Action, Cost> {
+    /// What kind of error can happen if a bad input is provided
+    type Error;
+
+    /// Modified the incoming cost. The output of this function will be used
+    /// as the cost instead of the input.
+    fn modify_cost(
+        &self,
+        from_state: &State,
+        action: &Action,
+        to_state: &State,
+        original_cost: Cost,
+    ) -> Result<Option<Cost>, Self::Error>;
+}
+
+/// Implements CostModifier for simple proportional scaling of cost calculation.
+///
+/// Apply this to a Weighted property using `.map(ScaleWeight(scale))`.
+pub struct ScaleWeight<Cost: std::ops::Mul<Cost, Output=Cost> + Clone>(Cost);
+impl<State, Action, Cost> CostModifier<State, Action, Cost> for ScaleWeight<Cost>
+where
+    Cost: std::ops::Mul<Cost, Output=Cost> + Clone
+{
+    type Error = NoError;
+    fn modify_cost(
+        &self,
+        _: &State,
+        _: &Action,
+        _: &State,
+        original_cost: Cost,
+    ) -> Result<Option<Cost>, Self::Error> {
+        Ok(Some(original_cost * self.0.clone()))
+    }
+}
+
+impl<Base, Prop> Weighted<Base::State, Base::Action> for Incorporated<Base, Prop>
+where
+    Base: Domain,
+    Prop: Weighted<Base::State, Base::Action>,
+    Prop::Error: Into<Base::Error>,
+{
+    type Cost = Prop::Cost;
+    type Error = Base::Error;
+    fn cost(
+        &self,
+        from_state: &Base::State,
+        action: &Base::Action,
+        to_state: &Base::State
+    ) -> Result<Option<Self::Cost>, Self::Error> {
+        self.prop.cost(from_state, action, to_state)
+            .map_err(Into::into)
+    }
+}
+
+impl<Base, Prop> Weighted<Base::State, Base::Action> for Chained<Base, Prop>
+where
+    Base: Domain + Weighted<Base::State, Base::Action>,
+    <Base as Weighted<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    Prop: Weighted<Base::State, Base::Action, Cost=Base::Cost>,
+    Prop::Error: Into<<Base as Domain>::Error>,
+    Base::Cost: std::ops::Add<Base::Cost, Output=Base::Cost>,
+{
+    type Cost = Base::Cost;
+    type Error = <Base as Domain>::Error;
+    fn cost(
+        &self,
+        from_state: &Base::State,
+        action: &Base::Action,
+        to_state: &Base::State
+    ) -> Result<Option<Self::Cost>, Self::Error> {
+        let base_cost = self.base.cost(from_state, action, to_state)
+            .map_err(Into::into)?;
+        let prop_cost = self.prop.cost(from_state, action, to_state)
+            .map_err(Into::into)?;
+
+        let base_cost = match base_cost {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        let prop_cost = match prop_cost {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+
+        Ok(Some(base_cost + prop_cost))
+    }
+}
+
+impl<Base, Prop> Weighted<Base::State, Base::Action> for Mapped<Base, Prop>
+where
+    Base: Domain + Weighted<Base::State, Base::Action>,
+    <Base as Weighted<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    Prop: CostModifier<Base::State, Base::Action, Base::Cost>,
+    Prop::Error: Into<<Base as Domain>::Error>,
+{
+    type Cost = Base::Cost;
+    type Error = <Base as Domain>::Error;
+    fn cost(
+        &self,
+        from_state: &Base::State,
+        action: &Base::Action,
+        to_state: &Base::State
+    ) -> Result<Option<Self::Cost>, Self::Error> {
+        let base_cost = match self.base.cost(
+            from_state, action, to_state
+        ).map_err(Into::into)? {
+            Some(base_cost) => base_cost,
+            None => return Ok(None),
+        };
+
+        self.prop.modify_cost(from_state, action, to_state, base_cost)
+            .map_err(Into::into)
+    }
+}
+
+impl<Base, Lifter, Prop> Weighted<Base::State, Base::Action> for Lifted<Base, Lifter, Prop>
+where
+    Base: Domain,
+    Base::State: Clone,
+    Base::Action: Clone,
+    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Base::Action>,
+    Lifter::Error: Into<Base::Error>,
+    Lifter::ProjectionError: Into<Base::Error>,
+    Prop: Weighted<Lifter::ProjectedState, Lifter::ToAction>,
+    Prop::Error: Into<Base::Error>,
+    Prop::Cost: std::ops::Add<Prop::Cost, Output=Prop::Cost>,
+{
+    type Cost = Prop::Cost;
+    type Error = Base::Error;
+    fn cost(
+        &self,
+        from_state: &Base::State,
+        action: &Base::Action,
+        to_state: &Base::State
+    ) -> Result<Option<Self::Cost>, Self::Error> {
+        let from_state_proj = match self.lifter.project(from_state.clone())
+            .map_err(Into::into)? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        let to_state_proj = match self.lifter.project(to_state.clone())
+            .map_err(Into::into)? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        let mut actions = self.lifter.map_actions(from_state.clone(), action.clone()).into_iter();
+        let initial_action = match actions.next() {
+            Some(a) => a,
+            None => return Ok(None),
+        }.map_err(Into::into)?;
+        let mut cost = match self.prop.cost(
+            &from_state_proj, &initial_action, &to_state_proj
+        ).map_err(Into::into)? {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+
+        for action in actions {
+            let action = action.map_err(Into::into)?;
+            let additional_cost = match self.prop.cost(
+                &from_state_proj, &action, &to_state_proj
+            ).map_err(Into::into)? {
+                Some(c) => c,
+                None => return Ok(None),
+            };
+
+            cost = cost + additional_cost;
+        }
+
+        Ok(Some(cost))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::NoError;
+    use approx::assert_relative_eq;
+
+    type Point = nalgebra::Point2<f64>;
+
+    trait Mobile {
+        fn distance_traveled(&self, from_other: &Self) -> f64;
+    }
+
+    trait BatteryPowered {
+        fn battery_level(&self) -> f64;
+    }
+
+    struct TestState {
+        position: Point,
+        battery: f64,
+    }
+
+    impl Mobile for TestState {
+        fn distance_traveled(&self, from_other: &Self) -> f64 {
+            (self.position - from_other.position).norm()
+        }
+    }
+
+    impl BatteryPowered for TestState {
+        fn battery_level(&self) -> f64 {
+            self.battery
+        }
+    }
+
+    struct DistanceWeight(f64 /* cost per meter */);
+    impl<State: Mobile, Action> Weighted<State, Action> for DistanceWeight {
+        type Cost = f64;
+        type Error = NoError;
+        fn cost(
+            &self,
+            from_state: &State,
+            _: &Action,
+            to_state: &State
+        ) -> Result<Option<Self::Cost>, Self::Error> {
+            Ok(Some(to_state.distance_traveled(from_state) * self.0))
+        }
+    }
+
+    struct BatteryLossWeight(f64 /* cost per battery loss */);
+    impl<State: BatteryPowered, Action> Weighted<State, Action> for BatteryLossWeight {
+        type Cost = f64;
+        type Error = NoError;
+        fn cost(
+            &self,
+            from_state: &State,
+            _: &Action,
+            to_state: &State
+        ) -> Result<Option<Self::Cost>, Self::Error> {
+            if to_state.battery_level() < 0.0 {
+                return Ok(None);
+            }
+
+            Ok(Some((from_state.battery_level() - to_state.battery_level()) * self.0))
+        }
+    }
+
+    #[test]
+    fn test_cost_calculation() {
+        let domain = DefineTrait::<TestState, ()>::new()
+            .with(
+                DefineTrait::<TestState, ()>::new()
+                    .with(DistanceWeight(0.1))
+                    .map(ScaleWeight(2.0))
+            )
+            .chain(
+                DefineTrait::<TestState, ()>::new()
+                    .with(BatteryLossWeight(10.0))
+                    .map(ScaleWeight(3.0))
+            );
+
+        let from_state = TestState {
+            position: Point::new(0.0, 0.0),
+            battery: 1.0,
+        };
+        let to_state = TestState {
+            position: Point::new(10.0, 0.0),
+            battery: 0.5,
+        };
+
+        let cost = domain.cost(&from_state, &(), &to_state).unwrap().unwrap();
+        assert_relative_eq!(cost, 10.0*0.1*2.0 + 0.5*10.0*3.0);
+    }
+
+    // TODO(MXG): Add tests for lifting weights
+}

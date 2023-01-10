@@ -148,11 +148,10 @@ where
 impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: StateMap<Base::State> + ActionMap<Base::State, Prop::Action, ToAction=Base::Action>,
+    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Prop::Action, ToAction=Base::Action>,
     Lifter::Error: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::ToAction: Into<Base::Action>,
-    Lifter::LiftError: Into<Base::Error>,
     Prop: Activity<Lifter::ProjectedState>,
     Base::State: Clone,
     Prop::Error: Into<Base::Error>,
@@ -408,20 +407,6 @@ mod tests {
             }))
         }
     }
-    impl LiftState<Inventory> for JustApples {
-        type LiftError = NoError;
-        fn lift(
-            &self,
-            original: Inventory,
-            projection: Self::ProjectedState
-        ) -> Result<Option<Inventory>, Self::LiftError> {
-            Ok(Some(Inventory {
-                apples: projection.count,
-                budget: projection.budget,
-                ..original
-            }))
-        }
-    }
     impl ActionMap<Inventory, Transaction> for JustApples {
         type Error = NoError;
         type ToAction = Order;
@@ -452,20 +437,6 @@ mod tests {
             Ok(Some(Item {
                 count: state.bananas,
                 budget: state.budget,
-            }))
-        }
-    }
-    impl LiftState<Inventory> for JustBananas {
-        type LiftError = NoError;
-        fn lift(
-            &self,
-            original: Inventory,
-            projection: Self::ProjectedState
-        ) -> Result<Option<Inventory>, Self::LiftError> {
-            Ok(Some(Inventory {
-                bananas: projection.count,
-                budget: projection.budget,
-                ..original
             }))
         }
     }

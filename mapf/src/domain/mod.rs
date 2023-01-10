@@ -35,6 +35,7 @@ pub mod define_trait;
 pub mod domain_map;
 pub mod dynamics;
 pub mod state_map;
+pub mod weighted;
 
 pub mod prelude {
     pub use super::*;
@@ -44,4 +45,5 @@ pub mod prelude {
     pub use super::domain_map::*;
     pub use super::dynamics::*;
     pub use super::state_map::*;
+    pub use super::weighted::*;
 }
