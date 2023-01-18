@@ -232,9 +232,23 @@ mod tests {
         fn battery_level(&self) -> f64;
     }
 
+    #[derive(Clone, Copy)]
     struct TestState {
         position: Point,
         battery: f64,
+    }
+
+    impl From<TestState> for Point {
+        fn from(value: TestState) -> Self {
+            value.position
+        }
+    }
+
+    struct Battery(f64);
+    impl From<TestState> for Battery {
+        fn from(value: TestState) -> Self {
+            Battery(value.battery)
+        }
     }
 
     impl Mobile for TestState {
@@ -243,9 +257,21 @@ mod tests {
         }
     }
 
+    impl Mobile for Point {
+        fn distance_traveled(&self, from_other: &Self) -> f64 {
+            (*self - *from_other).norm()
+        }
+    }
+
     impl BatteryPowered for TestState {
         fn battery_level(&self) -> f64 {
             self.battery
+        }
+    }
+
+    impl BatteryPowered for Battery {
+        fn battery_level(&self) -> f64 {
+            self.0
         }
     }
 
@@ -308,5 +334,32 @@ mod tests {
         assert_relative_eq!(cost, 10.0*0.1*2.0 + 0.5*10.0*3.0);
     }
 
-    // TODO(MXG): Add tests for lifting weights
+    #[test]
+    fn test_lifted_weight_calculation() {
+        let domain = DefineTrait::<TestState, ()>::new()
+            .lift(
+                DefineDomainMap::for_subspace(StateInto::<Point>::new()),
+                DefineTrait::<Point, ()>::new()
+                    .with(DistanceWeight(0.1))
+                    .map(ScaleWeight(2.0))
+            )
+            .chain_lift(
+                DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
+                DefineTrait::<Battery, ()>::new()
+                    .with(BatteryLossWeight(10.0))
+                    .map(ScaleWeight(3.0))
+            );
+
+        let from_state = TestState {
+            position: Point::new(0.0, 0.0),
+            battery: 1.0,
+        };
+        let to_state = TestState {
+            position: Point::new(10.0, 0.0),
+            battery: 0.5,
+        };
+
+        let cost = domain.cost(&from_state, &(), &to_state).unwrap().unwrap();
+        assert_relative_eq!(cost, 10.0*0.1*2.0 + 0.5*10.0*3.0);
+    }
 }

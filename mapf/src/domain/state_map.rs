@@ -84,6 +84,11 @@ impl<State> LiftState<State> for NoStateSubspace<State> {
 pub struct StateInto<ProjectedState> {
     _ignore: std::marker::PhantomData<ProjectedState>,
 }
+impl<ProjectedState> StateInto<ProjectedState> {
+    pub fn new() -> Self {
+        Self { _ignore: Default::default() }
+    }
+}
 impl<ProjectedState> StateSubspace for StateInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
