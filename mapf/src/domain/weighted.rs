@@ -17,6 +17,7 @@
 
 use super::prelude::*;
 use crate::error::NoError;
+use num::traits::Zero;
 
 /// The `Weighted` trait describes how to calculate the cost of an action.
 pub trait Weighted<State, Action> {
@@ -24,7 +25,7 @@ pub trait Weighted<State, Action> {
     type Cost;
 
     /// What kind of error can happen if a bad state or activity is provided
-    type Error;
+    type WeightedError;
 
     /// Calculate the cost for performing `action` which transitions `from_state`
     /// to `to_state`.
@@ -36,14 +37,14 @@ pub trait Weighted<State, Action> {
         from_state: &State,
         action: &Action,
         to_state: &State
-    ) -> Result<Option<Self::Cost>, Self::Error>;
+    ) -> Result<Option<Self::Cost>, Self::WeightedError>;
 }
 
 /// The `CostModifier` trait can be used with `.map` to modify the output of a
 /// `Weighted` trait.
 pub trait CostModifier<State, Action, Cost> {
     /// What kind of error can happen if a bad input is provided
-    type Error;
+    type CostModifierError;
 
     /// Modified the incoming cost. The output of this function will be used
     /// as the cost instead of the input.
@@ -53,25 +54,25 @@ pub trait CostModifier<State, Action, Cost> {
         action: &Action,
         to_state: &State,
         original_cost: Cost,
-    ) -> Result<Option<Cost>, Self::Error>;
+    ) -> Result<Option<Cost>, Self::CostModifierError>;
 }
 
 /// Implements CostModifier for simple proportional scaling of cost calculation.
 ///
 /// Apply this to a Weighted property using `.map(ScaleWeight(scale))`.
-pub struct ScaleWeight<Cost: std::ops::Mul<Cost, Output=Cost> + Clone>(Cost);
+pub struct ScaleWeight<Cost: std::ops::Mul<Cost, Output=Cost> + Clone>(pub Cost);
 impl<State, Action, Cost> CostModifier<State, Action, Cost> for ScaleWeight<Cost>
 where
     Cost: std::ops::Mul<Cost, Output=Cost> + Clone
 {
-    type Error = NoError;
+    type CostModifierError = NoError;
     fn modify_cost(
         &self,
         _: &State,
         _: &Action,
         _: &State,
         original_cost: Cost,
-    ) -> Result<Option<Cost>, Self::Error> {
+    ) -> Result<Option<Cost>, Self::CostModifierError> {
         Ok(Some(original_cost * self.0.clone()))
     }
 }
@@ -80,16 +81,16 @@ impl<Base, Prop> Weighted<Base::State, Base::Action> for Incorporated<Base, Prop
 where
     Base: Domain,
     Prop: Weighted<Base::State, Base::Action>,
-    Prop::Error: Into<Base::Error>,
+    Prop::WeightedError: Into<Base::Error>,
 {
     type Cost = Prop::Cost;
-    type Error = Base::Error;
+    type WeightedError = Base::Error;
     fn cost(
         &self,
         from_state: &Base::State,
         action: &Base::Action,
         to_state: &Base::State
-    ) -> Result<Option<Self::Cost>, Self::Error> {
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         self.prop.cost(from_state, action, to_state)
             .map_err(Into::into)
     }
@@ -98,19 +99,19 @@ where
 impl<Base, Prop> Weighted<Base::State, Base::Action> for Chained<Base, Prop>
 where
     Base: Domain + Weighted<Base::State, Base::Action>,
-    <Base as Weighted<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    Base::WeightedError: Into<Base::Error>,
     Prop: Weighted<Base::State, Base::Action, Cost=Base::Cost>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Prop::WeightedError: Into<Base::Error>,
     Base::Cost: std::ops::Add<Base::Cost, Output=Base::Cost>,
 {
     type Cost = Base::Cost;
-    type Error = <Base as Domain>::Error;
+    type WeightedError = Base::Error;
     fn cost(
         &self,
         from_state: &Base::State,
         action: &Base::Action,
         to_state: &Base::State
-    ) -> Result<Option<Self::Cost>, Self::Error> {
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let base_cost = self.base.cost(from_state, action, to_state)
             .map_err(Into::into)?;
         let prop_cost = self.prop.cost(from_state, action, to_state)
@@ -132,18 +133,18 @@ where
 impl<Base, Prop> Weighted<Base::State, Base::Action> for Mapped<Base, Prop>
 where
     Base: Domain + Weighted<Base::State, Base::Action>,
-    <Base as Weighted<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    Base::WeightedError: Into<Base::Error>,
     Prop: CostModifier<Base::State, Base::Action, Base::Cost>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Prop::CostModifierError: Into<Base::Error>,
 {
     type Cost = Base::Cost;
-    type Error = <Base as Domain>::Error;
+    type WeightedError = Base::Error;
     fn cost(
         &self,
         from_state: &Base::State,
         action: &Base::Action,
         to_state: &Base::State
-    ) -> Result<Option<Self::Cost>, Self::Error> {
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let base_cost = match self.base.cost(
             from_state, action, to_state
         ).map_err(Into::into)? {
@@ -162,20 +163,20 @@ where
     Base::State: Clone,
     Base::Action: Clone,
     Lifter: ProjectState<Base::State> + ActionMap<Base::State, Base::Action>,
-    Lifter::Error: Into<Base::Error>,
+    Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Weighted<Lifter::ProjectedState, Lifter::ToAction>,
-    Prop::Error: Into<Base::Error>,
-    Prop::Cost: std::ops::Add<Prop::Cost, Output=Prop::Cost>,
+    Prop::WeightedError: Into<Base::Error>,
+    Prop::Cost: std::ops::Add<Prop::Cost, Output=Prop::Cost> + Zero,
 {
     type Cost = Prop::Cost;
-    type Error = Base::Error;
+    type WeightedError = Base::Error;
     fn cost(
         &self,
         from_state: &Base::State,
         action: &Base::Action,
         to_state: &Base::State
-    ) -> Result<Option<Self::Cost>, Self::Error> {
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let from_state_proj = match self.lifter.project(from_state.clone())
             .map_err(Into::into)? {
             Some(s) => s,
@@ -188,18 +189,10 @@ where
             None => return Ok(None),
         };
 
-        let mut actions = self.lifter.map_actions(from_state.clone(), action.clone()).into_iter();
-        let initial_action = match actions.next() {
-            Some(a) => a,
-            None => return Ok(None),
-        }.map_err(Into::into)?;
-        let mut cost = match self.prop.cost(
-            &from_state_proj, &initial_action, &to_state_proj
-        ).map_err(Into::into)? {
-            Some(c) => c,
-            None => return Ok(None),
-        };
-
+        let mut cost = Prop::Cost::zero();
+        let mut actions = self.lifter.map_actions(
+            from_state.clone(), action.clone()
+        ).into_iter();
         for action in actions {
             let action = action.map_err(Into::into)?;
             let additional_cost = match self.prop.cost(
@@ -278,13 +271,13 @@ mod tests {
     struct DistanceWeight(f64 /* cost per meter */);
     impl<State: Mobile, Action> Weighted<State, Action> for DistanceWeight {
         type Cost = f64;
-        type Error = NoError;
+        type WeightedError = NoError;
         fn cost(
             &self,
             from_state: &State,
             _: &Action,
             to_state: &State
-        ) -> Result<Option<Self::Cost>, Self::Error> {
+        ) -> Result<Option<Self::Cost>, Self::WeightedError> {
             Ok(Some(to_state.distance_traveled(from_state) * self.0))
         }
     }
@@ -292,13 +285,13 @@ mod tests {
     struct BatteryLossWeight(f64 /* cost per battery loss */);
     impl<State: BatteryPowered, Action> Weighted<State, Action> for BatteryLossWeight {
         type Cost = f64;
-        type Error = NoError;
+        type WeightedError = NoError;
         fn cost(
             &self,
             from_state: &State,
             _: &Action,
             to_state: &State
-        ) -> Result<Option<Self::Cost>, Self::Error> {
+        ) -> Result<Option<Self::Cost>, Self::WeightedError> {
             if to_state.battery_level() < 0.0 {
                 return Ok(None);
             }

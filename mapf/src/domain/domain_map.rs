@@ -79,12 +79,12 @@ where
     A: ActionMap<State, FromAction>,
 {
     type ToAction = A::ToAction;
-    type Error = A::Error;
+    type ActionMapError = A::ActionMapError;
     type ToActions<'a> = A::ToActions<'a>
     where
         Self: 'a,
         Self::ToAction: 'a,
-        Self::Error: 'a,
+        Self::ActionMapError: 'a,
         State: 'a,
         FromAction: 'a;
 

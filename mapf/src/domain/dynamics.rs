@@ -74,11 +74,11 @@ impl<Base, Prop> Dynamics<Base::State, Base::Action> for Mapped<Base, Prop>
 where
     Base: Domain + Dynamics<Base::State, Prop::ToAction>,
     Prop: ActionMap<Base::State, Base::Action>,
-    <Prop as ActionMap<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    <Prop as ActionMap<Base::State, Base::Action>>::ActionMapError: Into<<Base as Domain>::Error>,
     Base::State: Clone,
     Base::Action: Clone,
     <Base as Dynamics<Base::State, Prop::ToAction>>::Error: Into<<Base as Domain>::Error>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Prop::ActionMapError: Into<<Base as Domain>::Error>,
 {
     type Error = <Base as Domain>::Error;
     fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
@@ -99,7 +99,7 @@ impl<Base, Lifter, Prop> Dynamics<Base::State, Base::Action> for Lifted<Base, Li
 where
     Base: Domain,
     Lifter: StateMap<Base::State> + ActionMap<Base::State, Base::Action>,
-    Lifter::Error: Into<Base::Error>,
+    Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::LiftError: Into<Base::Error>,
     Prop: Dynamics<Lifter::ProjectedState, Lifter::ToAction>,

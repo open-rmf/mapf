@@ -16,7 +16,6 @@
 */
 
 use crate::error::NoError;
-use super::prelude::*;
 
 /// The ActionMap trait describes a domain property that can modify the
 /// actions produced or used by activities. This can be used to apply
@@ -26,14 +25,14 @@ pub trait ActionMap<State, FromAction> {
     type ToAction;
 
     /// What kind of error can happen if a bad state or action is provided
-    type Error;
+    type ActionMapError;
 
     /// Conrete type for the returned container of actions
-    type ToActions<'a>: IntoIterator<Item = Result<Self::ToAction, Self::Error>>
+    type ToActions<'a>: IntoIterator<Item = Result<Self::ToAction, Self::ActionMapError>>
     where
         Self: 'a,
         Self::ToAction: 'a,
-        Self::Error: 'a,
+        Self::ActionMapError: 'a,
         State: 'a,
         FromAction: 'a;
 
@@ -64,7 +63,7 @@ where
     FromAction: Into<ToAction>
 {
     type ToAction = ToAction;
-    type Error = NoError;
+    type ActionMapError = NoError;
     type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
@@ -100,7 +99,7 @@ where
     FromAction: Into<Option<ToAction>>,
 {
     type ToAction = ToAction;
-    type Error = NoError;
+    type ActionMapError = NoError;
     type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
@@ -124,7 +123,7 @@ where
 /// Used by DomainMap when an ActionMap is not needed.
 pub struct NoActionMap;
 impl<State, Action> ActionMap<State, Action> for NoActionMap {
-    type Error = NoError;
+    type ActionMapError = NoError;
     type ToAction = Action;
     type ToActions<'a> = Option<Result<Action, NoError>>
     where

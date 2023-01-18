@@ -29,17 +29,17 @@ use crate::util::FlatResultMapTrait;
 /// that vertex.
 pub trait Activity<State> {
     /// What kind of action is produced by this activity
-    type Action;
+    type ActivityAction;
 
     /// What kind of error can happen if a bad state is provided
-    type Error;
+    type ActivityError;
 
     /// Concrete type for the returned container of choices
-    type Choices<'a>: IntoIterator<Item = Result<Self::Action, Self::Error>>
+    type Choices<'a>: IntoIterator<Item = Result<Self::ActivityAction, Self::ActivityError>>
     where
         Self: 'a,
-        Self::Action: 'a,
-        Self::Error: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
         State: 'a;
 
     /// What choices can be made related to this activity from the provided state
@@ -50,18 +50,18 @@ impl<Base, Prop> Activity<Base::State> for Incorporated<Base, Prop>
 where
     Base: Domain,
     Prop: Activity<Base::State>,
-    Prop::Action: Into<Base::Action>,
-    Prop::Error: Into<Base::Error>,
+    Prop::ActivityAction: Into<Base::Action>,
+    Prop::ActivityError: Into<Base::Error>,
 {
-    type Action = Base::Action;
-    type Error = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<Self::Action, Self::Error>> + 'a
+    type ActivityAction = Base::Action;
+    type ActivityError = Base::Error;
+    type Choices<'a> = impl Iterator<Item=Result<Self::ActivityAction, Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
         Prop: 'a,
-        Self::Action: 'a,
-        Self::Error: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
         Base::State: 'a;
 
     fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
@@ -75,21 +75,21 @@ impl<Base, Prop> Activity<Base::State> for Chained<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
-    <Base as Activity<Base::State>>::Action: Into<<Base as Domain>::Action>,
-    <Base as Activity<Base::State>>::Error: Into<<Base as Domain>::Error>,
+    Base::ActivityAction: Into<Base::Action>,
+    Base::ActivityError: Into<Base::Error>,
     Prop: Activity<Base::State>,
-    Prop::Action: Into<<Base as Domain>::Action>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Prop::ActivityAction: Into<Base::Action>,
+    Prop::ActivityError: Into<Base::Error>,
 {
-    type Action = <Base as Domain>::Action;
-    type Error = <Base as Domain>::Error;
-    type Choices<'a> = impl Iterator<Item=Result<Self::Action, Self::Error>> + 'a
+    type ActivityAction = Base::Action;
+    type ActivityError = Base::Error;
+    type Choices<'a> = impl Iterator<Item=Result<Self::ActivityAction, Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
         Prop: 'a,
-        Self::Action: 'a,
-        Self::Error: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
         Base::State: 'a;
 
     fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
@@ -107,20 +107,20 @@ impl<Base, Prop> Activity<Base::State> for Mapped<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
-    <Base as Activity<Base::State>>::Error: Into<<Base as Domain>::Error>,
-    Prop: ActionMap<Base::State, <Base as Activity<Base::State>>::Action>,
-    Prop::ToAction: Into<<Base as Domain>::Action>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Base::ActivityError: Into<Base::Error>,
+    Prop: ActionMap<Base::State, Base::ActivityAction>,
+    Prop::ToAction: Into<Base::Action>,
+    Prop::ActionMapError: Into<Base::Error>,
 {
-    type Action = <Base as Domain>::Action;
-    type Error = <Base as Domain>::Error;
-    type Choices<'a> = impl Iterator<Item=Result<Self::Action, Self::Error>> + 'a
+    type ActivityAction = Base::Action;
+    type ActivityError = Base::Error;
+    type Choices<'a> = impl Iterator<Item=Result<Self::ActivityAction, Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
         Prop: 'a,
-        Self::Action: 'a,
-        Self::Error: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
         Base::State: 'a;
 
     fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
@@ -148,23 +148,23 @@ where
 impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Prop::Action, ToAction=Base::Action>,
-    Lifter::Error: Into<Base::Error>,
+    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Prop::ActivityAction, ToAction=Base::Action>,
+    Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::ToAction: Into<Base::Action>,
     Prop: Activity<Lifter::ProjectedState>,
     Base::State: Clone,
-    Prop::Error: Into<Base::Error>,
+    Prop::ActivityError: Into<Base::Error>,
 {
-    type Action = Lifter::ToAction;
-    type Error = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<Self::Action, Self::Error>> + 'a
+    type ActivityAction = Lifter::ToAction;
+    type ActivityError = Base::Error;
+    type Choices<'a> = impl Iterator<Item=Result<Self::ActivityAction, Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
         Prop: 'a,
-        Self::Action: 'a,
-        Self::Error: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
         Base::State: 'a;
 
     fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
@@ -179,7 +179,7 @@ where
                     let from_state = from_state.clone();
                     self.prop.choices(projected_state)
                         .into_iter()
-                        .flat_map(move |r: Result<Prop::Action, Prop::Error>| {
+                        .flat_map(move |r: Result<Prop::ActivityAction, Prop::ActivityError>| {
                             let from_state = from_state.clone();
                             r
                             .map_err(Into::into)
@@ -191,10 +191,10 @@ where
                                         .map(Into::into)
                                     )
                             })
-                            .map(|x: Result<Result<Self::Action, Self::Error>, Self::Error>| x.flatten())
+                            .map(|x: Result<Result<Self::ActivityAction, Self::ActivityError>, Self::ActivityError>| x.flatten())
                         })
                 })
-                .map(|x: Result<Result<Self::Action, Self::Error>, Self::Error>| x.flatten())
+                .map(|x: Result<Result<Self::ActivityAction, Self::ActivityError>, Self::ActivityError>| x.flatten())
             })
     }
 }
@@ -214,8 +214,8 @@ mod tests {
     struct Interval(u64);
 
     impl Activity<u64> for Count {
-        type Action = Interval;
-        type Error = NoError;
+        type ActivityAction = Interval;
+        type ActivityError = NoError;
         type Choices<'a> = impl Iterator<Item=Result<Interval, NoError>> + 'a;
 
         fn choices<'a>(&'a self, _: u64) -> Self::Choices<'a> {
@@ -226,8 +226,8 @@ mod tests {
     struct Multiplier(u64);
     impl ActionMap<u64, Interval> for Multiplier {
         type ToAction = Interval;
-        type Error = NoError;
-        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
+        type ActionMapError = NoError;
+        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::ActionMapError>> + 'a;
         fn map_actions<'a>(
             &'a self,
             _: u64,
@@ -243,8 +243,8 @@ mod tests {
     struct DoubleTheOdds;
     impl ActionMap<u64, Interval> for DoubleTheOdds {
         type ToAction = Interval;
-        type Error = NoError;
-        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
+        type ActionMapError = NoError;
+        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::ActionMapError>> + 'a;
         fn map_actions<'a>(
             &'a self,
             from_state: u64,
@@ -270,8 +270,8 @@ mod tests {
     struct MapToTestError;
     impl ActionMap<u64, Interval> for MapToTestError {
         type ToAction = Interval;
-        type Error = TestError;
-        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::Error>> + 'a;
+        type ActionMapError = TestError;
+        type ToActions<'a> = impl IntoIterator<Item=Result<Interval, Self::ActionMapError>> + 'a;
         fn map_actions<'a>(
             &'a self,
             _: u64,
@@ -342,8 +342,8 @@ mod tests {
     #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
     struct Buy(u64 /* price per unit */);
     impl Activity<Item> for Buy {
-        type Action = Buy;
-        type Error = NoError;
+        type ActivityAction = Buy;
+        type ActivityError = NoError;
         type Choices<'a> = Option<Result<Buy, NoError>>;
         fn choices<'a>(&'a self, from_state: Item) -> Option<Result<Buy, NoError>> {
             if from_state.budget < self.0 {
@@ -357,8 +357,8 @@ mod tests {
     #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
     struct Sell(u64 /* price per unit */);
     impl Activity<Item> for Sell {
-        type Action = Sell;
-        type Error = NoError;
+        type ActivityAction = Sell;
+        type ActivityError = NoError;
         type Choices<'a> = Option<Result<Sell, NoError>>;
         fn choices<'a>(&'a self, from_state: Item) -> Self::Choices<'a> {
             if from_state.count <= 0 {
@@ -408,7 +408,7 @@ mod tests {
         }
     }
     impl ActionMap<Inventory, Transaction> for JustApples {
-        type Error = NoError;
+        type ActionMapError = NoError;
         type ToAction = Order;
         type ToActions<'a> = Option<Result<Order, NoError>>;
         fn map_actions<'a>(
@@ -441,7 +441,7 @@ mod tests {
         }
     }
     impl ActionMap<Inventory, Transaction> for JustBananas {
-        type Error = NoError;
+        type ActionMapError = NoError;
         type ToAction = Order;
         type ToActions<'a> = Option<Result<Order, NoError>>;
         fn map_actions<'a>(
