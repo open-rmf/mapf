@@ -180,25 +180,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::weighted::tests::*;
     use crate::error::NoError;
     use approx::assert_relative_eq;
-
-    type Point = nalgebra::Point2<f64>;
-
-    #[derive(Copy, Clone)]
-    struct TestState {
-        position: Point,
-        #[allow(dead_code)] battery: f64,
-    }
-
-    trait Mobile {
-        fn position(&self) -> Point;
-    }
-    impl Mobile for TestState {
-        fn position(&self) -> Point {
-            self.position
-        }
-    }
 
     struct EuclideanDistanceEstimate;
     impl<State: Mobile> Informed<State> for EuclideanDistanceEstimate {
@@ -210,6 +194,24 @@ mod tests {
             to_goal_state: &State,
         ) -> Result<Option<Self::Cost>, Self::InformedError> {
             Ok(Some((from_state.position() - to_goal_state.position()).norm()))
+        }
+    }
+
+    struct BatteryLevelCostEstimate;
+    impl<State: BatteryPowered> Informed<State> for BatteryLevelCostEstimate {
+        type Cost = f64;
+        type InformedError = NoError;
+        fn remaining_cost_estimate(
+            &self,
+            from_state: &State,
+            _: &State,
+        ) -> Result<Option<Self::Cost>, Self::InformedError> {
+            if from_state.battery_level() <= 0.0 {
+                return Ok(None);
+            }
+
+            // We penalize a low battery value
+            Ok(Some(1.0/from_state.battery_level()))
         }
     }
 
@@ -230,5 +232,34 @@ mod tests {
 
         let cost_estimate = domain.remaining_cost_estimate(&from_state, &to_goal_state).unwrap().unwrap();
         assert_relative_eq!(cost_estimate, 10.0 * 0.1);
+    }
+
+    #[test]
+    fn test_lifted_cost_estimate() {
+        let domain = DefineTrait::<TestState, ()>::new()
+            .lift(
+                DefineDomainMap::for_subspace(StateInto::<Point>::new()),
+                DefineTrait::<Point, ()>::new()
+                    .with(EuclideanDistanceEstimate)
+                    .map(ScaleWeight(0.1))
+            )
+            .chain_lift(
+                DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
+                DefineTrait::<Battery, ()>::new()
+                    .with(BatteryLevelCostEstimate)
+                    .map(ScaleWeight(0.2))
+            );
+
+        let from_state = TestState {
+            position: Point::new(0.0, 0.0),
+            battery: 0.35,
+        };
+        let to_goal_state = TestState {
+            position: Point::new(10.0, 0.0),
+            battery: 0.25,
+        };
+
+        let cost_estimate = domain.remaining_cost_estimate(&from_state, &to_goal_state).unwrap().unwrap();
+        assert_relative_eq!(cost_estimate, 10.0 * 0.1 + 1.0/0.35 * 0.2);
     }
 }

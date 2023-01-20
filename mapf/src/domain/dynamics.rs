@@ -313,7 +313,7 @@ mod tests {
             )
             .chain_lift(
                 DefineDomainMap::<TestState>::for_actions(
-                    ActionMaybeInto::<TimeDelta>::new()
+                    MaybeActionInto::<TimeDelta>::new()
                 ),
                 DefineTrait::<TestState, TimeDelta>::new()
                     .with(TimeBatteryDrain(0.1))
@@ -322,7 +322,7 @@ mod tests {
             .chain_lift(
                 DefineDomainMap::with(
                     BatterySubspace,
-                    ActionMaybeInto::<Move>::new(),
+                    MaybeActionInto::<Move>::new(),
                 ),
                 MoveBatteryDrain(0.02),
             );

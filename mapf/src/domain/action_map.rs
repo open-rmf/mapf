@@ -84,17 +84,17 @@ where
 }
 
 /// This struct implements ActionMap for any action that implements Into<Option<ToAction>>
-pub struct ActionMaybeInto<ToAction> {
+pub struct MaybeActionInto<ToAction> {
     _ignore: std::marker::PhantomData<ToAction>
 }
 
-impl<ToAction> ActionMaybeInto<ToAction> {
+impl<ToAction> MaybeActionInto<ToAction> {
     pub fn new() -> Self {
         Self { _ignore: Default::default() }
     }
 }
 
-impl<S, FromAction, ToAction> ActionMap<S, FromAction> for ActionMaybeInto<ToAction>
+impl<S, FromAction, ToAction> ActionMap<S, FromAction> for MaybeActionInto<ToAction>
 where
     FromAction: Into<Option<ToAction>>,
 {

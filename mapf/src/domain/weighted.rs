@@ -190,7 +190,7 @@ where
         };
 
         let mut cost = Prop::Cost::zero();
-        let mut actions = self.lifter.map_actions(
+        let actions = self.lifter.map_actions(
             from_state.clone(), action.clone()
         ).into_iter();
         for action in actions {
@@ -210,25 +210,26 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::error::NoError;
     use approx::assert_relative_eq;
 
-    type Point = nalgebra::Point2<f64>;
+    pub(crate) type Point = nalgebra::Point2<f64>;
 
-    trait Mobile {
+    pub(crate) trait Mobile {
+        fn position(&self) -> Point;
         fn distance_traveled(&self, from_other: &Self) -> f64;
     }
 
-    trait BatteryPowered {
+    pub(crate) trait BatteryPowered {
         fn battery_level(&self) -> f64;
     }
 
     #[derive(Clone, Copy)]
-    struct TestState {
-        position: Point,
-        battery: f64,
+    pub(crate) struct TestState {
+        pub(crate) position: Point,
+        pub(crate) battery: f64,
     }
 
     impl From<TestState> for Point {
@@ -237,7 +238,7 @@ mod tests {
         }
     }
 
-    struct Battery(f64);
+    pub(crate) struct Battery(f64);
     impl From<TestState> for Battery {
         fn from(value: TestState) -> Self {
             Battery(value.battery)
@@ -245,12 +246,20 @@ mod tests {
     }
 
     impl Mobile for TestState {
+        fn position(&self) -> Point {
+            self.position
+        }
+
         fn distance_traveled(&self, from_other: &Self) -> f64 {
             (self.position - from_other.position).norm()
         }
     }
 
     impl Mobile for Point {
+        fn position(&self) -> Point {
+            *self
+        }
+
         fn distance_traveled(&self, from_other: &Self) -> f64 {
             (*self - *from_other).norm()
         }
