@@ -14,7 +14,7 @@ maintenance = {status = "experimental"}
 # nalgebra is waiting on a release of https://github.com/dimforge/nalgebra/pull/1094
 nalgebra = "0.31.1" #{ git = "https://github.com/dimforge/nalgebra", branch = "dev" }
 time-point = "0.1"
-sorted-vec = { git = "https://gitlab.com/grey12/sorted-vec", branch = "master" }
+sorted-vec = "0.8.2"
 simba = "*"
 num-complex = "*"
 cached = "0.40"

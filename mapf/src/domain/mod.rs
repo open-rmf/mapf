@@ -31,23 +31,29 @@ pub trait Domain {
 
 pub mod action_map;
 pub mod activity;
+pub mod closable;
 pub mod define_trait;
 pub mod domain_map;
 pub mod dynamics;
 pub mod informed;
 pub mod initializable;
+pub mod reachable;
+pub mod reversible;
 pub mod state_map;
 pub mod weighted;
 
 pub mod prelude {
     pub use super::*;
-    pub use super::activity::*;
     pub use super::action_map::*;
+    pub use super::activity::*;
+    pub use super::closable::*;
     pub use super::define_trait::*;
     pub use super::domain_map::*;
     pub use super::dynamics::*;
     pub use super::informed::*;
     pub use super::initializable::*;
+    pub use super::reachable::*;
+    pub use super::reversible::*;
     pub use super::state_map::*;
     pub use super::weighted::*;
 }
