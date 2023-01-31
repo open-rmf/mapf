@@ -16,9 +16,10 @@
 */
 
 use crate::{
-    algorithm::{Algorithm, InitError},
+    algorithm::{Algorithm, Coherent},
     expander::{Goal, InitTargeted, InitTargetedErrorOf, Solvable, Targeted},
-    progress::{self, BasicOptions, Options, Progress},
+    search::{self, Search},
+    halt::Halt,
     trace::{NoTrace, Trace},
 };
 use anyhow;
@@ -31,145 +32,69 @@ use std::{cell::RefCell, sync::Arc};
 /// The Planner::plan(start, goal) function will create a Progress object which
 /// manages the planning progress and allows you to tweak planning settings
 /// during runtime as needed.
-pub struct Planner<E: Solvable, A: Algorithm<E>, O: Options<E, A> = BasicOptions> {
+pub struct Planner<A: Algorithm, H: Halt<A> = ()> {
     /// The object which determines the search pattern
     algorithm: Arc<A>,
 
-    /// The object which determines patterns for expansion
-    expander: Arc<E>,
-
     /// The factory for generating progress objects
-    default_options: O,
+    default_halt: H,
 }
 
-impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
+impl<A: Algorithm, H: Halt<A>> Planner<A, H> {
     /// Construct a new planner with the given configuration and a set of
     /// default options.
-    pub fn new(expander: Arc<E>) -> Self
+    pub fn new(algorithm: A) -> Self
     where
-        A: Default,
-        O: Default,
+        H: Default,
     {
         Self {
-            algorithm: Arc::new(A::default()),
-            expander,
-            default_options: Default::default(),
+            algorithm: Arc::new(algorithm),
+            default_halt: Default::default(),
         }
     }
 
-    /// If the algorithm being used is configurable, this function can be used
-    /// to configure its settings while constructing the planner.
-    pub fn from_algorithm(expander: Arc<E>, algorithm: Arc<A>) -> Self
-    where
-        O: Default,
-    {
+    pub fn new_with_halt(algorithm: A, halt: H) -> Self {
         Self {
-            algorithm,
-            expander,
-            default_options: Default::default(),
-        }
-    }
-
-    /// If you want custom default options, this function can be used to set
-    /// those options while constructing the planner.
-    pub fn from_options(expander: Arc<E>, default_options: O) -> Self
-    where
-        A: Default,
-    {
-        Self {
-            algorithm: Arc::new(A::default()),
-            expander,
-            default_options,
-        }
-    }
-
-    /// If every part of the planner should be customized, use this to construct
-    /// it.
-    pub fn from_parts(expander: Arc<E>, algorithm: Arc<A>, default_options: O) -> Self {
-        Self {
-            algorithm,
-            expander,
-            default_options,
+            algorithm: Arc::new(algorithm),
+            default_halt: halt,
         }
     }
 
     /// Begin planning from the start conditions to the goal conditions.
-    pub fn plan<S, G: Goal<E::Node>>(
+    pub fn plan<Start, Goal>(
         &self,
-        start: &S,
-        goal: G,
-    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+        start: Start,
+        goal: Goal,
+    ) -> Result<Search<A, H>, A::InitError>
     where
-        E: InitTargeted<S, G> + Targeted<G>,
+        A: Coherent<Start, Goal>,
     {
         self.plan_with_options(start, goal, self.default_options.clone())
     }
 
-    pub fn plan_with_options<S, G: Goal<E::Node>>(
+    pub fn plan_with_halt<Start, Goal, WithHalt: Halt<A>>(
         &self,
-        start: &S,
-        goal: G,
-        options: O,
-    ) -> Result<Progress<E, A, O, G, NoTrace>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+        start: Start,
+        goal: Goal,
+        halt: WithHalt,
+    ) -> Result<Search<A, WithHalt>, A::InitError>
     where
-        E: InitTargeted<S, G> + Targeted<G>,
+        A: Coherent<Start, Goal>,
     {
         let mut trace = NoTrace::default();
-        let memory = self
-            .algorithm
-            .initialize(self.expander.clone(), &start, &goal, &mut trace)?;
+        let memory = self.algorithm.initialize(start, goal)?;
 
-        Ok(Progress::new(
+        Ok(Search::new(
             memory,
             self.algorithm.clone(),
-            options,
-            goal,
-            trace,
+            halt,
         ))
     }
 
-    /// Perform a planning job while tracking the behavior, usually for debugging purposes.
-    pub fn trace<S, G: Goal<E::Node>, T: Trace<E::Node>>(
-        &self,
-        start: &S,
-        goal: G,
-        trace: T,
-    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
+    pub fn into_abstract<S, G>(self) -> Abstract<S, G, A::Solution>
     where
-        E: InitTargeted<S, G> + Targeted<G>,
-    {
-        self.trace_with_options(start, goal, self.default_options.clone(), trace)
-    }
-
-    pub fn trace_with_options<S, G: Goal<E::Node>, T: Trace<E::Node>>(
-        &self,
-        start: &S,
-        goal: G,
-        options: O,
-        mut trace: T,
-    ) -> Result<Progress<E, A, O, G, T>, InitError<A::InitError, InitTargetedErrorOf<E, S, G>>>
-    where
-        E: InitTargeted<S, G> + Targeted<G>,
-    {
-        let memory = self
-            .algorithm
-            .initialize(self.expander.clone(), &start, &goal, &mut trace)?;
-
-        Ok(Progress::new(
-            memory,
-            self.algorithm.clone(),
-            options,
-            goal,
-            trace,
-        ))
-    }
-
-    pub fn into_abstract<S, G>(self) -> Abstract<S, G, E::Solution>
-    where
-        E: InitTargeted<S, G> + Targeted<G> + 'static,
-        A: 'static,
-        O: 'static,
-        G: Goal<E::Node> + 'static,
+        A: Coherent<S, G> + 'static,
+        H: 'static,
     {
         Abstract {
             implementation: Box::new(RefCell::new(self)),
@@ -177,27 +102,18 @@ impl<E: Solvable, A: Algorithm<E>, O: Options<E, A>> Planner<E, A, O> {
     }
 }
 
-pub fn make_planner<E: Solvable, A: Algorithm<E>>(
-    expander: Arc<E>,
-    algorithm: Arc<A>,
-) -> Planner<E, A> {
-    Planner::from_algorithm(expander, algorithm)
-}
-
 pub trait Interface<S, G, Solution> {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<Solution>>;
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<Solution>>;
 }
 
-impl<E, A, O, S, G> Interface<S, G, E::Solution> for Planner<E, A, O>
+impl<A, H, S, G> Interface<S, G, A::Solution> for Planner<A, H>
 where
-    E: InitTargeted<S, G> + Targeted<G> + Solvable + 'static,
-    A: Algorithm<E> + 'static,
-    O: Options<E, A> + 'static,
-    G: Goal<E::Node> + 'static,
+    A: Algorithm + Coherent<S, G> + 'static,
+    H: Halt<A> + 'static,
 {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<E::Solution>> {
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<A::Solution>> {
         Planner::plan(self, start, goal)
-            .map(Progress::into_abstract)
+            .map(Search::into_abstract)
             .map_err(anyhow::Error::new)
     }
 }
@@ -207,7 +123,7 @@ pub struct Abstract<S, G, Solution> {
 }
 
 impl<S, G, Solution> Interface<S, G, Solution> for Abstract<S, G, Solution> {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<progress::Abstract<Solution>> {
+    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<Solution>> {
         self.implementation.borrow_mut().plan(start, goal)
     }
 }
@@ -217,7 +133,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        algorithm::{Memory, Status, StepError, WeightSorted},
+        algorithm::{Status, StepError, WeightSorted},
         error::NoError,
         expander::{
             Closable, CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, Solvable, Targeted,

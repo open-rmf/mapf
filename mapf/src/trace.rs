@@ -15,7 +15,7 @@
  *
 */
 
-pub trait Trace<Node>: Default {
+pub trait Trace<>: Default {
     fn expanded_from(&mut self, node: &Node);
     fn expanded_to(&mut self, node: &Node);
     fn solution_found_from(&mut self, node: &Node);

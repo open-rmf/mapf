@@ -15,10 +15,10 @@
  *
 */
 
-use super::prelude::*;
+use super::*;
 use crate::error::NoError;
 
-pub trait Informed<State> {
+pub trait Informed<State, Goal> {
     /// How is cost represented. E.g. f32, f64, or u64
     type Cost;
 
@@ -32,23 +32,23 @@ pub trait Informed<State> {
     fn remaining_cost_estimate(
         &self,
         from_state: &State,
-        to_goal_state: &State,
+        to_goal: &Goal,
     ) -> Result<Option<Self::Cost>, Self::InformedError>;
 }
 
-pub trait EstimateModifier<State, Cost> {
+pub trait EstimateModifier<State, Goal, Cost> {
     /// What kind of error can happen if a bad input is provided
     type EstimateModifierError;
 
     fn modify_remaining_cost_estimate(
         &self,
         from_state: &State,
-        to_goal_state: &State,
+        to_goal: &Goal,
         original_estimate: Cost,
     ) -> Result<Option<Cost>, Self::EstimateModifierError>;
 }
 
-impl<State, Cost> EstimateModifier<State, Cost> for ScaleWeight<Cost>
+impl<State, Goal, Cost> EstimateModifier<State, Goal, Cost> for ScaleWeight<Cost>
 where
     Cost: std::ops::Mul<Cost, Output=Cost> + Clone
 {
@@ -56,17 +56,17 @@ where
     fn modify_remaining_cost_estimate(
         &self,
         _: &State,
-        _: &State,
+        _: &Goal,
         original_estimate: Cost,
     ) -> Result<Option<Cost>, Self::EstimateModifierError> {
         Ok(Some(original_estimate * self.0.clone()))
     }
 }
 
-impl<Base, Prop> Informed<Base::State> for Incorporated<Base, Prop>
+impl<Base, Prop, Goal> Informed<Base::State, Goal> for Incorporated<Base, Prop>
 where
     Base: Domain,
-    Prop: Informed<Base::State>,
+    Prop: Informed<Base::State, Goal>,
     Prop::InformedError: Into<Base::Error>,
 {
     type Cost = Prop::Cost;
@@ -74,18 +74,18 @@ where
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
-        to_goal_state: &Base::State,
+        to_goal: &Goal,
     ) -> Result<Option<Self::Cost>, Self::InformedError> {
-        self.prop.remaining_cost_estimate(from_state, to_goal_state)
+        self.prop.remaining_cost_estimate(from_state, to_goal)
             .map_err(Into::into)
     }
 }
 
-impl<Base, Prop> Informed<Base::State> for Chained<Base, Prop>
+impl<Base, Prop, Goal> Informed<Base::State, Goal> for Chained<Base, Prop>
 where
-    Base: Domain + Informed<Base::State>,
+    Base: Domain + Informed<Base::State, Goal>,
     Base::InformedError: Into<Base::Error>,
-    Prop: Informed<Base::State, Cost=Base::Cost>,
+    Prop: Informed<Base::State, Goal, Cost=Base::Cost>,
     Prop::InformedError: Into<Base::Error>,
     Base::Cost: std::ops::Add<Base::Cost, Output=Base::Cost>,
 {
@@ -94,13 +94,13 @@ where
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
-        to_goal_state: &Base::State,
+        to_goal: &Goal,
     ) -> Result<Option<Self::Cost>, Self::InformedError> {
         let base_cost_estimate = self.base.remaining_cost_estimate(
-            from_state, to_goal_state
+            from_state, to_goal
         ).map_err(Into::into)?;
         let prop_cost_estimate = self.prop.remaining_cost_estimate(
-            from_state, to_goal_state
+            from_state, to_goal
         ).map_err(Into::into)?;
 
         let base_cost_estimate = match base_cost_estimate {
@@ -116,11 +116,11 @@ where
     }
 }
 
-impl<Base, Prop> Informed<Base::State> for Mapped<Base, Prop>
+impl<Base, Prop, Goal> Informed<Base::State, Goal> for Mapped<Base, Prop>
 where
-    Base: Domain + Informed<Base::State>,
+    Base: Domain + Informed<Base::State, Goal>,
     Base::InformedError: Into<Base::Error>,
-    Prop: EstimateModifier<Base::State, Base::Cost>,
+    Prop: EstimateModifier<Base::State, Goal, Base::Cost>,
     Prop::EstimateModifierError: Into<Base::Error>,
 {
     type Cost = Base::Cost;
@@ -143,13 +143,13 @@ where
     }
 }
 
-impl<Base, Lifter, Prop> Informed<Base::State> for Lifted<Base, Lifter, Prop>
+impl<Base, Lifter, Prop, Goal> Informed<Base::State, Goal> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
     Base::State: Clone,
     Lifter: ProjectState<Base::State>,
     Lifter::ProjectionError: Into<Base::Error>,
-    Prop: Informed<Lifter::ProjectedState>,
+    Prop: Informed<Lifter::ProjectedState, Goal>,
     Prop::InformedError: Into<Base::Error>,
     Prop::Cost: std::ops::Add<Prop::Cost, Output=Prop::Cost>,
 {
@@ -185,7 +185,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     struct EuclideanDistanceEstimate;
-    impl<State: Mobile> Informed<State> for EuclideanDistanceEstimate {
+    impl<State: Mobile> Informed<State, State> for EuclideanDistanceEstimate {
         type Cost = f64;
         type InformedError = NoError;
         fn remaining_cost_estimate(
@@ -198,7 +198,7 @@ mod tests {
     }
 
     struct BatteryLevelCostEstimate;
-    impl<State: BatteryPowered> Informed<State> for BatteryLevelCostEstimate {
+    impl<State: BatteryPowered> Informed<State, State> for BatteryLevelCostEstimate {
         type Cost = f64;
         type InformedError = NoError;
         fn remaining_cost_estimate(

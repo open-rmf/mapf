@@ -32,7 +32,7 @@ use mapf::{
     planner::make_planner,
     node::{Weighted, Informed, PartialKeyed, Agent},
     expander::{Constrain, Constrainable, Solvable, SolutionOf},
-    progress::{Progress, BasicOptions},
+    search::{Search, BasicOptions},
     algorithm::Status as PlanningStatus,
     a_star,
     motion::{
@@ -654,7 +654,7 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<Progress<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<GraphKey>, NoTrace>>,
+    progress: Option<Search<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<GraphKey>, NoTrace>>,
     step_progress: button::State,
     expander: Option<Arc<ObsAvoidance>>,
     debug_on: bool,

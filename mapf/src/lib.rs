@@ -18,7 +18,8 @@
 
 pub mod domain;
 
-pub mod progress;
+pub mod search;
+pub mod halt;
 
 pub mod planner;
 pub use planner::Planner;
@@ -53,5 +54,5 @@ pub mod occupancy;
 mod util;
 
 pub mod prelude {
-    pub use super::domain::prelude::*;
+    pub use super::domain::*;
 }

@@ -42,19 +42,16 @@ pub mod reversible;
 pub mod state_map;
 pub mod weighted;
 
-pub mod prelude {
-    pub use super::*;
-    pub use super::action_map::*;
-    pub use super::activity::*;
-    pub use super::closable::*;
-    pub use super::define_trait::*;
-    pub use super::domain_map::*;
-    pub use super::dynamics::*;
-    pub use super::informed::*;
-    pub use super::initializable::*;
-    pub use super::reachable::*;
-    pub use super::reversible::*;
-    pub use super::state_map::*;
-    pub use super::weighted::*;
-    pub use super::closable::*;
-}
+pub use action_map::*;
+pub use activity::*;
+pub use closable::*;
+pub use define_trait::*;
+pub use domain_map::*;
+pub use dynamics::*;
+pub use informed::*;
+pub use initializable::*;
+pub use reachable::*;
+pub use reversible::*;
+pub use state_map::*;
+pub use weighted::*;
+pub use closable::*;

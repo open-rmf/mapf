@@ -15,7 +15,7 @@
  *
 */
 
-use super::prelude::*;
+use super::*;
 
 /// The Dynamics trait describes how a state gets transformed by an action.
 ///

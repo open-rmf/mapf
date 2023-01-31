@@ -15,34 +15,24 @@
  *
 */
 
-use crate::{
-    error::Error,
-    expander::{
-        CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, InitTargetedErrorOf, Solvable,
-        SolveErrorOf, Targeted,
-    },
-    node,
-    trace::Trace,
-};
-use std::{fmt::Debug, sync::Arc};
+use crate::error::Error;
+use std::{fmt::Debug};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
-pub enum InitError<A: Error, E: Error> {
+pub enum InitError<A: Error, D: Error> {
     #[error("An error occurred while initializing the algorithm:\n{0}")]
     Algorithm(A),
-    #[error("An error occurred while constructing the initial nodes:\n{0}")]
-    Expander(E),
+    #[error("An error occurred while initializing the domain:\n{0}")]
+    Domain(D),
 }
 
 #[derive(ThisError, Debug)]
-pub enum StepError<A: Error, E: Error, S: Error> {
+pub enum StepError<A: Error, D: Error> {
     #[error("An error occurred in the algorithm:\n{0}")]
     Algorithm(A),
-    #[error("An error occurred during expansion:\n{0}")]
-    Expansion(E),
-    #[error("An error occurred while constructing the solution:\n{0}")]
-    Solve(S),
+    #[error("An error occurred in the domain:\n{0}")]
+    Domain(D),
 }
 
 #[derive(Debug, Clone)]
@@ -52,41 +42,57 @@ pub enum Status<Solution> {
     Solved(Solution),
 }
 
-pub trait Memory {
-    fn node_count(&self) -> usize;
-}
+/// The `Algorithm` trait defines the basic structure that an algorithm needs
+/// to satisfy in order for a Planner to operate on it.
+pub trait Algorithm: Sized {
+    /// The `Memory` type tracks the progress of each search.
+    type Memory;
 
-/// A trait to attach to the Memory of an Algorithm that sorts its nodes
-/// according to a cost/weight.
-pub trait WeightSorted<E: Expander<Node: node::Weighted>>: Memory {
-    fn top_cost_estimate(&self) -> Option<CostOf<E>>;
-}
+    /// The `Solution` type is what the Algorithm will return once it has found
+    /// a valid solution.
+    type Solution;
 
-pub trait Algorithm<E: Solvable>: Sized {
-    type Memory: Memory;
-
-    type InitError: Error;
+    /// A `StepError` will be returned when an issue is encountered during a
+    /// step of the algorithm.
     type StepError: Error;
 
-    fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
-        &self,
-        expander: Arc<E>,
-        start: &S,
-        goal: &G,
-        trace: &mut T,
-    ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
-    where
-        E: InitTargeted<S, G>;
-
-    fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
+    /// Take a step in the search algorithm. The same memory instance will be
+    /// passed in with each iteration.
+    fn step(
         &self,
         memory: &mut Self::Memory,
-        goal: &G,
-        tracker: &mut T,
-    ) -> Result<
-        Status<E::Solution>,
-        StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>,
-    >
-    where
-        E: Targeted<G>;
+    ) -> Result<Status<Self::Solution>, Self::StepError>;
+}
+
+/// The `Coherent` trait determines when the user input is coherent (usable) for
+/// the algorithm. An algorithm may have multiple (Start, Goal) combinations
+/// that it can solve for, so this trait can be defined for any combination that
+/// the Algorithm is able to support.
+pub trait Coherent<Start, Goal>: Algorithm {
+    type InitError: Error;
+
+    fn initialize(
+        &self,
+        start: Start,
+        goal: Goal,
+    ) -> Result<Self::Memory, Self::InitError>;
+}
+
+/// The `Measure` trait can be implemented by `Algorithm::Memory` types to
+/// provide an indication of how large their current level of effort or memory
+/// footprint is. This may be used to halt search efforts that have grown
+/// excessively large.
+pub trait Measure {
+    /// How "big" is the current memory footprint or level of effort. The exact
+    /// meaning of this value may vary between algorithms.
+    fn size(&self) -> usize;
+}
+
+/// The `MinimumCostBound` trait can be implemented by `Algorithm::Memory` types
+/// to report a minimum bound for the cost of any possible solution to a problem
+/// if a solution exists. This can be used to halt search efforts if the cost
+/// exceeds a certain bound.
+pub trait MinimumCostBound {
+    type Cost;
+    fn minimum_cost_bound(&self) -> Self::Cost;
 }

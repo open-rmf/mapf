@@ -15,7 +15,7 @@
  *
 */
 
-use super::prelude::*;
+use super::*;
 
 pub struct DomainMap<StateMapImpl, ActionMapImpl> {
     state_map: StateMapImpl,

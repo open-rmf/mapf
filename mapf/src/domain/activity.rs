@@ -15,7 +15,7 @@
  *
 */
 
-use super::prelude::*;
+use super::*;
 use crate::util::FlatResultMapTrait;
 
 /// The Activity trait describes an activity that can be performed within a
