@@ -56,4 +56,5 @@ pub mod prelude {
     pub use super::reversible::*;
     pub use super::state_map::*;
     pub use super::weighted::*;
+    pub use super::closable::*;
 }
