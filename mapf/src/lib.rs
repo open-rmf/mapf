@@ -36,10 +36,8 @@ pub use heuristic::Heuristic;
 pub mod node;
 
 pub mod algorithm;
-pub use algorithm::{Algorithm, InitError, StepError};
 
 pub mod trace;
-pub use trace::Trace;
 
 pub mod tree;
 

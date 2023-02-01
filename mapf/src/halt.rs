@@ -15,28 +15,26 @@
  *
 */
 
-use crate::algorithm::{Algorithm, Measure, MinimumCostBound};
+use crate::algorithm::{Measure, MinimumCostBound};
 use std::{ops::Fn, sync::Arc};
 
-/// A trait to define Options for how progression should be performed. The
-/// settings for the Options can be changed in between calls to
-/// Progress::solve().
-pub trait Halt<A: Algorithm>: Clone {
-    /// Check whether the current progress should be interrupted according to
-    /// the current set of options.
+/// A trait to define conditions in which a search should be halted. The
+/// settings can be changed in between calls to  Search::solve().
+pub trait Halt<Mem>: Clone {
+    /// Check whether the current search should be interrupted.
     fn halt(
         &mut self,
-        memory: &A::Memory,
+        memory: &Mem,
     ) -> bool;
 }
 
 /// If an empty tuple is given for the options then we treat that as an
 /// indication that we should let the solver continue without halting for any
 /// reason.
-impl<A: Algorithm> Halt<A> for () {
+impl<Mem> Halt<Mem> for () {
     fn halt(
         &mut self,
-        _: &A::Memory,
+        _: &Mem,
     ) -> bool {
         false
     }
@@ -55,12 +53,12 @@ pub type Interrupter = Arc<dyn Fn() -> Interruption>;
 
 /// This option allows the user to specify a callback to indicate whether the
 /// progress should continue.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Interruptible(pub Option<Interrupter>);
 
 impl Interruptible {
-    pub fn new<F: Fn() -> Interruption>(f: F) -> Self {
-        Self(Some(f))
+    pub fn new<F: Fn() -> Interruption + 'static>(f: F) -> Self {
+        Self(Some(Arc::new(f)))
     }
 
     pub fn none() -> Self {
@@ -68,10 +66,10 @@ impl Interruptible {
     }
 }
 
-impl<A: Algorithm> Halt<A> for Interruptible {
+impl<Mem> Halt<Mem> for Interruptible {
     fn halt(
         &mut self,
-        progress: &A::Memory,
+        _: &Mem,
     ) -> bool {
         if let Some(interrupter) = &self.0 {
             return Interruption::Stop == interrupter();
@@ -83,6 +81,7 @@ impl<A: Algorithm> Halt<A> for Interruptible {
 
 /// This option sets a maximum number of steps that can be taken before the
 /// planner is told to halt.
+#[derive(Debug, Clone)]
 pub struct StepLimit {
     steps: usize,
     pub limit: Option<usize>,
@@ -98,14 +97,14 @@ impl StepLimit {
     }
 }
 
-impl<A> Halt<A> for StepLimit {
+impl<Mem> Halt<Mem> for StepLimit {
     fn halt(
         &mut self,
-        progress: &<A as Algorithm>::Memory,
+        _: &Mem,
     ) -> bool {
         self.steps += 1;
         if let Some(limit) = self.limit {
-            return self.steps > self.limit;
+            return self.steps > limit;
         }
 
         false
@@ -118,13 +117,13 @@ impl<A> Halt<A> for StepLimit {
 #[derive(Default, Clone)]
 pub struct MeasureLimit(pub Option<usize>);
 
-impl<A: Algorithm> Halt<A> for MeasureLimit
+impl<Mem> Halt<Mem> for MeasureLimit
 where
-    A::Memory: Measure,
+    Mem: Measure,
 {
     fn halt(
         &mut self,
-        memory: &A::Memory,
+        memory: &Mem,
     ) -> bool {
         if let Some(limit) = self.0 {
             return memory.size() > limit;
@@ -139,16 +138,19 @@ where
 #[derive(Default, Clone)]
 pub struct CostLimit<C>(pub Option<C>);
 
-impl<A: Algorithm> Halt<A> for CostLimit<<A::Memory as MinimumCostBound>::Cost>
+impl<Mem: MinimumCostBound> Halt<Mem> for CostLimit<Mem::Cost>
 where
-    A::Memory: MinimumCostBound,
+    Mem::Cost: Clone + PartialOrd,
 {
     fn halt(
         &mut self,
-        memory: &A::Memory,
+        memory: &Mem,
     ) -> bool {
-        if let Some(limit) = self.0 {
-            return memory.minimum_cost_bound() > limit;
+        if let Some(limit) = &self.0 {
+            match memory.minimum_cost_bound() {
+                Some(bound) => return bound > *limit,
+                None => return true,
+            }
         }
 
         false
@@ -160,10 +162,10 @@ where
 /// size to 8 elements, but that limit can be overcome using nested tuples.
 macro_rules! and_tuple_halt {
     ( $( $name:ident )+ ) => {
-        impl<Alg: Algorithm, $($name: Halt<Alg>),+> Halt<Alg> for ($($name,)+) {
+        impl<Mem, $($name: Halt<Mem>),+> Halt<Mem> for ($($name,)+) {
             fn halt(
                 &mut self,
-                memory: &Alg::Memory,
+                memory: &Mem,
             ) -> bool {
                 let ($($name,)+) = self;
                 false $(|| $name.halt(memory))+
@@ -184,35 +186,33 @@ and_tuple_halt! { A B C D E F G H }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        Algorithm,
-        algorithm::Status,
-        error::NoError,
-    };
 
     struct FakeMem;
 
-    struct FakeAlgo;
-    impl Algorithm for FakeAlgo {
-        type Memory = FakeMem;
-        type Solution = ();
-        type StepError = NoError;
-
-        fn step(
-            &self,
-            memory: &mut Self::Memory,
-        ) -> Result<Status<Self::Solution>, Self::StepError> {
-            Ok(Status::Incomplete)
+    impl Measure for FakeMem {
+        fn size(&self) -> usize {
+            0
         }
     }
 
     #[test]
     fn test_tuple_options() {
-        let options = (
+        let halting = (
             Interruptible::new(|| Interruption::Continue),
             StepLimit::new(Some(10)),
         );
 
-        assert!(options.halt(&FakeMem));
+        assert!(!halting.halt(&FakeMem));
+
+        let halting = (
+            Interruptible::new(|| Interruption::Continue),
+            StepLimit::new(Some(5)),
+            MeasureLimit(Some(100)),
+        );
+
+        for _ in 0..4 {
+            assert!(!halting.halt(&FakeMem));
+        }
+        assert!(halting.halt(&FakeMem));
     }
 }

@@ -28,23 +28,23 @@ use super::*;
 /// doubling up their effects on the state.
 pub trait Dynamics<State, Action> {
     /// What kind of error can happen if a bad state and/or action is provided
-    type Error;
+    type DynamicsError;
 
     /// Advance the given state based on the given action.
     ///
     /// If the dynamics are constrained and the action would lead to a state
     /// that violates the constraint, return Ok(None).
-    fn advance(&self, state: State, action: &Action) -> Result<Option<State>, Self::Error>;
+    fn advance(&self, state: State, action: &Action) -> Result<Option<State>, Self::DynamicsError>;
 }
 
 impl<Base, Prop> Dynamics<Base::State, Base::Action> for Incorporated<Base, Prop>
 where
     Base: Domain,
     Prop: Dynamics<Base::State, Base::Action>,
-    Prop::Error: Into<Base::Error>,
+    Prop::DynamicsError: Into<Base::Error>,
 {
-    type Error = Base::Error;
-    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
+    type DynamicsError = Base::Error;
+    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::DynamicsError> {
         self.prop.advance(state, action).map_err(Into::into)
     }
 }
@@ -52,12 +52,12 @@ where
 impl<Base, Prop> Dynamics<Base::State, Base::Action> for Chained<Base, Prop>
 where
     Base: Domain + Dynamics<Base::State, Base::Action>,
-    <Base as Dynamics<Base::State, Base::Action>>::Error: Into<<Base as Domain>::Error>,
+    <Base as Dynamics<Base::State, Base::Action>>::DynamicsError: Into<<Base as Domain>::Error>,
     Prop: Dynamics<Base::State, Base::Action>,
-    Prop::Error: Into<<Base as Domain>::Error>,
+    Prop::DynamicsError: Into<<Base as Domain>::Error>,
 {
-    type Error = <Base as Domain>::Error;
-    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
+    type DynamicsError = <Base as Domain>::Error;
+    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::DynamicsError> {
         // NOTE: The base dynamics are being applied before the chained prop dynamics
         self.base.advance(state, action)
             .map_err(Into::into)
@@ -74,14 +74,14 @@ impl<Base, Prop> Dynamics<Base::State, Base::Action> for Mapped<Base, Prop>
 where
     Base: Domain + Dynamics<Base::State, Prop::ToAction>,
     Prop: ActionMap<Base::State, Base::Action>,
-    <Prop as ActionMap<Base::State, Base::Action>>::ActionMapError: Into<<Base as Domain>::Error>,
+    Prop::ActionMapError: Into<<Base as Domain>::Error>,
     Base::State: Clone,
     Base::Action: Clone,
-    <Base as Dynamics<Base::State, Prop::ToAction>>::Error: Into<<Base as Domain>::Error>,
+    Base::DynamicsError: Into<<Base as Domain>::Error>,
     Prop::ActionMapError: Into<<Base as Domain>::Error>,
 {
-    type Error = <Base as Domain>::Error;
-    fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
+    type DynamicsError = <Base as Domain>::Error;
+    fn advance(&self, mut state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::DynamicsError> {
         let input_state = state.clone();
         for action in self.prop.map_actions(input_state, action.clone()) {
             let action = action.map_err(Into::into)?;
@@ -105,10 +105,10 @@ where
     Prop: Dynamics<Lifter::ProjectedState, Lifter::ToAction>,
     Base::State: Clone,
     Base::Action: Clone,
-    Prop::Error: Into<Base::Error>,
+    Prop::DynamicsError: Into<Base::Error>,
 {
-    type Error = Base::Error;
-    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::Error> {
+    type DynamicsError = Base::Error;
+    fn advance(&self, state: Base::State, action: &Base::Action) -> Result<Option<Base::State>, Self::DynamicsError> {
         let original_state = state.clone();
         let mut projected_state = match self.lifter.project(state).map_err(Into::into)? {
             Some(s) => s,
@@ -169,8 +169,8 @@ mod tests {
 
     struct TimePassage;
     impl<S: AdvanceTime> Dynamics<S, TimeDelta> for TimePassage {
-        type Error = NoError;
-        fn advance(&self, mut state: S, action: &TimeDelta) -> Result<Option<S>, Self::Error> {
+        type DynamicsError = NoError;
+        fn advance(&self, mut state: S, action: &TimeDelta) -> Result<Option<S>, Self::DynamicsError> {
             state.advance_time(action.0);
             Ok(Some(state))
         }
@@ -178,8 +178,8 @@ mod tests {
 
     struct TimeBatteryDrain(f64 /* charge per second */);
     impl<S: BatteryPowered> Dynamics<S, TimeDelta> for TimeBatteryDrain {
-        type Error = NoError;
-        fn advance(&self, mut state: S, action: &TimeDelta) -> Result<Option<S>, Self::Error> {
+        type DynamicsError = NoError;
+        fn advance(&self, mut state: S, action: &TimeDelta) -> Result<Option<S>, Self::DynamicsError> {
             state.drain_battery(action.0 * self.0);
             if state.battery_level() < 0.0 {
                 Ok(None)
@@ -215,8 +215,8 @@ mod tests {
 
     struct MoveBatteryDrain(f64 /* charge per meter */);
     impl Dynamics<Battery, Move> for MoveBatteryDrain {
-        type Error = NoError;
-        fn advance(&self, mut state: Battery, action: &Move) -> Result<Option<Battery>, Self::Error> {
+        type DynamicsError = NoError;
+        fn advance(&self, mut state: Battery, action: &Move) -> Result<Option<Battery>, Self::DynamicsError> {
             state.0 -= self.0 * action.0;
             if state.0 < 0.0 {
                 Ok(None)
@@ -281,8 +281,8 @@ mod tests {
 
     struct ChargeBattery(f64 /* charge per second */);
     impl Dynamics<Battery, TimeDelta> for ChargeBattery {
-        type Error = NoError;
-        fn advance(&self, mut state: Battery, action: &TimeDelta) -> Result<Option<Battery>, Self::Error> {
+        type DynamicsError = NoError;
+        fn advance(&self, mut state: Battery, action: &TimeDelta) -> Result<Option<Battery>, Self::DynamicsError> {
             state.0 += action.0 * self.0;
             state.0 = state.0.max(1.0);
             Ok(Some(state))
@@ -290,8 +290,8 @@ mod tests {
     }
 
     impl Dynamics<Battery, HybridAction> for ChargeBattery {
-        type Error = NoError;
-        fn advance(&self, mut state: Battery, action: &HybridAction) -> Result<Option<Battery>, Self::Error> {
+        type DynamicsError = NoError;
+        fn advance(&self, mut state: Battery, action: &HybridAction) -> Result<Option<Battery>, Self::DynamicsError> {
             match action {
                 HybridAction::Time(time) => {
                     state.0 += time.0 * self.0;

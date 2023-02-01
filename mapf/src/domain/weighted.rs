@@ -38,6 +38,12 @@ pub trait Weighted<State, Action> {
         action: &Action,
         to_state: &State
     ) -> Result<Option<Self::Cost>, Self::WeightedError>;
+
+    /// Calculate the cost of an initial state.
+    fn initial_cost(
+        &self,
+        for_state: &State,
+    ) -> Result<Option<Self::Cost>, Self::WeightedError>;
 }
 
 /// The `CostModifier` trait can be used with `.map` to modify the output of a
@@ -55,6 +61,17 @@ pub trait CostModifier<State, Action, Cost> {
         to_state: &State,
         original_cost: Cost,
     ) -> Result<Option<Cost>, Self::CostModifierError>;
+
+    /// Modify the cost of an initial state. By default this does not modify
+    /// anything. Initial state costs are usually zero anyway so this modifier
+    /// is typically not needed.
+    fn modify_initial_cost(
+        &self,
+        _: &State,
+        original_cost: Cost,
+    ) -> Result<Option<Cost>, Self::CostModifierError> {
+        Ok(Some(original_cost))
+    }
 }
 
 /// Implements CostModifier for simple proportional scaling of cost calculation.
@@ -91,8 +108,14 @@ where
         action: &Base::Action,
         to_state: &Base::State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
-        self.prop.cost(from_state, action, to_state)
-            .map_err(Into::into)
+        self.prop.cost(from_state, action, to_state).map_err(Into::into)
+    }
+
+    fn initial_cost(
+        &self,
+        for_state: &Base::State,
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+        self.prop.initial_cost(for_state).map_err(Into::into)
     }
 }
 
@@ -116,6 +139,25 @@ where
             .map_err(Into::into)?;
         let prop_cost = self.prop.cost(from_state, action, to_state)
             .map_err(Into::into)?;
+
+        let base_cost = match base_cost {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        let prop_cost = match prop_cost {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+
+        Ok(Some(base_cost + prop_cost))
+    }
+
+    fn initial_cost(
+        &self,
+        for_state: &Base::State,
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+        let base_cost = self.base.initial_cost(for_state).map_err(Into::into)?;
+        let prop_cost = self.prop.initial_cost(for_state).map_err(Into::into)?;
 
         let base_cost = match base_cost {
             Some(c) => c,
@@ -153,6 +195,19 @@ where
         };
 
         self.prop.modify_cost(from_state, action, to_state, base_cost)
+            .map_err(Into::into)
+    }
+
+    fn initial_cost(
+        &self,
+        for_state: &Base::State,
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+        let base_cost = match self.base.initial_cost(for_state).map_err(Into::into)? {
+            Some(base_cost) => base_cost,
+            None => return Ok(None),
+        };
+
+        self.prop.modify_initial_cost(for_state, base_cost)
             .map_err(Into::into)
     }
 }
@@ -206,6 +261,19 @@ where
         }
 
         Ok(Some(cost))
+    }
+
+    fn initial_cost(
+        &self,
+        for_state: &Base::State,
+    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+        let for_state_proj = match self.lifter.project(for_state.clone())
+            .map_err(Into::into)? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        self.prop.initial_cost(&for_state_proj).map_err(Into::into)
     }
 }
 
@@ -289,6 +357,13 @@ pub(crate) mod tests {
         ) -> Result<Option<Self::Cost>, Self::WeightedError> {
             Ok(Some(to_state.distance_traveled(from_state) * self.0))
         }
+
+        fn initial_cost(
+            &self,
+            for_state: &State,
+        ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+            Ok(Some(0.0))
+        }
     }
 
     struct BatteryLossWeight(f64 /* cost per battery loss */);
@@ -306,6 +381,13 @@ pub(crate) mod tests {
             }
 
             Ok(Some((from_state.battery_level() - to_state.battery_level()) * self.0))
+        }
+
+        fn initial_cost(
+            &self,
+            for_state: &State,
+        ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+            Ok(Some(0.0))
         }
     }
 

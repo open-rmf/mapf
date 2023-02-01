@@ -15,26 +15,6 @@
  *
 */
 
-use crate::error::Error;
-use std::{fmt::Debug};
-use thiserror::Error as ThisError;
-
-#[derive(ThisError, Debug)]
-pub enum InitError<A: Error, D: Error> {
-    #[error("An error occurred while initializing the algorithm:\n{0}")]
-    Algorithm(A),
-    #[error("An error occurred while initializing the domain:\n{0}")]
-    Domain(D),
-}
-
-#[derive(ThisError, Debug)]
-pub enum StepError<A: Error, D: Error> {
-    #[error("An error occurred in the algorithm:\n{0}")]
-    Algorithm(A),
-    #[error("An error occurred in the domain:\n{0}")]
-    Domain(D),
-}
-
 #[derive(Debug, Clone)]
 pub enum Status<Solution> {
     Incomplete,
@@ -42,26 +22,15 @@ pub enum Status<Solution> {
     Solved(Solution),
 }
 
-/// The `Algorithm` trait defines the basic structure that an algorithm needs
-/// to satisfy in order for a Planner to operate on it.
-pub trait Algorithm: Sized {
+impl<S> From<S> for Status<S> {
+    fn from(value: S) -> Self {
+        Status::Solved(value)
+    }
+}
+
+pub trait Algorithm {
     /// The `Memory` type tracks the progress of each search.
     type Memory;
-
-    /// The `Solution` type is what the Algorithm will return once it has found
-    /// a valid solution.
-    type Solution;
-
-    /// A `StepError` will be returned when an issue is encountered during a
-    /// step of the algorithm.
-    type StepError: Error;
-
-    /// Take a step in the search algorithm. The same memory instance will be
-    /// passed in with each iteration.
-    fn step(
-        &self,
-        memory: &mut Self::Memory,
-    ) -> Result<Status<Self::Solution>, Self::StepError>;
 }
 
 /// The `Coherent` trait determines when the user input is coherent (usable) for
@@ -69,13 +38,33 @@ pub trait Algorithm: Sized {
 /// that it can solve for, so this trait can be defined for any combination that
 /// the Algorithm is able to support.
 pub trait Coherent<Start, Goal>: Algorithm {
-    type InitError: Error;
+    type InitError;
 
     fn initialize(
         &self,
         start: Start,
-        goal: Goal,
+        goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError>;
+}
+
+/// The `Algorithm` trait defines the basic structure that an algorithm needs
+/// to satisfy in order for a Planner to operate on it.
+pub trait Solvable<Goal>: Algorithm + Sized {
+    /// The `Solution` type is what the Algorithm will return once it has found
+    /// a valid solution.
+    type Solution;
+
+    /// A `StepError` will be returned when an issue is encountered during a
+    /// step of the algorithm.
+    type StepError;
+
+    /// Take a step in the search algorithm. The same memory instance will be
+    /// passed in with each iteration.
+    fn step(
+        &self,
+        memory: &mut Self::Memory,
+        goal: &Goal,
+    ) -> Result<Status<Self::Solution>, Self::StepError>;
 }
 
 /// The `Measure` trait can be implemented by `Algorithm::Memory` types to
@@ -92,7 +81,12 @@ pub trait Measure {
 /// to report a minimum bound for the cost of any possible solution to a problem
 /// if a solution exists. This can be used to halt search efforts if the cost
 /// exceeds a certain bound.
+///
+/// Returning None implies that the minimum cost is unbounded (i.e. it could be
+/// infinite or there might not be any solution at all). The [`CostLimit`]
+/// halting type will cause the Search to halt if the minimum cost bound is None
+/// while the cost limit is Some.
 pub trait MinimumCostBound {
     type Cost;
-    fn minimum_cost_bound(&self) -> Self::Cost;
+    fn minimum_cost_bound(&self) -> Option<Self::Cost>;
 }

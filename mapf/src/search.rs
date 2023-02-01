@@ -19,38 +19,38 @@ use anyhow;
 use std::{cell::RefCell, sync::Arc};
 
 use crate::{
-    algorithm::{Algorithm, Status},
+    algorithm::{Algorithm, Solvable, Status},
     halt::Halt,
+    error::Error,
 };
 
 /// Progress manages the progress of a planning effort.
-pub struct Search<A: Algorithm, H: Halt<A>> {
+pub struct Search<Algo: Algorithm, Goal, Halting> {
     /// Storage container for the progress of the search algorithm
-    memory: A::Memory,
+    memory: Algo::Memory,
 
     /// The object which determines the search pattern
-    algorithm: Arc<A>,
+    algorithm: Arc<Algo>,
+
+    /// The goal that the search is trying to reach
+    goal: Goal,
 
     /// The options that moderate the progress of the solving
-    halting: H,
+    halting: Halting,
 }
 
-impl<A: Algorithm, H: Halt<A>> Search<A, H> {
-    pub fn new(memory: A::Memory, algorithm: Arc<A>, halting: H) -> Self {
+impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
+    pub fn new(
+        memory: Algo::Memory,
+        algorithm: Arc<Algo>,
+        goal: Goal,
+        halting: Halting,
+    ) -> Self {
         Self {
             memory,
             algorithm,
+            goal,
             halting,
-        }
-    }
-
-    pub fn into_abstract(self) -> Abstract<A::Solution>
-    where
-        A: 'static,
-        H: 'static,
-    {
-        Abstract {
-            implementation: Box::new(RefCell::new(self)),
         }
     }
 
@@ -60,10 +60,13 @@ impl<A: Algorithm, H: Halt<A>> Search<A, H> {
     /// to solve.
     pub fn solve(
         &mut self,
-    ) -> Result<Status<A::Solution>, A::StepError>
+    ) -> Result<Status<Algo::Solution>, Algo::StepError>
+    where
+        Algo: Solvable<Goal>,
+        Halting: Halt<Algo::Memory>,
     {
         loop {
-            if self.halting.halt(self) {
+            if self.halting.halt(&self.memory) {
                 return Ok(Status::Incomplete);
             }
 
@@ -78,29 +81,38 @@ impl<A: Algorithm, H: Halt<A>> Search<A, H> {
 
     pub fn step(
         &mut self,
-    ) -> Result<Status<A::Solution>, A::StepError>
+    ) -> Result<Status<Algo::Solution>, Algo::StepError>
+    where
+        Algo: Solvable<Goal>,
     {
-        self.algorithm.step(&mut self.memory)
+        self.algorithm.step(&mut self.memory, &self.goal)
     }
 
-    pub fn memory(&self) -> &A::Memory {
+    pub fn memory(&self) -> &Algo::Memory {
         &self.memory
     }
 
-    pub fn memory_mut(&mut self) -> &mut A::Memory {
+    pub fn memory_mut(&mut self) -> &mut Algo::Memory {
         &mut self.memory
     }
 
     /// Change the halting behavior for this progress.
-    pub fn with_halting<NewHalt: Halt<A>>(
+    pub fn with_halting<NewHalt>(
         self,
         halting: NewHalt
-    ) -> Search<A, NewHalt> {
+    ) -> Search<Algo, Goal, NewHalt> {
         Search {
             memory: self.memory,
             algorithm: self.algorithm,
+            goal: self.goal,
             halting,
         }
+    }
+
+    /// Modify the existing options and return the progress
+    fn tweak_halting<F: FnOnce(&mut Halting)>(mut self, tweak: F) -> Self {
+        tweak(&mut self.halting);
+        self
     }
 }
 
@@ -110,10 +122,11 @@ pub trait Interface<Solution> {
     fn step(&mut self) -> anyhow::Result<Status<Solution>>;
 }
 
-impl<A, H> Interface<A::Solution> for Search<A, H>
+impl<A, G, H> Interface<A::Solution> for Search<A, G, H>
 where
-    A: Algorithm,
-    H: Halt<A>,
+    A: Solvable<G>,
+    H: Halt<A::Memory>,
+    A::StepError: Error,
 {
     fn solve(&mut self) -> anyhow::Result<Status<A::Solution>> {
         Search::solve(self).map_err(anyhow::Error::new)
@@ -128,15 +141,9 @@ trait WithHalting<H> {
     fn halting(&self) -> &H;
 
     fn halting_mut(&mut self) -> &mut H;
-
-    /// Modify the existing options and return the progress
-    fn tweak_halting<F: FnOnce(&mut H)>(mut self, tweak: F) -> Self {
-        tweak(&mut self.halting_mut());
-        self
-    }
 }
 
-impl<A, H: Halt<A>> WithHalting<H> for Search<A, H> {
+impl<A: Algorithm, G, H: Halt<A::Memory>> WithHalting<H> for Search<A, G, H> {
     fn halting(&self) -> &H {
         &self.halting
     }
@@ -162,6 +169,17 @@ pub struct Abstract<Solution> {
     implementation: Box<RefCell<dyn Interface<Solution>>>,
 }
 
+impl<A, G, H> From<Search<A, G, H>> for Abstract<A::Solution>
+where
+    A: Solvable<G>,
+    A::StepError: Error,
+    H: Halt<A::Memory>,
+{
+    fn from(value: Search<A, G, H>) -> Self {
+        Abstract { implementation: Box::new(RefCell::new(value)) }
+    }
+}
+
 impl<Solution> Interface<Solution> for Abstract<Solution> {
     fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
         self.implementation.borrow_mut().solve()
@@ -169,5 +187,41 @@ impl<Solution> Interface<Solution> for Abstract<Solution> {
 
     fn step(&mut self) -> anyhow::Result<Status<Solution>> {
         self.implementation.borrow_mut().step()
+    }
+}
+
+pub struct AbstractWithHalting<Solution, Halting> {
+    implementation: Box<RefCell<dyn InterfaceWithHalting<Solution, Halting>>>,
+}
+
+impl<A, G, H> From<Search<A, G, H>> for AbstractWithHalting<A::Solution, H>
+where
+    A: Solvable<G> + 'static,
+    H: Halt<A::Memory> + 'static,
+    A::StepError: Error,
+    G: 'static,
+{
+    fn from(value: Search<A, G, H>) -> Self {
+        AbstractWithHalting { implementation: Box::new(RefCell::new(value)) }
+    }
+}
+
+impl<Solution, Halting> Interface<Solution> for AbstractWithHalting<Solution, Halting> {
+    fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
+        self.implementation.borrow_mut().solve()
+    }
+
+    fn step(&mut self) -> anyhow::Result<Status<Solution>> {
+        self.implementation.borrow_mut().step()
+    }
+}
+
+impl<Solution, Halting> WithHalting<Halting> for AbstractWithHalting<Solution, Halting> {
+    fn halting(&self) -> &Halting {
+        self.implementation.borrow().halting()
+    }
+
+    fn halting_mut(&mut self) -> &mut Halting {
+        self.implementation.borrow_mut().halting_mut()
     }
 }

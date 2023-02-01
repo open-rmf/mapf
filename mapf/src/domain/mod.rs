@@ -39,6 +39,7 @@ pub mod informed;
 pub mod initializable;
 pub mod reachable;
 pub mod reversible;
+pub mod satisfiable;
 pub mod state_map;
 pub mod weighted;
 
@@ -52,6 +53,7 @@ pub use informed::*;
 pub use initializable::*;
 pub use reachable::*;
 pub use reversible::*;
+pub use satisfiable::*;
 pub use state_map::*;
 pub use weighted::*;
 pub use closable::*;

@@ -16,47 +16,54 @@
 */
 
 use crate::{
-    algorithm::{Algorithm, Coherent},
-    expander::{Goal, InitTargeted, InitTargetedErrorOf, Solvable, Targeted},
+    algorithm::{Coherent, Solvable},
     search::{self, Search},
     halt::Halt,
-    trace::{NoTrace, Trace},
+    error::Error,
 };
 use anyhow;
 use std::{cell::RefCell, sync::Arc};
 
-/// The Planner class manages an (algorithm, expander) pair to generate plans.
-/// Splitting the implementation of the Planner into algorithm and expander
-/// components allows for the largest possible amount of code reusability.
+/// The Planner class spawns Search instances to find plans using its provided
+/// algorithm.
 ///
-/// The Planner::plan(start, goal) function will create a Progress object which
+/// The Planner::plan(start, goal) function will create a Search object which
 /// manages the planning progress and allows you to tweak planning settings
 /// during runtime as needed.
-pub struct Planner<A: Algorithm, H: Halt<A> = ()> {
+///
+/// The Planner can also be given default halting behavior which will be passed
+/// along to the Search when `plan(start, goal)` is used. The Halting generic
+/// must implement the [`Halt`] trait for `Algo`.
+pub struct Planner<Algo, Halting = ()> {
     /// The object which determines the search pattern
-    algorithm: Arc<A>,
+    algorithm: Arc<Algo>,
 
     /// The factory for generating progress objects
-    default_halt: H,
+    default_halting: Halting,
 }
 
-impl<A: Algorithm, H: Halt<A>> Planner<A, H> {
-    /// Construct a new planner with the given configuration and a set of
-    /// default options.
-    pub fn new(algorithm: A) -> Self
-    where
-        H: Default,
-    {
+impl<Algo> Planner<Algo, ()> {
+    /// Construct a new planner that has no halting behavior.
+    pub fn new(algorithm: Algo) -> Self {
         Self {
             algorithm: Arc::new(algorithm),
-            default_halt: Default::default(),
+            default_halting: (),
+        }
+    }
+}
+
+impl<Algo, Halting> Planner<Algo, Halting> {
+    pub fn new_haltable(algorithm: Algo, halting: Halting) -> Self {
+        Self {
+            algorithm: Arc::new(algorithm),
+            default_halting: halting,
         }
     }
 
-    pub fn new_with_halt(algorithm: A, halt: H) -> Self {
-        Self {
-            algorithm: Arc::new(algorithm),
-            default_halt: halt,
+    pub fn with_halting<NewHalting>(self, halting: NewHalting) -> Planner<Algo, NewHalting> {
+        Planner {
+            algorithm: self.algorithm,
+            default_halting: halting,
         }
     }
 
@@ -65,36 +72,39 @@ impl<A: Algorithm, H: Halt<A>> Planner<A, H> {
         &self,
         start: Start,
         goal: Goal,
-    ) -> Result<Search<A, H>, A::InitError>
+    ) -> Result<Search<Algo, Goal, Halting>, Algo::InitError>
     where
-        A: Coherent<Start, Goal>,
+        Algo: Coherent<Start, Goal>,
+        Halting: Halt<Algo::Memory> + Clone,
     {
-        self.plan_with_options(start, goal, self.default_options.clone())
+        self.plan_with_halting(start, goal, self.default_halting.clone())
     }
 
-    pub fn plan_with_halt<Start, Goal, WithHalt: Halt<A>>(
+    pub fn plan_with_halting<Start, Goal, WithHalt: Halt<Algo::Memory>>(
         &self,
         start: Start,
         goal: Goal,
         halt: WithHalt,
-    ) -> Result<Search<A, WithHalt>, A::InitError>
+    ) -> Result<Search<Algo, Goal, WithHalt>, Algo::InitError>
     where
-        A: Coherent<Start, Goal>,
+        Algo: Coherent<Start, Goal>,
     {
-        let mut trace = NoTrace::default();
-        let memory = self.algorithm.initialize(start, goal)?;
+        let memory = self.algorithm.initialize(start, &goal)?;
 
         Ok(Search::new(
             memory,
             self.algorithm.clone(),
+            goal,
             halt,
         ))
     }
 
-    pub fn into_abstract<S, G>(self) -> Abstract<S, G, A::Solution>
+    pub fn into_abstract<S, G>(self) -> Abstract<S, G, Algo::Solution>
     where
-        A: Coherent<S, G> + 'static,
-        H: 'static,
+        Algo: Coherent<S, G> + Solvable<G> + 'static,
+        Algo::InitError: Error + 'static,
+        Algo::StepError: Error + 'static,
+        Halting: Halt<Algo::Memory> + 'static,
     {
         Abstract {
             implementation: Box::new(RefCell::new(self)),
@@ -103,17 +113,19 @@ impl<A: Algorithm, H: Halt<A>> Planner<A, H> {
 }
 
 pub trait Interface<S, G, Solution> {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<Solution>>;
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<Solution>>;
 }
 
 impl<A, H, S, G> Interface<S, G, A::Solution> for Planner<A, H>
 where
-    A: Algorithm + Coherent<S, G> + 'static,
-    H: Halt<A> + 'static,
+    A: Solvable<G> + Coherent<S, G> + 'static,
+    A::InitError: Error,
+    A::StepError: Error,
+    H: Halt<A::Memory> + 'static,
 {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<A::Solution>> {
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<A::Solution>> {
         Planner::plan(self, start, goal)
-            .map(Search::into_abstract)
+            .map(Into::into)
             .map_err(anyhow::Error::new)
     }
 }
@@ -123,7 +135,7 @@ pub struct Abstract<S, G, Solution> {
 }
 
 impl<S, G, Solution> Interface<S, G, Solution> for Abstract<S, G, Solution> {
-    fn plan(&self, start: &S, goal: G) -> anyhow::Result<search::Abstract<Solution>> {
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<Solution>> {
         self.implementation.borrow_mut().plan(start, goal)
     }
 }
@@ -133,265 +145,109 @@ mod tests {
 
     use super::*;
     use crate::{
-        algorithm::{Status, StepError, WeightSorted},
+        algorithm::{Algorithm, Status, MinimumCostBound},
         error::NoError,
-        expander::{
-            Closable, CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, Solvable, Targeted,
-        },
-        node::{self, traits::*},
     };
 
     struct CountingNode {
         value: u64,
         cost: u64,
-        remaining_cost_estimate: u64,
         parent: Option<Arc<Self>>,
-    }
-
-    impl PartialKeyed for CountingNode {
-        type Key = u64;
-
-        fn partial_key(&self) -> Option<&Self::Key> {
-            Some(&self.value)
-        }
-    }
-
-    impl PathSearch for CountingNode {
-        fn parent(&self) -> &Option<Arc<Self>> {
-            return &self.parent;
-        }
-    }
-
-    impl Weighted for CountingNode {
-        type Cost = u64;
-        fn cost(&self) -> u64 {
-            return self.cost;
-        }
-    }
-
-    impl node::Informed for CountingNode {
-        fn remaining_cost_estimate(&self) -> u64 {
-            return self.remaining_cost_estimate;
-        }
-    }
-
-    #[derive(Clone, Default)]
-    struct CountingExpanderOptions;
-
-    #[derive(Debug)]
-    struct CountingExpander;
-
-    struct CountingGoal {
-        value: u64,
-    }
-
-    impl Goal<CountingNode> for CountingGoal {
-        fn is_satisfied(&self, node: &CountingNode) -> bool {
-            return node.value == self.value;
-        }
-    }
-
-    struct CountingExpansion<'a> {
-        next_node: Option<Arc<CountingNode>>,
-        _ignore: std::marker::PhantomData<&'a u8>,
-    }
-
-    impl<'a> Iterator for CountingExpansion<'a> {
-        type Item = Result<Arc<CountingNode>, NoError>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            return self.next_node.take().map(|v| Ok(v));
-        }
     }
 
     #[derive(Debug, Clone)]
     struct CountingSolution {
         cost: u64,
-        sequence: std::vec::Vec<u64>,
+        sequence: Vec<u64>,
     }
 
-    impl node::Weighted for CountingSolution {
+    impl From<Arc<CountingNode>> for CountingSolution {
+        fn from(value: Arc<CountingNode>) -> Self {
+            let cost = value.cost;
+            let mut sequence = Vec::<u64>::new();
+            let mut gather = Some(value);
+            if let Some(next) = gather {
+                sequence.push(next.value);
+                gather = next.parent;
+            }
+            sequence.reverse();
+
+            CountingSolution { cost, sequence }
+        }
+    }
+
+    struct TestAlgorithmMemory {
+        queue: std::vec::Vec<Arc<CountingNode>>,
+    }
+
+    impl MinimumCostBound for TestAlgorithmMemory {
         type Cost = u64;
-        fn cost(&self) -> u64 {
-            self.cost
-        }
-    }
-
-    impl InitTargeted<u64, CountingGoal> for CountingExpander {
-        type InitTargetedError = NoError;
-        type InitialTargetedNodes<'a> = CountingExpansion<'a>;
-
-        fn start<'a>(&'a self, start: &u64, goal: &CountingGoal) -> Self::InitialTargetedNodes<'a> {
-            if *start <= goal.value {
-                return CountingExpansion {
-                    next_node: Some(Arc::new(CountingNode {
-                        value: *start,
-                        cost: 0u64,
-                        remaining_cost_estimate: goal.value - start,
-                        parent: None,
-                    })),
-                    _ignore: Default::default(),
-                };
-            }
-
-            return CountingExpansion {
-                next_node: None,
-                _ignore: Default::default(),
-            };
-        }
-    }
-
-    impl Targeted<CountingGoal> for CountingExpander {
-        type TargetedError = NoError;
-        type TargetedExpansion<'a> = CountingExpansion<'a>;
-
-        fn expand<'a>(
-            &'a self,
-            parent: &Arc<CountingNode>,
-            goal: &CountingGoal,
-        ) -> Self::TargetedExpansion<'a> {
-            if parent.value <= goal.value {
-                return CountingExpansion {
-                    next_node: Some(Arc::new(CountingNode {
-                        value: parent.value + 1,
-                        cost: parent.cost + 1,
-                        remaining_cost_estimate: goal.value - parent.value,
-                        parent: Some(parent.clone()),
-                    })),
-                    _ignore: Default::default(),
-                };
-            }
-
-            return CountingExpansion {
-                next_node: None,
-                _ignore: Default::default(),
-            };
-        }
-    }
-
-    impl Solvable for CountingExpander {
-        type SolveError = NoError;
-        type Solution = CountingSolution;
-
-        fn make_solution(
-            &self,
-            solution_node: &Arc<CountingNode>,
-        ) -> Result<Self::Solution, NoError> {
-            let mut solution = std::vec::Vec::<u64>::new();
-            let mut next: Option<Arc<CountingNode>> = Some(solution_node.clone());
-            while let Some(n) = next {
-                solution.push(n.value);
-                next = n.parent.clone();
-            }
-
-            solution.reverse();
-            Ok(CountingSolution {
-                cost: solution_node.cost,
-                sequence: solution,
-            })
-        }
-    }
-
-    impl Closable for CountingExpander {
-        type ClosedSet = node::PartialKeyedClosedSet<CountingNode>;
-    }
-
-    impl Expander for CountingExpander {
-        type Node = CountingNode;
-    }
-
-    struct TestAlgorithmMemory<Expander: Solvable> {
-        expander: Arc<Expander>,
-        queue: std::vec::Vec<Arc<Expander::Node>>,
-    }
-
-    impl<E: Solvable> Memory for TestAlgorithmMemory<E> {
-        fn node_count(&self) -> usize {
-            return self.queue.len();
-        }
-    }
-
-    impl<E: Expander<Node: Weighted> + Solvable> WeightSorted<E> for TestAlgorithmMemory<E> {
-        fn top_cost_estimate(&self) -> Option<CostOf<E>> {
-            self.queue.last().map(|v| v.cost())
+        fn minimum_cost_bound(&self) -> Option<Self::Cost> {
+            self.queue.first().map(|n| n.cost)
         }
     }
 
     #[derive(Default, Debug)]
-    struct TestAlgorithm;
-    impl<E: Solvable> Algorithm<E> for TestAlgorithm {
-        type Memory = TestAlgorithmMemory<E>;
-        type InitError = NoError;
+    struct CountingAlgorithm;
+    impl Algorithm for CountingAlgorithm {
+        type Memory = TestAlgorithmMemory;
+    }
+    impl Solvable<u64> for CountingAlgorithm {
         type StepError = NoError;
+        type Solution = CountingSolution;
 
-        fn initialize<S, G: Goal<E::Node>, T: Trace<E::Node>>(
-            &self,
-            expander: Arc<E>,
-            start: &S,
-            goal: &G,
-            trace: &mut T,
-        ) -> Result<Self::Memory, InitError<Self::InitError, InitTargetedErrorOf<E, S, G>>>
-        where
-            E: InitTargeted<S, G>,
-        {
-            let mut queue: std::vec::Vec<Arc<E::Node>> = Vec::new();
-            for node in expander.start(start, goal) {
-                let node = node.map_err(InitError::Expander)?;
-                trace.expanded_to(&node);
-                queue.push(node);
-            }
-
-            Ok(Self::Memory { expander, queue })
-        }
-
-        fn step<G: Goal<E::Node>, T: Trace<E::Node>>(
+        fn step(
             &self,
             memory: &mut Self::Memory,
-            goal: &G,
-            tracker: &mut T,
-        ) -> Result<
-            Status<E::Solution>,
-            StepError<Self::StepError, ExpansionErrorOf<E, G>, E::SolveError>,
-        >
-        where
-            E: Targeted<G>,
-        {
-            let top_opt = memory.queue.pop();
-            if let Some(top) = top_opt {
-                if goal.is_satisfied(&top) {
-                    tracker.solution_found_from(&top);
-                    return memory
-                        .expander
-                        .make_solution(&top)
-                        .map(Status::Solved)
-                        .map_err(StepError::Solve);
-                }
+            goal: &u64,
+        ) -> Result<Status<Self::Solution>, Self::StepError> {
+            let top = match memory.queue.pop() {
+                Some(top) => top,
+                None => return Ok(Status::Impossible),
+            };
 
-                for node in memory.expander.expand(&top, goal) {
-                    let node = node.map_err(StepError::Expansion)?;
-                    memory.queue.push(node);
-                }
+            if top.value == *goal {
+                return Ok(Status::Solved(top.into()));
+            }
 
-                if memory.queue.is_empty() {
-                    return Ok(Status::Impossible);
-                }
-
-                return Ok(Status::Incomplete);
-            } else {
+            if top.value > *goal {
                 return Ok(Status::Impossible);
             }
+
+            memory.queue.push(Arc::new(CountingNode {
+                value: top.value + 1,
+                cost: top.cost + 1,
+                parent: Some(top),
+            }));
+            Ok(Status::Incomplete)
         }
     }
 
-    type CountingPlanner = Planner<CountingExpander, TestAlgorithm>;
+    impl Coherent<u64, u64> for CountingAlgorithm {
+        type InitError = NoError;
+
+        fn initialize(
+            &self,
+            start: u64,
+            goal: &u64,
+        ) -> Result<Self::Memory, Self::InitError> {
+            let queue = vec![Arc::new(CountingNode {
+                value: start,
+                cost: 0,
+                parent: None,
+            })];
+
+            Ok(TestAlgorithmMemory { queue })
+        }
+    }
 
     #[test]
     fn counting_expander_can_reach_a_higher_goal() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
+        let planner = Planner::new(CountingAlgorithm);
         let start = 5;
         let goal = 10;
         let result = planner
-            .plan(&start, CountingGoal { value: goal })
+            .plan(start, goal)
             .unwrap()
             .solve()
             .unwrap();
@@ -405,11 +261,11 @@ mod tests {
 
     #[test]
     fn counting_expander_finds_lower_goal_impossible() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
+        let planner = Planner::new(CountingAlgorithm);
         let start = 10;
         let goal = 5;
         let result = planner
-            .plan(&start, CountingGoal { value: goal })
+            .plan(start, goal)
             .unwrap()
             .solve()
             .unwrap();
@@ -418,10 +274,10 @@ mod tests {
 
     #[test]
     fn planner_incomplete_after_insufficient_steps() {
-        let planner = CountingPlanner::new(Arc::new(CountingExpander {}));
+        let planner = Planner::new(CountingAlgorithm);
         let start = 5;
         let goal = 10;
-        let mut progress = planner.plan(&start, CountingGoal { value: goal }).unwrap();
+        let mut progress = planner.plan(start, goal).unwrap();
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));
         assert!(matches!(progress.step().unwrap(), Status::Incomplete));

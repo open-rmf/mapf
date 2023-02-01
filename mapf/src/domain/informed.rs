@@ -20,7 +20,7 @@ use crate::error::NoError;
 
 pub trait Informed<State, Goal> {
     /// How is cost represented. E.g. f32, f64, or u64
-    type Cost;
+    type CostEstimate;
 
     /// What kind of error can happen if a bad state is provided
     type InformedError;
@@ -33,7 +33,7 @@ pub trait Informed<State, Goal> {
         &self,
         from_state: &State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::Cost>, Self::InformedError>;
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError>;
 }
 
 pub trait EstimateModifier<State, Goal, Cost> {
@@ -69,13 +69,13 @@ where
     Prop: Informed<Base::State, Goal>,
     Prop::InformedError: Into<Base::Error>,
 {
-    type Cost = Prop::Cost;
+    type CostEstimate = Prop::CostEstimate;
     type InformedError = Base::Error;
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::Cost>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         self.prop.remaining_cost_estimate(from_state, to_goal)
             .map_err(Into::into)
     }
@@ -85,17 +85,17 @@ impl<Base, Prop, Goal> Informed<Base::State, Goal> for Chained<Base, Prop>
 where
     Base: Domain + Informed<Base::State, Goal>,
     Base::InformedError: Into<Base::Error>,
-    Prop: Informed<Base::State, Goal, Cost=Base::Cost>,
+    Prop: Informed<Base::State, Goal, CostEstimate=Base::CostEstimate>,
     Prop::InformedError: Into<Base::Error>,
-    Base::Cost: std::ops::Add<Base::Cost, Output=Base::Cost>,
+    Base::CostEstimate: std::ops::Add<Base::CostEstimate, Output=Base::CostEstimate>,
 {
-    type Cost = Base::Cost;
+    type CostEstimate = Base::CostEstimate;
     type InformedError = Base::Error;
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::Cost>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let base_cost_estimate = self.base.remaining_cost_estimate(
             from_state, to_goal
         ).map_err(Into::into)?;
@@ -120,25 +120,25 @@ impl<Base, Prop, Goal> Informed<Base::State, Goal> for Mapped<Base, Prop>
 where
     Base: Domain + Informed<Base::State, Goal>,
     Base::InformedError: Into<Base::Error>,
-    Prop: EstimateModifier<Base::State, Goal, Base::Cost>,
+    Prop: EstimateModifier<Base::State, Goal, Base::CostEstimate>,
     Prop::EstimateModifierError: Into<Base::Error>,
 {
-    type Cost = Base::Cost;
+    type CostEstimate = Base::CostEstimate;
     type InformedError = Base::Error;
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
-        to_goal_state: &Base::State,
-    ) -> Result<Option<Self::Cost>, Self::InformedError> {
+        to_goal: &Goal,
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let original_estimate = match self.base.remaining_cost_estimate(
-            from_state, to_goal_state
+            from_state, to_goal
         ).map_err(Into::into)? {
             Some(c) => c,
             None => return Ok(None),
         };
 
         self.prop.modify_remaining_cost_estimate(
-            from_state, to_goal_state, original_estimate
+            from_state, to_goal, original_estimate
         ).map_err(Into::into)
     }
 }
@@ -151,28 +151,22 @@ where
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Informed<Lifter::ProjectedState, Goal>,
     Prop::InformedError: Into<Base::Error>,
-    Prop::Cost: std::ops::Add<Prop::Cost, Output=Prop::Cost>,
+    Prop::CostEstimate: std::ops::Add<Prop::CostEstimate, Output=Prop::CostEstimate>,
 {
-    type Cost = Prop::Cost;
+    type CostEstimate = Prop::CostEstimate;
     type InformedError = Base::Error;
     fn remaining_cost_estimate(
         &self,
         from_state: &Base::State,
-        to_goal_state: &Base::State,
-    ) -> Result<Option<Self::Cost>, Self::InformedError> {
+        to_goal: &Goal,
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let from_state_proj = match self.lifter.project(from_state.clone())
             .map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
         };
 
-        let to_goal_state_proj = match self.lifter.project(to_goal_state.clone())
-            .map_err(Into::into)? {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-
-        self.prop.remaining_cost_estimate(&from_state_proj, &to_goal_state_proj)
+        self.prop.remaining_cost_estimate(&from_state_proj, &to_goal)
             .map_err(Into::into)
     }
 }
@@ -185,27 +179,27 @@ mod tests {
     use approx::assert_relative_eq;
 
     struct EuclideanDistanceEstimate;
-    impl<State: Mobile> Informed<State, State> for EuclideanDistanceEstimate {
-        type Cost = f64;
+    impl<State: Mobile, Goal: Mobile> Informed<State, Goal> for EuclideanDistanceEstimate {
+        type CostEstimate = f64;
         type InformedError = NoError;
         fn remaining_cost_estimate(
             &self,
             from_state: &State,
-            to_goal_state: &State,
-        ) -> Result<Option<Self::Cost>, Self::InformedError> {
-            Ok(Some((from_state.position() - to_goal_state.position()).norm()))
+            to_goal: &Goal,
+        ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+            Ok(Some((from_state.position() - to_goal.position()).norm()))
         }
     }
 
     struct BatteryLevelCostEstimate;
-    impl<State: BatteryPowered> Informed<State, State> for BatteryLevelCostEstimate {
-        type Cost = f64;
+    impl<State: BatteryPowered, Goal> Informed<State, Goal> for BatteryLevelCostEstimate {
+        type CostEstimate = f64;
         type InformedError = NoError;
         fn remaining_cost_estimate(
             &self,
             from_state: &State,
-            _: &State,
-        ) -> Result<Option<Self::Cost>, Self::InformedError> {
+            _: &Goal,
+        ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
             if from_state.battery_level() <= 0.0 {
                 return Ok(None);
             }

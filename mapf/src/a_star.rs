@@ -16,125 +16,326 @@
 */
 
 use crate::{
-    algorithm::{self, Status},
-    error::NoError,
-    expander::{
-        Closable, CostOf, Expander, ExpansionErrorOf, Goal, InitTargeted, InitTargetedErrorOf,
-        Solvable, SolveErrorOf, Targeted,
+    error::Error,
+    algorithm::{Algorithm, Coherent, Solvable, Status, MinimumCostBound, Measure},
+    domain::{
+        Domain, Activity, Dynamics, Weighted, Initializable, Informed, Satisfiable,
+        Closable, ClosedSet, ClosedStatus, CloseResult,
     },
-    node::{CloseResult, ClosedSet, ClosedStatus, Informed, TotalCostEstimateCmp as NodeCmp},
-    Trace,
 };
-use std::{cmp::Reverse, collections::BinaryHeap, sync::Arc};
+use std::{
+    cmp::{Reverse, PartialOrd},
+    collections::BinaryHeap,
+    ops::Add,
+};
+use thiserror::Error as ThisError;
 
-pub struct Memory<N, E>
-where
-    N: Informed,
-    E: Expander<Node = N> + Closable,
-{
-    closed_set: <E as Closable>::ClosedSet,
-    queue: BinaryHeap<Reverse<NodeCmp<N>>>,
-    expander: Arc<E>,
-}
-
-impl<N: Informed, E: Expander<Node = N> + Closable> Memory<N, E> {
-    pub fn queue(&self) -> &BinaryHeap<Reverse<NodeCmp<N>>> {
-        &self.queue
-    }
-}
-
-impl<N, E> algorithm::Memory for Memory<N, E>
-where
-    N: Informed,
-    E: Expander<Node = N> + Closable,
-{
-    fn node_count(&self) -> usize {
-        return self.queue.len();
-    }
-}
-
-impl<N, E> algorithm::WeightSorted<E> for Memory<N, E>
-where
-    N: Informed,
-    E: Expander<Node = N> + Closable,
-{
-    fn top_cost_estimate(&self) -> Option<CostOf<E>> {
-        self.queue.peek().map(|x| x.0 .0.total_cost_estimate())
-    }
+pub struct Solution<State, Action, Cost> {
+    pub initial_state: State,
+    pub sequence: Vec<(Action, State)>,
+    pub total_cost: Cost,
 }
 
 #[derive(Default, Debug)]
-pub struct Algorithm;
+pub struct AStar<D> {
+    pub domain: D,
+}
 
-impl<N, E> algorithm::Algorithm<E> for Algorithm
-where
-    N: Informed,
-    E: Expander<Node = N> + Closable + Solvable,
-{
-    type Memory = Memory<N, E>;
-    type InitError = NoError;
-    type StepError = NoError;
-
-    fn initialize<S, G: Goal<E::Node>, T: Trace<N>>(
-        &self,
-        expander: Arc<E>,
-        start: &S,
-        goal: &G,
-        tracker: &mut T,
-    ) -> Result<Self::Memory, algorithm::InitError<Self::StepError, InitTargetedErrorOf<E, S, G>>>
+impl<D> AStar<D> {
+    pub fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
     where
-        E: InitTargeted<S, G>,
+        D: Domain,
+        D::Error: Error,
     {
-        let mut queue = BinaryHeap::default();
-        for node in expander.start(start, goal) {
-            let node = node.map_err(algorithm::InitError::Expander)?;
-            tracker.expanded_to(&node);
-            queue.push(Reverse(NodeCmp(node)));
-        }
-
-        return Ok(Memory {
-            closed_set: E::ClosedSet::default(),
-            queue,
-            expander,
-        });
+        AStarSearchError::Domain(err.into())
     }
 
-    fn step<G: Goal<E::Node>, T: Trace<N>>(
+    pub fn algo_err(err: AStarImplError) -> AStarSearchError<D::Error>
+    where
+        D: Domain,
+        D::Error: Error,
+    {
+        AStarSearchError::Algorithm(err)
+    }
+}
+
+impl<D> Algorithm for AStar<D>
+where
+    D: Domain
+    + Closable<D::State, usize>
+    + Weighted<D::State, D::Action>,
+{
+    type Memory = Memory<D::ClosedSet, D::State, D::Action, D::Cost>;
+}
+
+impl<D, Start, Goal> Coherent<Start, Goal> for AStar<D>
+where
+    D: Domain
+    + Initializable<Start, D::State>
+    + Closable<D::State, usize>
+    + Weighted<D::State, D::Action>
+    + Informed<D::State, Goal, CostEstimate=D::Cost>,
+    D::Cost: Ord + Add<Output=D::Cost>,
+    D::Error: Error,
+    D::InitialError: Into<D::Error>,
+    D::WeightedError: Into<D::Error>,
+    D::InformedError: Into<D::Error>,
+{
+    type InitError = AStarSearchError<D::Error>;
+
+    fn initialize(
+        &self,
+        start: Start,
+        goal: &Goal,
+    ) -> Result<Self::Memory, Self::InitError> {
+        let mut memory = Memory {
+            closed_set: self.domain.new_closed_set(),
+            queue: Default::default(),
+            arena: Default::default(),
+        };
+
+        for state in self.domain.initialize(start) {
+            let state = state.map_err(Self::domain_err)?;
+            let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
+                Some(c) => c,
+                None => continue,
+            };
+            let remaining_cost_estimate = match self.domain.remaining_cost_estimate(
+                &state, &goal
+            ).map_err(Self::domain_err)? {
+                Some(c) => c,
+                None => continue,
+            };
+
+            memory.push_node(Node {
+                cost,
+                remaining_cost_estimate,
+                state,
+                parent: None,
+            }).map_err(Self::algo_err)?;
+        }
+
+        Ok(memory)
+    }
+}
+
+impl<D, Goal> Solvable<Goal> for AStar<D>
+where
+    D: Domain
+    + Closable<D::State, usize>
+    + Activity<D::State, ActivityAction=D::Action>
+    + Dynamics<D::State, D::Action>
+    + Weighted<D::State, D::Action>
+    + Informed<D::State, Goal, CostEstimate=D::Cost>
+    + Satisfiable<D::State, Goal>,
+    D::State: Clone,
+    D::Action: Clone,
+    D::Error: Error,
+    D::Cost: Ord + Add<Output = D::Cost> + Clone,
+    D::SatisfactionError: Into<D::Error>,
+    D::ActivityError: Into<D::Error>,
+    D::DynamicsError: Into<D::Error>,
+    D::WeightedError: Into<D::Error>,
+    D::InformedError: Into<D::Error>,
+{
+    type Solution = Solution<D::State, D::Action, D::Cost>;
+    type StepError = AStarSearchError<D::Error>;
+
+    fn step(
         &self,
         memory: &mut Self::Memory,
-        goal: &G,
-        tracker: &mut T,
-    ) -> Result<
-        Status<E::Solution>,
-        algorithm::StepError<Self::StepError, ExpansionErrorOf<E, G>, SolveErrorOf<E>>,
-    >
-    where
-        E: Targeted<G>,
-    {
-        if let Some(top) = memory.queue.pop().map(|x| x.0 .0) {
-            if goal.is_satisfied(&top) {
-                tracker.solution_found_from(&top);
-                let solution = memory
-                    .expander
-                    .make_solution(&top)
-                    .map_err(algorithm::StepError::Solve)?;
-                return Ok(Status::Solved(solution));
-            }
+        goal: &Goal,
+    ) -> Result<Status<Self::Solution>, Self::StepError> {
+        let top_id = match memory.queue.pop().map(|x| x.0) {
+            Some(top) => top,
+            None => return Ok(Status::Impossible),
+        }.node_id;
 
-            if let CloseResult::Closed = memory.closed_set.close(&top) {
-                tracker.expanded_from(&top);
-                for next in memory.expander.expand(&top, goal) {
-                    let next = next.map_err(algorithm::StepError::Expansion)?;
-                    if let ClosedStatus::Open = memory.closed_set.status(next.as_ref()) {
-                        tracker.expanded_to(&next);
-                        memory.queue.push(Reverse(NodeCmp(next)));
-                    }
-                }
-            }
+        let top = memory.arena.get(top_id).ok_or(
+            Self::algo_err(AStarImplError::BrokenReference(top_id))
+        )?;
 
-            return Ok(Status::Incomplete);
+        if self.domain.is_satisfied(&top.state, goal).map_err(Self::domain_err)? {
+            return memory
+                .retrace(top_id)
+                .map(Into::into)
+                .map_err(Self::algo_err);
         }
 
-        return Ok(Status::Impossible);
+        if let CloseResult::Rejected { prior, .. } = memory.closed_set.close(
+            top.state.clone(), top_id
+        ) {
+            let prior_node = memory.get_node(*prior).map_err(Self::algo_err)?;
+            if prior_node.cost <= top.cost {
+                // The state we are attempting to expand has already been closed
+                // in the past by a lower cost node, so we will not expand from
+                // this top node. Instead we will finish this iteration.
+                return Ok(Status::Incomplete);
+            }
+
+            // The top node has a lower cost so it should replace the node that
+            // previously closed this state.
+            *prior = top_id;
+        }
+
+        // Expand from the top node
+        for next in self.domain.choices(top.state.clone()) {
+            let action = next.map_err(Self::domain_err)?;
+
+            let child_state = match self.domain.advance(
+                top.state.clone(), &action
+            ).map_err(Self::domain_err)? {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let cost = match self.domain
+                .cost(&top.state, &action, &child_state)
+                .map_err(Self::domain_err)? {
+                Some(c) => c,
+                None => continue,
+            } + top.cost.clone();
+
+            let remaining_cost_estimate = match self.domain
+                .remaining_cost_estimate(&child_state, goal)
+                .map_err(Self::domain_err)? {
+                Some(c) => c,
+                None => continue,
+            };
+
+            memory.push_node(Node {
+                state: child_state,
+                cost,
+                remaining_cost_estimate,
+                parent: Some((top_id, action)),
+            }).map_err(Self::algo_err)?;
+        }
+
+        Ok(Status::Incomplete)
     }
+}
+
+pub struct QueueTicket<Cost> {
+    total_cost_estimate: Cost,
+    node_id: usize,
+}
+
+pub struct Node<State, Action, Cost> {
+    state: State,
+    cost: Cost,
+    remaining_cost_estimate: Cost,
+    parent: Option<(usize, Action)>,
+}
+
+impl<Cost: PartialEq> PartialEq for QueueTicket<Cost> {
+    fn eq(&self, other: &Self) -> bool {
+        self.total_cost_estimate.eq(&other.total_cost_estimate)
+    }
+}
+
+impl<Cost: Eq> Eq for QueueTicket<Cost> {}
+
+impl<Cost: PartialOrd> PartialOrd for QueueTicket<Cost> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.total_cost_estimate.partial_cmp(&other.total_cost_estimate)
+    }
+}
+
+impl<Cost: Ord> Ord for QueueTicket<Cost> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.total_cost_estimate.cmp(&other.total_cost_estimate)
+    }
+}
+
+pub struct Memory<Closed, State, Action, Cost> {
+    closed_set: Closed,
+    queue: BinaryHeap<Reverse<QueueTicket<Cost>>>,
+    arena: Vec<Node<State, Action, Cost>>,
+}
+
+impl<Closed, State: Clone, Action: Clone, Cost: Clone> Memory<Closed, State, Action, Cost> {
+    pub fn retrace(&self, node_id: usize) -> Result<Solution<State, Action, Cost>, AStarImplError> {
+        let total_cost = self.get_node(node_id)?.cost.clone();
+        let mut initial_node_id = node_id;
+        let mut next_node_id = Some(node_id);
+        let mut sequence = Vec::new();
+        while let Some(current_node_id) = next_node_id {
+            initial_node_id = current_node_id;
+            let node = self.get_node(node_id)?;
+            if let Some((_, action)) = &node.parent {
+                sequence.push((action.clone(), node.state.clone()));
+            }
+
+            next_node_id = node.parent.as_ref().map(|(parent, _)| *parent);
+        }
+
+        sequence.reverse();
+
+        let initial_state = self.get_node(initial_node_id)?.state.clone();
+        Ok(Solution { initial_state, sequence, total_cost })
+    }
+}
+
+impl<Closed, State, Action, Cost> Memory<Closed, State, Action, Cost> {
+    pub fn queue(&self) -> &BinaryHeap<Reverse<QueueTicket<Cost>>> {
+        &self.queue
+    }
+
+    pub fn push_node(&mut self, node: Node<State, Action, Cost>) -> Result<(), AStarImplError>
+    where
+        Closed: ClosedSet<State, usize>,
+        Cost: Ord + Add<Output=Cost> + Clone,
+    {
+        if let ClosedStatus::Closed(prior) = self.closed_set.status(&node.state) {
+            if let Some(prior) = self.arena.get(*prior) {
+                if prior.cost <= node.cost {
+                    // The state is already closed with a lower-cost node, so
+                    // we should not push this new node.
+                    return Ok(());
+                }
+            } else {
+                // The closed set is referencing a node that does not exist in
+                // the memory arena. This is a major bug.
+                return Err(AStarImplError::BrokenReference(*prior));
+            }
+        }
+
+        let node_id = self.arena.len();
+        let total_cost_estimate = node.cost.clone() + node.remaining_cost_estimate.clone();
+        self.arena.push(node);
+        self.queue.push(Reverse(QueueTicket { node_id, total_cost_estimate }));
+        Ok(())
+    }
+
+    pub fn get_node(&self, node_id: usize) -> Result<&Node<State, Action, Cost>, AStarImplError> {
+        self.arena.get(node_id).ok_or(AStarImplError::BrokenReference(node_id))
+    }
+}
+
+impl<Closed, State, Action, Cost> Measure for Memory<Closed, State, Action, Cost> {
+    fn size(&self) -> usize {
+        self.arena.len() * std::mem::size_of::<Node<State, Action, Cost>>()
+    }
+}
+
+impl<Closed, State, Action, Cost: Clone> MinimumCostBound for Memory<Closed, State, Action, Cost> {
+    type Cost = Cost;
+    fn minimum_cost_bound(&self) -> Option<Self::Cost> {
+        self.queue.peek().map(|n| n.0.total_cost_estimate.clone())
+    }
+}
+
+#[derive(ThisError, Debug)]
+pub enum AStarSearchError<D: Error> {
+    #[error("An error occurred in the algorithm:\n{0}")]
+    Algorithm(AStarImplError),
+    #[error("An error occurred in the domain:\n{0}")]
+    Domain(D),
+}
+
+#[derive(ThisError, Debug)]
+pub enum AStarImplError {
+    #[error("A node [{0}] is referenced but does not exist in the search memory. \
+    This is a critical implementation error, please report this to the mapf developers.")]
+    BrokenReference(usize),
 }
