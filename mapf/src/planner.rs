@@ -17,7 +17,7 @@
 
 use crate::{
     algorithm::{Coherent, Solvable},
-    search::{self, Search},
+    search::{Search, AbstractSearch},
     halt::Halt,
     error::Error,
 };
@@ -99,21 +99,22 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         ))
     }
 
-    pub fn into_abstract<S, G>(self) -> Abstract<S, G, Algo::Solution>
+    pub fn into_abstract<S, G>(self) -> AbstractPlanner<S, G, Algo::Solution>
     where
         Algo: Coherent<S, G> + Solvable<G> + 'static,
         Algo::InitError: Error + 'static,
         Algo::StepError: Error + 'static,
         Halting: Halt<Algo::Memory> + 'static,
+        G: 'static,
     {
-        Abstract {
+        AbstractPlanner {
             implementation: Box::new(RefCell::new(self)),
         }
     }
 }
 
 pub trait Interface<S, G, Solution> {
-    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<Solution>>;
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<Solution>>;
 }
 
 impl<A, H, S, G> Interface<S, G, A::Solution> for Planner<A, H>
@@ -122,20 +123,21 @@ where
     A::InitError: Error,
     A::StepError: Error,
     H: Halt<A::Memory> + 'static,
+    G: 'static,
 {
-    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<A::Solution>> {
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<A::Solution>> {
         Planner::plan(self, start, goal)
             .map(Into::into)
             .map_err(anyhow::Error::new)
     }
 }
 
-pub struct Abstract<S, G, Solution> {
+pub struct AbstractPlanner<S, G, Solution> {
     implementation: Box<RefCell<dyn Interface<S, G, Solution>>>,
 }
 
-impl<S, G, Solution> Interface<S, G, Solution> for Abstract<S, G, Solution> {
-    fn plan(&self, start: S, goal: G) -> anyhow::Result<search::Abstract<Solution>> {
+impl<S, G, Solution> Interface<S, G, Solution> for AbstractPlanner<S, G, Solution> {
+    fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<Solution>> {
         self.implementation.borrow_mut().plan(start, goal)
     }
 }
@@ -157,7 +159,7 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct CountingSolution {
-        cost: u64,
+        #[allow(dead_code)] cost: u64,
         sequence: Vec<u64>,
     }
 
@@ -166,9 +168,9 @@ mod tests {
             let cost = value.cost;
             let mut sequence = Vec::<u64>::new();
             let mut gather = Some(value);
-            if let Some(next) = gather {
+            while let Some(next) = gather {
                 sequence.push(next.value);
-                gather = next.parent;
+                gather = next.parent.clone();
             }
             sequence.reverse();
 
@@ -229,7 +231,7 @@ mod tests {
         fn initialize(
             &self,
             start: u64,
-            goal: &u64,
+            _: &u64,
         ) -> Result<Self::Memory, Self::InitError> {
             let queue = vec![Arc::new(CountingNode {
                 value: start,

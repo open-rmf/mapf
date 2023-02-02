@@ -24,6 +24,7 @@ bitfield = "*"
 derivative = "*"
 anyhow = "*"
 thiserror = "*"
+paste = "0.1"
 
 [dev-dependencies]
 approx = "*"

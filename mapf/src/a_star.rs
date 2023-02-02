@@ -75,7 +75,7 @@ where
     + Closable<D::State, usize>
     + Weighted<D::State, D::Action>
     + Informed<D::State, Goal, CostEstimate=D::Cost>,
-    D::Cost: Ord + Add<Output=D::Cost>,
+    D::Cost: Ord + Add<Output=D::Cost> + Clone,
     D::Error: Error,
     D::InitialError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -151,10 +151,7 @@ where
             None => return Ok(Status::Impossible),
         }.node_id;
 
-        let top = memory.arena.get(top_id).ok_or(
-            Self::algo_err(AStarImplError::BrokenReference(top_id))
-        )?;
-
+        let top = memory.arena.get_node(top_id).map_err(Self::algo_err)?;
         if self.domain.is_satisfied(&top.state, goal).map_err(Self::domain_err)? {
             return memory
                 .retrace(top_id)
@@ -165,7 +162,7 @@ where
         if let CloseResult::Rejected { prior, .. } = memory.closed_set.close(
             top.state.clone(), top_id
         ) {
-            let prior_node = memory.get_node(*prior).map_err(Self::algo_err)?;
+            let prior_node = memory.arena.get_node(*prior).map_err(Self::algo_err)?;
             if prior_node.cost <= top.cost {
                 // The state we are attempting to expand has already been closed
                 // in the past by a lower cost node, so we will not expand from
@@ -179,22 +176,24 @@ where
         }
 
         // Expand from the top node
-        for next in self.domain.choices(top.state.clone()) {
+        let parent_state = top.state.clone();
+        let parent_cost = top.cost.clone();
+        for next in self.domain.choices(parent_state.clone()) {
             let action = next.map_err(Self::domain_err)?;
 
             let child_state = match self.domain.advance(
-                top.state.clone(), &action
+                parent_state.clone(), &action
             ).map_err(Self::domain_err)? {
                 Some(s) => s,
                 None => continue,
             };
 
             let cost = match self.domain
-                .cost(&top.state, &action, &child_state)
+                .cost(&parent_state, &action, &child_state)
                 .map_err(Self::domain_err)? {
                 Some(c) => c,
                 None => continue,
-            } + top.cost.clone();
+            } + parent_cost.clone();
 
             let remaining_cost_estimate = match self.domain
                 .remaining_cost_estimate(&child_state, goal)
@@ -255,13 +254,13 @@ pub struct Memory<Closed, State, Action, Cost> {
 
 impl<Closed, State: Clone, Action: Clone, Cost: Clone> Memory<Closed, State, Action, Cost> {
     pub fn retrace(&self, node_id: usize) -> Result<Solution<State, Action, Cost>, AStarImplError> {
-        let total_cost = self.get_node(node_id)?.cost.clone();
+        let total_cost = self.arena.get_node(node_id)?.cost.clone();
         let mut initial_node_id = node_id;
         let mut next_node_id = Some(node_id);
         let mut sequence = Vec::new();
         while let Some(current_node_id) = next_node_id {
             initial_node_id = current_node_id;
-            let node = self.get_node(node_id)?;
+            let node = self.arena.get_node(node_id)?;
             if let Some((_, action)) = &node.parent {
                 sequence.push((action.clone(), node.state.clone()));
             }
@@ -271,7 +270,7 @@ impl<Closed, State: Clone, Action: Clone, Cost: Clone> Memory<Closed, State, Act
 
         sequence.reverse();
 
-        let initial_state = self.get_node(initial_node_id)?.state.clone();
+        let initial_state = self.arena.get_node(initial_node_id)?.state.clone();
         Ok(Solution { initial_state, sequence, total_cost })
     }
 }
@@ -306,9 +305,15 @@ impl<Closed, State, Action, Cost> Memory<Closed, State, Action, Cost> {
         self.queue.push(Reverse(QueueTicket { node_id, total_cost_estimate }));
         Ok(())
     }
+}
 
-    pub fn get_node(&self, node_id: usize) -> Result<&Node<State, Action, Cost>, AStarImplError> {
-        self.arena.get(node_id).ok_or(AStarImplError::BrokenReference(node_id))
+trait GetNode<N> {
+    fn get_node(&self, index: usize) -> Result<&N, AStarImplError>;
+}
+
+impl<N> GetNode<N> for Vec<N> {
+    fn get_node(&self, index: usize) -> Result<&N, AStarImplError> {
+        self.get(index).ok_or(AStarImplError::BrokenReference(index))
     }
 }
 

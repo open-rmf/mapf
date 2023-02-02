@@ -24,7 +24,7 @@ use crate::{
     error::Error,
 };
 
-/// Progress manages the progress of a planning effort.
+/// Search manages the progress of a planning effort.
 pub struct Search<Algo: Algorithm, Goal, Halting> {
     /// Storage container for the progress of the search algorithm
     memory: Algo::Memory,
@@ -110,19 +110,19 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
     }
 
     /// Modify the existing options and return the progress
-    fn tweak_halting<F: FnOnce(&mut Halting)>(mut self, tweak: F) -> Self {
+    pub fn tweak_halting<F: FnOnce(&mut Halting)>(mut self, tweak: F) -> Self {
         tweak(&mut self.halting);
         self
     }
 }
 
-pub trait Interface<Solution> {
+pub trait SearchInterface<Solution> {
     fn solve(&mut self) -> anyhow::Result<Status<Solution>>;
 
     fn step(&mut self) -> anyhow::Result<Status<Solution>>;
 }
 
-impl<A, G, H> Interface<A::Solution> for Search<A, G, H>
+impl<A, G, H> SearchInterface<A::Solution> for Search<A, G, H>
 where
     A: Solvable<G>,
     H: Halt<A::Memory>,
@@ -137,13 +137,14 @@ where
     }
 }
 
-trait WithHalting<H> {
+/// A trait that allows halting information to be accessed for reading or writing.
+pub trait GetHalting<H> {
     fn halting(&self) -> &H;
 
     fn halting_mut(&mut self) -> &mut H;
 }
 
-impl<A: Algorithm, G, H: Halt<A::Memory>> WithHalting<H> for Search<A, G, H> {
+impl<A: Algorithm, G, H: Halt<A::Memory>> GetHalting<H> for Search<A, G, H> {
     fn halting(&self) -> &H {
         &self.halting
     }
@@ -153,34 +154,60 @@ impl<A: Algorithm, G, H: Halt<A::Memory>> WithHalting<H> for Search<A, G, H> {
     }
 }
 
-pub trait InterfaceWithHalting<Solution, Halting>:
-    Interface<Solution> + WithHalting<Halting>
-{
+/// A trait that allows halting information to be accessed for reading or writing
+/// in a way that respects guarding mechanisms. This is needed by AbstractWithHalting
+/// because the RefCell that holds the implementation cannot return a regular
+/// borrow of the halting information.
+///
+/// In order to write something that needs to read/write halting information
+/// while being generic to a `Search` vs `AbstractSearchWithHalting`, use
+/// `WithHalting<H>` as a trait bound instead of `GetHalting<H>` because
+/// `AbstractSearchWithHalting` is not able to implement `GetHalting<H>`.
+pub trait WithHalting<H> {
+    fn view_halting<T, F: FnOnce(&H) -> T>(&self, f: F) -> T;
+
+    fn update_halting<T, F: FnOnce(&mut H) -> T>(&mut self, f: F) -> T;
 }
 
-/// Everything that implements Interface<Solution> and WithOptions<Options>
-/// automatically implements InterfaceWithOptions<Solution, Options>
-impl<Solution, Halting, T: Interface<Solution> + WithHalting<Halting>>
-    InterfaceWithHalting<Solution, Halting> for T
-{
-}
+impl<A: Algorithm, G, H: Halt<A::Memory>> WithHalting<H> for Search<A, G, H> {
+    fn view_halting<T, F: FnOnce(&H) -> T>(&self, f: F) -> T {
+        f(self.halting())
+    }
 
-pub struct Abstract<Solution> {
-    implementation: Box<RefCell<dyn Interface<Solution>>>,
-}
-
-impl<A, G, H> From<Search<A, G, H>> for Abstract<A::Solution>
-where
-    A: Solvable<G>,
-    A::StepError: Error,
-    H: Halt<A::Memory>,
-{
-    fn from(value: Search<A, G, H>) -> Self {
-        Abstract { implementation: Box::new(RefCell::new(value)) }
+    fn update_halting<T, F: FnOnce(&mut H) -> T>(&mut self, f: F) -> T {
+        f(self.halting_mut())
     }
 }
 
-impl<Solution> Interface<Solution> for Abstract<Solution> {
+pub trait SearchInterfaceWithHalting<Solution, Halting>:
+    SearchInterface<Solution> + GetHalting<Halting>
+{
+}
+
+/// Everything that implements `SearchInterface<Solution>` and `WithHalting<H>`
+/// automatically implements `SearchInterfaceWithHalting<Solution, H>`
+impl<Solution, Halting, T: SearchInterface<Solution> + GetHalting<Halting>>
+    SearchInterfaceWithHalting<Solution, Halting> for T
+{
+}
+
+pub struct AbstractSearch<Solution> {
+    implementation: Box<RefCell<dyn SearchInterface<Solution>>>,
+}
+
+impl<A, G, H> From<Search<A, G, H>> for AbstractSearch<A::Solution>
+where
+    A: Solvable<G> + 'static,
+    A::StepError: Error,
+    H: Halt<A::Memory> + 'static,
+    G: 'static,
+{
+    fn from(value: Search<A, G, H>) -> Self {
+        AbstractSearch { implementation: Box::new(RefCell::new(value)) }
+    }
+}
+
+impl<Solution> SearchInterface<Solution> for AbstractSearch<Solution> {
     fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
         self.implementation.borrow_mut().solve()
     }
@@ -190,11 +217,11 @@ impl<Solution> Interface<Solution> for Abstract<Solution> {
     }
 }
 
-pub struct AbstractWithHalting<Solution, Halting> {
-    implementation: Box<RefCell<dyn InterfaceWithHalting<Solution, Halting>>>,
+pub struct AbstractSearchWithHalting<Solution, Halting> {
+    implementation: Box<RefCell<dyn SearchInterfaceWithHalting<Solution, Halting>>>,
 }
 
-impl<A, G, H> From<Search<A, G, H>> for AbstractWithHalting<A::Solution, H>
+impl<A, G, H> From<Search<A, G, H>> for AbstractSearchWithHalting<A::Solution, H>
 where
     A: Solvable<G> + 'static,
     H: Halt<A::Memory> + 'static,
@@ -202,11 +229,11 @@ where
     G: 'static,
 {
     fn from(value: Search<A, G, H>) -> Self {
-        AbstractWithHalting { implementation: Box::new(RefCell::new(value)) }
+        AbstractSearchWithHalting { implementation: Box::new(RefCell::new(value)) }
     }
 }
 
-impl<Solution, Halting> Interface<Solution> for AbstractWithHalting<Solution, Halting> {
+impl<Solution, Halting> SearchInterface<Solution> for AbstractSearchWithHalting<Solution, Halting> {
     fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
         self.implementation.borrow_mut().solve()
     }
@@ -216,12 +243,12 @@ impl<Solution, Halting> Interface<Solution> for AbstractWithHalting<Solution, Ha
     }
 }
 
-impl<Solution, Halting> WithHalting<Halting> for AbstractWithHalting<Solution, Halting> {
-    fn halting(&self) -> &Halting {
-        self.implementation.borrow().halting()
+impl<Solution, Halting> WithHalting<Halting> for AbstractSearchWithHalting<Solution, Halting> {
+    fn view_halting<T, F: FnOnce(&Halting) -> T>(&self, f: F) -> T {
+        f(self.implementation.borrow().halting())
     }
 
-    fn halting_mut(&mut self) -> &mut Halting {
-        self.implementation.borrow_mut().halting_mut()
+    fn update_halting<T, F: FnOnce(&mut Halting) -> T>(&mut self, f: F) -> T {
+        f(self.implementation.borrow_mut().halting_mut())
     }
 }

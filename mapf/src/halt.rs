@@ -157,18 +157,21 @@ where
     }
 }
 
-/// Tuples of Halt<A> will also implement Halt<A> with a boolean-and
+use paste;
+/// Tuples of Halt<M> will also implement Halt<M> with a boolean-and
 /// combination of each tuple element's result. We currently limit the tuple
 /// size to 8 elements, but that limit can be overcome using nested tuples.
 macro_rules! and_tuple_halt {
     ( $( $name:ident )+ ) => {
-        impl<Mem, $($name: Halt<Mem>),+> Halt<Mem> for ($($name,)+) {
-            fn halt(
-                &mut self,
-                memory: &Mem,
-            ) -> bool {
-                let ($($name,)+) = self;
-                false $(|| $name.halt(memory))+
+        paste::item! {
+            impl<Mem, $($name: Halt<Mem>),+> Halt<Mem> for ($($name,)+) {
+                fn halt(
+                    &mut self,
+                    memory: &Mem,
+                ) -> bool {
+                    let ($([<$name:lower>],)+) = self;
+                    false $(|| [<$name:lower>].halt(memory))+
+                }
             }
         }
     };
@@ -197,20 +200,20 @@ mod tests {
 
     #[test]
     fn test_tuple_options() {
-        let halting = (
+        let mut halting = (
             Interruptible::new(|| Interruption::Continue),
             StepLimit::new(Some(10)),
         );
 
         assert!(!halting.halt(&FakeMem));
 
-        let halting = (
+        let mut halting = (
             Interruptible::new(|| Interruption::Continue),
             StepLimit::new(Some(5)),
             MeasureLimit(Some(100)),
         );
 
-        for _ in 0..4 {
+        for _ in 0..5 {
             assert!(!halting.halt(&FakeMem));
         }
         assert!(halting.halt(&FakeMem));

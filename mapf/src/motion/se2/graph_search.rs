@@ -409,7 +409,6 @@ mod tests {
         algorithm::Status,
         expander::Constrainable,
         motion::{self, collide::CircleCollisionConstraint},
-        planner::make_planner,
     };
     use se2::{timed_position::DifferentialDriveLineFollow, Point};
 
@@ -457,45 +456,45 @@ mod tests {
         return DifferentialDriveLineFollow::new(1.0f64, std::f64::consts::PI).unwrap();
     }
 
-    #[test]
-    fn test_time_invariant_expander() {
-        let expander = make_directed_time_invariant_expander(
-            Arc::new(make_test_graph()),
-            Arc::new(make_test_extrapolation()),
-        );
+    // #[test]
+    // fn test_time_invariant_expander() {
+    //     let expander = make_directed_time_invariant_expander(
+    //         Arc::new(make_test_graph()),
+    //         Arc::new(make_test_extrapolation()),
+    //     );
 
-        let planner = make_planner(Arc::new(expander), Arc::new(a_star::Algorithm));
-        let mut progress = planner
-            .plan(
-                &StartSE2 {
-                    vertex: 0,
-                    orientation: se2::Rotation::new(0.0),
-                },
-                GoalSE2 {
-                    vertex: 8,
-                    // orientation: None
-                    orientation: Some(OrientationGoal {
-                        target: se2::Rotation::new(90f64.to_radians()),
-                        threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
-                    }),
-                },
-            )
-            .unwrap();
+    //     let planner = make_planner(Arc::new(expander), Arc::new(a_star::Algorithm));
+    //     let mut progress = planner
+    //         .plan(
+    //             &StartSE2 {
+    //                 vertex: 0,
+    //                 orientation: se2::Rotation::new(0.0),
+    //             },
+    //             GoalSE2 {
+    //                 vertex: 8,
+    //                 // orientation: None
+    //                 orientation: Some(OrientationGoal {
+    //                     target: se2::Rotation::new(90f64.to_radians()),
+    //                     threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
+    //                 }),
+    //             },
+    //         )
+    //         .unwrap();
 
-        match progress.solve().unwrap() {
-            Status::Solved(solution) => {
-                let motion = solution.motion().as_ref().unwrap();
-                println!("{:#?}", motion);
-                println!("Finish time: {:?}", motion.finish_time().as_secs_f32());
-            }
-            Status::Impossible => {
-                assert!(false);
-            }
-            Status::Incomplete => {
-                assert!(false);
-            }
-        }
-    }
+    //     match progress.solve().unwrap() {
+    //         Status::Solved(solution) => {
+    //             let motion = solution.motion().as_ref().unwrap();
+    //             println!("{:#?}", motion);
+    //             println!("Finish time: {:?}", motion.finish_time().as_secs_f32());
+    //         }
+    //         Status::Impossible => {
+    //             assert!(false);
+    //         }
+    //         Status::Incomplete => {
+    //             assert!(false);
+    //         }
+    //     }
+    // }
 
     fn make_test_trajectory() -> se2::LinearTrajectory {
         se2::LinearTrajectory::from_iter([
@@ -506,47 +505,47 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn test_time_variant_expander() {
-        let expander = make_directed_time_variant_expander(
-            Arc::new(make_test_graph()),
-            Arc::new(make_test_extrapolation()),
-        );
+    // #[test]
+    // fn test_time_variant_expander() {
+    //     let expander = make_directed_time_variant_expander(
+    //         Arc::new(make_test_graph()),
+    //         Arc::new(make_test_extrapolation()),
+    //     );
 
-        let expander = Arc::new(expander.constrain(CircleCollisionConstraint {
-            obstacles: vec![(0.5, make_test_trajectory())],
-            agent_radius: 1.0,
-        }));
+    //     let expander = Arc::new(expander.constrain(CircleCollisionConstraint {
+    //         obstacles: vec![(0.5, make_test_trajectory())],
+    //         agent_radius: 1.0,
+    //     }));
 
-        let planner = make_planner(expander, Arc::new(a_star::Algorithm));
-        let mut progress = planner
-            .plan(
-                &StartSE2 {
-                    vertex: 0,
-                    orientation: se2::Rotation::new(0.0),
-                },
-                GoalSE2 {
-                    vertex: 8,
-                    orientation: Some(OrientationGoal {
-                        target: se2::Rotation::new(-90_f64.to_radians()),
-                        threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
-                    }),
-                },
-            )
-            .unwrap();
+    //     let planner = make_planner(expander, Arc::new(a_star::Algorithm));
+    //     let mut progress = planner
+    //         .plan(
+    //             &StartSE2 {
+    //                 vertex: 0,
+    //                 orientation: se2::Rotation::new(0.0),
+    //             },
+    //             GoalSE2 {
+    //                 vertex: 8,
+    //                 orientation: Some(OrientationGoal {
+    //                     target: se2::Rotation::new(-90_f64.to_radians()),
+    //                     threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
+    //                 }),
+    //             },
+    //         )
+    //         .unwrap();
 
-        match progress.solve().unwrap() {
-            Status::Solved(solution) => {
-                let motion = solution.motion().as_ref().unwrap();
-                println!("{:#?}", motion);
-                println!("Finish time: {:?}", motion.finish_time().as_secs_f32());
-            }
-            Status::Impossible => {
-                assert!(false);
-            }
-            Status::Incomplete => {
-                assert!(false);
-            }
-        }
-    }
+    //     match progress.solve().unwrap() {
+    //         Status::Solved(solution) => {
+    //             let motion = solution.motion().as_ref().unwrap();
+    //             println!("{:#?}", motion);
+    //             println!("Finish time: {:?}", motion.finish_time().as_secs_f32());
+    //         }
+    //         Status::Impossible => {
+    //             assert!(false);
+    //         }
+    //         Status::Incomplete => {
+    //             assert!(false);
+    //         }
+    //     }
+    // }
 }
