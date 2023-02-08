@@ -29,7 +29,7 @@ pub use trajectory::Trajectory;
 pub mod extrapolator;
 pub use extrapolator::Extrapolator;
 
-pub mod graph_search;
+// pub mod graph_search;
 
 pub mod hold;
 pub mod movable;

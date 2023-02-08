@@ -88,7 +88,7 @@ where
         State: 'a,
         FromAction: 'a;
 
-    fn map_actions<'a>(
+    fn map_action<'a>(
         &'a self,
         from_state: State,
         from_action: FromAction,
@@ -96,6 +96,6 @@ where
     where
         FromAction: 'a
     {
-        self.action_map.map_actions(from_state, from_action)
+        self.action_map.map_action(from_state, from_action)
     }
 }

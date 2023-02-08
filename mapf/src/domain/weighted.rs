@@ -245,7 +245,7 @@ where
         };
 
         let mut cost = Prop::Cost::zero();
-        let actions = self.lifter.map_actions(
+        let actions = self.lifter.map_action(
             from_state.clone(), action.clone()
         ).into_iter();
         for action in actions {

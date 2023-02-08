@@ -23,4 +23,4 @@ pub mod timed_position;
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
 
 pub mod direct_travel;
-pub mod graph_search;
+// pub mod graph_search;

@@ -113,11 +113,11 @@ impl<Algo, Halting> Planner<Algo, Halting> {
     }
 }
 
-pub trait Interface<S, G, Solution> {
+pub trait PlannerInterface<S, G, Solution> {
     fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<Solution>>;
 }
 
-impl<A, H, S, G> Interface<S, G, A::Solution> for Planner<A, H>
+impl<A, H, S, G> PlannerInterface<S, G, A::Solution> for Planner<A, H>
 where
     A: Solvable<G> + Coherent<S, G> + 'static,
     A::InitError: Error,
@@ -133,10 +133,10 @@ where
 }
 
 pub struct AbstractPlanner<S, G, Solution> {
-    implementation: Box<RefCell<dyn Interface<S, G, Solution>>>,
+    implementation: Box<RefCell<dyn PlannerInterface<S, G, Solution>>>,
 }
 
-impl<S, G, Solution> Interface<S, G, Solution> for AbstractPlanner<S, G, Solution> {
+impl<S, G, Solution> PlannerInterface<S, G, Solution> for AbstractPlanner<S, G, Solution> {
     fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<Solution>> {
         self.implementation.borrow_mut().plan(start, goal)
     }

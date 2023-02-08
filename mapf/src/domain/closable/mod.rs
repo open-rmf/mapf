@@ -18,9 +18,9 @@
 /// A trait for domains whose states can be "closed" meaning it is possible to
 /// identify when a state is being repeated in a search and prune that state
 /// out of any further search effort.
-pub trait Closable<State, T> {
-    type ClosedSet: ClosedSet<State, T>;
-    fn new_closed_set(&self) -> Self::ClosedSet;
+pub trait Closable<State> {
+    type ClosedSet<T>: ClosedSet<State, T>;
+    fn new_closed_set<T>(&self) -> Self::ClosedSet<T>;
 }
 
 /// The result of attempting to close a state.

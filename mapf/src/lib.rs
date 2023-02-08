@@ -14,7 +14,7 @@
  * limitations under the License.
  *
 */
-#![feature(associated_type_bounds, type_alias_impl_trait, result_flattening)]
+#![feature(associated_type_bounds, type_alias_impl_trait, result_flattening, min_specialization)]
 
 pub mod domain;
 
@@ -37,8 +37,8 @@ pub mod node;
 
 pub mod algorithm;
 
+pub mod templates;
 pub mod trace;
-
 pub mod tree;
 
 pub mod directed;

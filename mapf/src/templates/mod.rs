@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 Open Source Robotics Foundation
+ * Copyright (C) 2023 Open Source Robotics Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,5 @@
  *
 */
 
-pub type Position = nalgebra::geometry::Isometry2<f64>;
-pub type Point = nalgebra::geometry::Point2<f64>;
-pub type Vector = nalgebra::Vector2<f64>;
-pub type Rotation = nalgebra::UnitComplex<f64>;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Velocity {
-    pub translational: Vector,
-    pub rotational: f64,
-}
-
-pub mod timed_position;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
-
-// pub mod quickest_path;
-// pub use quickest_path::QuickestPath;
-
-// pub mod graph_search;
+pub mod informed_graph_motion;
+pub use informed_graph_motion::InformedGraphMotion;

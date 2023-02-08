@@ -17,9 +17,8 @@
 
 use crate::error::NoError;
 
-/// The ActionMap trait describes a domain property that can modify the
-/// actions produced or used by activities. This can be used to apply
-/// constraints or transformations to activities within a domain.
+/// The ActionMap trait describes a domain property that can map actions from
+/// one domain to another.
 pub trait ActionMap<State, FromAction> {
     /// What kind of action is produced after mapping this activity
     type ToAction;
@@ -37,7 +36,7 @@ pub trait ActionMap<State, FromAction> {
         FromAction: 'a;
 
     /// Implement this function to modify a set of actions.
-    fn map_actions<'a>(
+    fn map_action<'a>(
         &'a self,
         from_state: State,
         from_action: FromAction,
@@ -70,7 +69,7 @@ where
         S: 'a,
         FromAction: 'a;
 
-    fn map_actions<'a>(
+    fn map_action<'a>(
         &'a self,
         _: S,
         from_action: FromAction,
@@ -106,7 +105,7 @@ where
         S: 'a,
         FromAction: 'a;
 
-    fn map_actions<'a>(
+    fn map_action<'a>(
         &'a self,
         _: S,
         from_action: FromAction,
@@ -130,7 +129,7 @@ impl<State, Action> ActionMap<State, Action> for NoActionMap {
         State: 'a,
         Action: 'a;
 
-    fn map_actions<'a>(
+    fn map_action<'a>(
         &'a self,
         _: State,
         from_action: Action,

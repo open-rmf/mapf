@@ -54,7 +54,7 @@ where
         let p0 = {
             // Should this be an error instead? The current state is off the
             // graph entirely.
-            if let Some(p) = self.graph.vertex(from_state.clone().into()) {
+            if let Some(p) = self.graph.vertex(&from_state.clone().into()) {
                 p
             } else {
                 return Ok(None);
@@ -62,7 +62,7 @@ where
         };
 
         let p1 = {
-            if let Some(p) = self.graph.vertex(to_goal.key().clone()) {
+            if let Some(p) = self.graph.vertex(&to_goal.key().clone()) {
                 p
             } else {
                 return Ok(None);
