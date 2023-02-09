@@ -75,12 +75,12 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
     }
 }
 
-pub enum FlatResultMap<T, U: IntoIterator, F, E> {
+pub enum FlatResultMapIter<T, U: IntoIterator, F, E> {
     Ok(std::iter::FlatMap<std::option::IntoIter<T>, U, F>),
     Err(Option<E>),
 }
 
-impl<T, U: IntoIterator, F, E> Iterator for FlatResultMap<T, U, F, E>
+impl<T, U: IntoIterator, F, E> Iterator for FlatResultMapIter<T, U, F, E>
 where
     F: FnMut(T) -> U,
 {
@@ -98,7 +98,7 @@ where
 pub trait FlatResultMapTrait {
     type Type;
     type Error;
-    fn flat_result_map<U, F>(self, f: F) -> FlatResultMap<Self::Type, U, F, Self::Error>
+    fn flat_result_map<U, F>(self, f: F) -> FlatResultMapIter<Self::Type, U, F, Self::Error>
     where
         Self: Sized,
         U: IntoIterator,
@@ -108,15 +108,15 @@ pub trait FlatResultMapTrait {
 impl<T, E> FlatResultMapTrait for Result<T, E> {
     type Type = T;
     type Error = E;
-    fn flat_result_map<U, F>(self, f: F) -> FlatResultMap<Self::Type, U, F, Self::Error>
+    fn flat_result_map<U, F>(self, f: F) -> FlatResultMapIter<Self::Type, U, F, Self::Error>
     where
         Self: Sized,
         U: IntoIterator,
         F: FnMut(T) -> U,
     {
         match self {
-            Ok(iter) => FlatResultMap::Ok(Some(iter).into_iter().flat_map(f)),
-            Err(err) => FlatResultMap::Err(Some(err)),
+            Ok(iter) => FlatResultMapIter::Ok(Some(iter).into_iter().flat_map(f)),
+            Err(err) => FlatResultMapIter::Err(Some(err)),
         }
     }
 }

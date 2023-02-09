@@ -18,6 +18,8 @@
 use crate::error::NoError;
 
 /// Create an action that extrapolates from an initial state to a target.
+///
+/// See also: [`Connectable`]
 pub trait Extrapolator<State, Target, Guidance> {
     /// What kind of action is produced during extrapolation
     type Extrapolation;

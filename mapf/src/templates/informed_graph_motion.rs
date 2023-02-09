@@ -19,7 +19,7 @@ use crate::{
     Graph, graph::Edge,
     domain::{
         Domain, Informed, Extrapolator, Activity, ActivityModifier, Weighted,
-        Satisfiable, Closable, Keyed, Space, KeyedSpace, Initializable,
+        Satisfiable, Closable, Space, PartialKeyedSpace, Initializable,
         Connectable,
     },
     util::FlatResultMapTrait,
@@ -92,10 +92,11 @@ where
 
 impl<S, G, E, W, H, C, M> Activity<S::State> for InformedGraphMotion<S, G, E, W, H, C, M>
 where
-    S: KeyedSpace<G::Key>,
+    S: PartialKeyedSpace<G::Key>,
     S::State: Clone,
     G: Graph,
-    G::Key: Clone,
+    G::Key: Clone + 'static,
+    G::Edge: Clone + 'static,
     E: Extrapolator<S::Waypoint, G::Vertex, G::Edge>,
     E::ExtrapolationError: Error,
     M: ActivityModifier<S::State, E::Extrapolation>,
@@ -103,52 +104,62 @@ where
 {
     type ActivityAction = M::ModifiedAction;
     type ActivityError = InformedGraphMotionError<G::Key, E::ExtrapolationError, M::ModifiedActionError>;
-    type Choices<'a> = impl IntoIterator<Item = Result<(Self::ActivityAction, S::State), Self::ActivityError>>
+    type Choices<'a> = impl IntoIterator<Item = Result<(Self::ActivityAction, S::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Self::ActivityAction: 'a,
         Self::ActivityError: 'a,
+        S::State: 'a,
+        G::Edge: 'a,
         S::State: 'a;
 
     fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a> {
-        self.space
-            .key(&from_state)
+        self
+        .space
+        .partial_key(&from_state)
+        .into_iter()
+        .flat_map(move |k| {
+            let from_state = from_state.clone();
+            self
+            .graph
+            .edges_from_vertex(k.clone())
             .into_iter()
-            .flat_map(|k|
+            .flat_map(move |edge| {
+                let to_vertex = edge.to_vertex().clone();
+                let from_state = from_state.clone();
+                let edge = edge.clone();
                 self
                 .graph
-                .edges_from_vertex(k.clone())
-                .map_err(|_| InformedGraphMotionError::MissingVertex(k))
-                .flat_result_map(|edge| edge)
-                .flat_map(|r| r.map(|edge| {
-                    let to_vertex = edge.to_vertex();
+                .vertex(&to_vertex)
+                .ok_or_else(|| InformedGraphMotionError::MissingVertex(to_vertex.clone()))
+                .flat_result_map(move |v| {
+                    let from_state = from_state.clone();
+                    let to_vertex = to_vertex.clone();
                     self
-                    .graph
-                    .vertex(to_vertex)
-                    .ok_or_else(|| InformedGraphMotionError::MissingVertex(to_vertex.clone()))
-                    .flat_result_map(|v| {
-                        self
-                        .extrapolator
-                        .extrapolate(&self.space.waypoint(&from_state), &v, edge)
-                        .map_err(InformedGraphMotionError::Extrapolator)
-                        .flat_result_map(|r| r.into_iter())
-                        .flat_map(|r: Result<(E::Extrapolation, S::Waypoint), Self::ActivityError>|
-                            r
-                            .flat_result_map(|(action, waypoint)| {
-                                let state = self.space.make_state(to_vertex.clone(), waypoint);
-                                self
-                                .modifier
-                                .modify_action(from_state.clone(), action, state)
-                                .into_iter()
-                                .map(|r: Result<(Self::ActivityAction, S::State), M::ModifiedActionError>| r.map_err(InformedGraphMotionError::Modifier))
-                            })
-                            .map(|r: Result<Result<(Self::ActivityAction, S::State), Self::ActivityError>, Self::ActivityError>| r.flatten())
-                        )
+                    .extrapolator
+                    .extrapolate(&self.space.waypoint(&from_state), &v, &edge)
+                    .map_err(InformedGraphMotionError::Extrapolator)
+                    .flat_result_map(|r| r.into_iter())
+                    .flat_map(move |r: Result<(E::Extrapolation, S::Waypoint), Self::ActivityError>| {
+                        let from_state = from_state.clone();
+                        let to_vertex = to_vertex.clone();
+                        r
+                        .flat_result_map(move |(action, waypoint)| {
+                            let state = self.space.make_partial_keyed_state(
+                                Some(to_vertex.clone()), waypoint
+                            );
+                            self
+                            .modifier
+                            .modify_action(from_state.clone(), action, state)
+                            .into_iter()
+                            .map(move |r: Result<(Self::ActivityAction, S::State), M::ModifiedActionError>| r.map_err(InformedGraphMotionError::Modifier))
+                        })
+                        .map(move |r: Result<Result<(Self::ActivityAction, S::State), Self::ActivityError>, Self::ActivityError>| r.flatten())
                     })
-                    .map(|r: Result<Result<(Self::ActivityAction, S::State), Self::ActivityError>, Self::ActivityError>| r.flatten())
-                }))
-                .map(|r: Result<Result<(Self::ActivityAction, S::State), Self::ActivityError>, Self::ActivityError>| r.flatten())
-            )
+                })
+                .map(move |r: Result<Result<(Self::ActivityAction, S::State), Self::ActivityError>, Self::ActivityError>| r.flatten())
+            })
+        })
     }
 }
 
@@ -208,63 +219,61 @@ where
         by_state: &S::State,
         for_goal: &Goal,
     ) -> Result<bool, Self::SatisfactionError> {
-        self.is_satisfied(by_state, for_goal)
+        self.space.is_satisfied(by_state, for_goal)
     }
 }
 
 impl<S, G, E, W, H, C, M, Goal> Connectable<S::State, Goal> for InformedGraphMotion<S, G, E, W, H, C, M>
 where
-    S: KeyedSpace<G::Key>,
+    S: PartialKeyedSpace<G::Key> + 'static,
     S::State: Clone,
-    G: Graph,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge>,
-    C: Connectable<S::State, Goal>,
+    G: Graph + 'static,
+    G::Key: 'static,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge> + 'static,
+    C: Connectable<S::State, Goal> + 'static,
     C::Connection: Into<E::Extrapolation>,
     C::ConnectionError: Error,
-    M: ActivityModifier<S::State, E::Extrapolation>,
+    M: ActivityModifier<S::State, E::Extrapolation> + 'static,
     M::ModifiedActionError: Error,
+    H: 'static,
+    W: 'static,
 {
     type Connection = M::ModifiedAction;
     type ConnectionError = InformedGraphMotionError<G::Key, C::ConnectionError, M::ModifiedActionError>;
-    type Connections<'a> = impl IntoIterator<Item=Result<(Self::Connection, S::State), Self::ConnectionError>>
+    type Connections<'a> = impl IntoIterator<Item=Result<(Self::Connection, S::State), Self::ConnectionError>> + 'a
     where
-        S: 'a,
-        G: 'a,
-        E: 'a,
-        W: 'a,
-        H: 'a,
-        M: 'a,
-        C: 'a,
+        Self::Connection: 'a,
+        Self::ConnectionError: 'a,
+        S::State: 'a,
         Goal: 'a;
 
     fn connect<'a>(
-        &self,
-        from_state: &S::State,
-        to_target: &Goal,
+        &'a self,
+        from_state: S::State,
+        to_target: &'a Goal,
     ) -> Self::Connections<'a>
     where
-        S: 'a,
-        G: 'a,
-        E: 'a,
-        W: 'a,
-        H: 'a,
-        M: 'a,
-        C: 'a,
+        Self::Connection: 'a,
+        Self::ConnectionError: 'a,
+        S::State: 'a,
         Goal: 'a,
     {
-        self.connector
-            .connect(from_state.clone(), to_target)
-            .into_iter()
-            .map_err(InformedGraphMotionError::Extrapolator)
-            .flat_map(|r|
-                r.flat_result_map(|(action, child_state)|
-                    self
-                    .modifier
-                    .modify_action(from_state.clone(), action.into(), child_state)
-                    .into_iter()
-                    .map(|r| r.map_err(InformedGraphMotionError::Modifier))
-                )
+        self
+        .connector
+        .connect(from_state.clone(), to_target)
+        .into_iter()
+        .map(|r| r.map_err(InformedGraphMotionError::Extrapolator))
+        .flat_map(move |r| {
+            let from_state = from_state.clone();
+            r.flat_result_map(move |(action, child_state)|
+                self
+                .modifier
+                .modify_action(from_state.clone(), action.into(), child_state)
+                .into_iter()
+                .map(|r| r.map_err(InformedGraphMotionError::Modifier))
             )
+            .map(|x| x.flatten())
+        })
     }
 }
 

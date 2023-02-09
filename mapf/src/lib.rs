@@ -39,7 +39,7 @@ pub mod algorithm;
 
 pub mod templates;
 pub mod trace;
-pub mod tree;
+// pub mod tree;
 
 pub mod directed;
 pub mod motion;

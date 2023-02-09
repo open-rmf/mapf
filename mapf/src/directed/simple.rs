@@ -21,10 +21,6 @@ use std::vec::Vec;
 pub struct SimpleGraph<Vertex: std::fmt::Debug + Clone> {
     pub vertices: Vec<Vertex>,
     pub edges: Vec<Vec<usize>>,
-
-    /// A user may call edges_from_vertex with an invalid key, in which case we
-    /// will return a reference to this always-empty vector.
-    _placeholder: Vec<usize>,
 }
 
 impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
@@ -32,7 +28,6 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
         Self {
             vertices,
             edges,
-            _placeholder: Vec::new(),
         }
     }
 
@@ -52,7 +47,6 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
         Self {
             vertices: Vec::from_iter(vertices),
             edges,
-            _placeholder: Vec::new(),
         }
     }
 
@@ -68,7 +62,6 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
         Self {
             vertices: self.vertices.clone(),
             edges: r_edges,
-            _placeholder: Vec::new(),
         }
     }
 }
@@ -88,20 +81,20 @@ impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
     type Vertex = V;
     type Edge = (usize, usize);
 
-    type EdgeIter<'a>  = impl Iterator<Item=(usize, usize)> + 'a where Self: 'a;
+    type EdgeIter<'a> = impl Iterator<Item=(usize, usize)> + 'a
+    where
+        V: 'a;
 
-    fn vertex(&self, key: usize) -> Option<V> {
-        self.vertices.get(key).cloned()
+    fn vertex(&self, key: &usize) -> Option<V> {
+        self.vertices.get(*key).cloned()
     }
 
     fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a> {
-        let copy_from_key = from_key;
-        let make_edge = move |to_key: &usize| (copy_from_key, to_key.clone());
-
-        if let Some(to_vertices) = self.edges.get(from_key) {
-            return to_vertices.iter().map(make_edge);
-        }
-
-        return self._placeholder.iter().map(make_edge);
+        self
+        .edges
+        .get(from_key)
+        .into_iter()
+        .flat_map(|outgoing| outgoing.iter())
+        .map(move |to_key| (from_key, *to_key))
     }
 }

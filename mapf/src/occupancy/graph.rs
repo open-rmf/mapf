@@ -110,7 +110,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     type Edge = (Cell, Cell);
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
-    fn vertex(&self, cell: Self::Key) -> Option<Self::Vertex> {
+    fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {
         // We don't bother to filter out occupied cells because those cells will
         // not generate any valid edges anyway. If we filtered them out here we
         // would be frequently doing redundant occupancy checking.
@@ -206,7 +206,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Edge = (Cell, Cell);
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
-    fn vertex(&self, cell: Self::Key) -> Option<Self::Vertex> {
+    fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {
         if self.visibility.grid().is_occupied(&cell) {
             None
         } else {

@@ -28,14 +28,26 @@ pub trait Space {
     fn waypoint(&self, state: &Self::State) -> Self::Waypoint;
 }
 
-/// `KeyedSpace` is a trait for describing spaces whose states can be assigned
-/// a unique key.
 pub trait KeyedSpace<K>: Space {
-    fn make_state(
+    fn make_keyed_state(
         &self,
         key: K,
         waypoint: Self::Waypoint,
     ) -> Self::State;
 
-    fn key(&self, state: &Self::State) -> Option<K>;
+    fn key(&self, state: &Self::State) -> K;
+}
+
+/// [`PartialKeyedSpace`] is a trait for describing spaces whose states can
+/// usually be assigned a unique key while there may be exceptions. If the
+/// states can always be assigned a unique key then [`KeyedSpace`] should be
+/// used instead.
+pub trait PartialKeyedSpace<K>: Space {
+    fn make_partial_keyed_state(
+        &self,
+        key: Option<K>,
+        waypoint: Self::Waypoint,
+    ) -> Self::State;
+
+    fn partial_key(&self, state: &Self::State) -> Option<K>;
 }

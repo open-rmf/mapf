@@ -25,20 +25,17 @@ pub trait Graph {
     type Vertex;
     type Edge: Edge<Self::Key>;
 
-    type EdgeIter<'a>: IntoIterator<Item = &'a Self::Edge>
+    type EdgeIter<'a>: IntoIterator<Item=Self::Edge> + 'a
     where
         Self: 'a,
+        Self::Key: 'a,
+        Self::Vertex: 'a,
         Self::Edge: 'a;
 
     /// Get the vertex associated with `key`. If no such vertex exists, this
     /// will return None.
     fn vertex(&self, key: &Self::Key) -> Option<Self::Vertex>;
 
-    /// Get the edges that originate from this vertex.
-    /// If the vertex does not exist then this will return Err.
-    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Result<Self::EdgeIter<'a>, ()>;
+    /// Get the edges that originate from the given vertex.
+    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>;
 }
-
-pub type KeyOf<G> = <G as Graph>::Key;
-pub type VertexOf<G> = <G as Graph>::Vertex;
-pub type EdgeOf<G> = <G as Graph>::Edge;

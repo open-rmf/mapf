@@ -39,5 +39,11 @@ pub trait Connectable<State, Target> {
         &'a self,
         from_state: State,
         to_target: &'a Target,
-    ) -> Self::Connections<'a>;
+    ) -> Self::Connections<'a>
+    where
+        Self: 'a,
+        Self::Connection: 'a,
+        Self::ConnectionError: 'a,
+        State: 'a,
+        Target: 'a;
 }
