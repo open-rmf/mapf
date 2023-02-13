@@ -59,4 +59,3 @@ impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExt
     }
 }
 
-// TODO(MXG): Consider providing Map, Chain, and Lift for Extrapolator

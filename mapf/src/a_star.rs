@@ -380,7 +380,7 @@ where
     + Weighted<D::State, D::Action>
     + Informed<D::State, Goal, CostEstimate=D::Cost>
     + Satisfiable<D::State, Goal>
-    + Connectable<D::State, Goal>,
+    + Connectable<D::State, D::Action, Goal>,
     D::State: Clone,
     D::Action: Clone,
     D::Error: Error,
@@ -389,7 +389,6 @@ where
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::InformedError: Into<D::Error>,
-    D::Connection: Into<D::Action>,
     D::ConnectionError: Into<D::Error>,
 {
     type Solution = Solution<D::State, D::Action, D::Cost>;
@@ -419,7 +418,7 @@ where
             AStar::<D>::make_child_node(
                 &self.0, memory,
                 top_id, &top.state, &top.cost,
-                action.into(), child_state, goal
+                action, child_state, goal
             )?;
         }
 

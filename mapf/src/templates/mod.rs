@@ -15,5 +15,8 @@
  *
 */
 
+pub mod graph_motion;
+pub use graph_motion::GraphMotion;
+
 pub mod informed_graph_motion;
 pub use informed_graph_motion::InformedGraphMotion;

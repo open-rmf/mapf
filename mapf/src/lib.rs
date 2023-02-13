@@ -49,7 +49,7 @@ pub mod a_star;
 pub mod error;
 pub mod occupancy;
 
-pub mod predefined;
+pub mod premade;
 
 mod util;
 

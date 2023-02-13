@@ -15,8 +15,13 @@
  *
 */
 
-use crate::templates::InformedGraphMotion;
+use crate::{
+    templates::InformedGraphMotion,
+    motion::r2::*,
+    directed::simple::SimpleGraph,
+};
 
-pub type SimpleR2 = InformedGraphMotion<
-    
->;
+// pub type SimpleR2 = InformedGraphMotion<
+//     DiscreteSpaceTimeR2<usize>,
+
+// >;
