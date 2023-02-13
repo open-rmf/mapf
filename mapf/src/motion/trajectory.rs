@@ -394,93 +394,93 @@ impl<W: Waypoint> CostCalculator<W> for DurationCostCalculator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::motion::se2;
-    use crate::motion::se2::timed_position::Waypoint as WaypointSE2;
-    use crate::motion::Motion;
-    use approx::assert_relative_eq;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::motion::se2;
+//     use crate::motion::se2::timed_position::Waypoint as WaypointSE2;
+//     use crate::motion::Motion;
+//     use approx::assert_relative_eq;
 
-    #[test]
-    fn test_valid_motion() {
-        let t0 = time_point::TimePoint::new(0);
-        let mut trajectory = se2::LinearTrajectory::new(
-            WaypointSE2::new(t0, 0.0, 0.0, 0.0),
-            WaypointSE2::new(
-                t0 + time_point::Duration::from_secs(2),
-                1.0,
-                0.0,
-                90f64.to_radians(),
-            ),
-        )
-        .expect("Trajectory failed to be created");
+//     #[test]
+//     fn test_valid_motion() {
+//         let t0 = time_point::TimePoint::new(0);
+//         let mut trajectory = se2::LinearTrajectory::new(
+//             WaypointSE2::new(t0, 0.0, 0.0, 0.0),
+//             WaypointSE2::new(
+//                 t0 + time_point::Duration::from_secs(2),
+//                 1.0,
+//                 0.0,
+//                 90f64.to_radians(),
+//             ),
+//         )
+//         .expect("Trajectory failed to be created");
 
-        let insertion = trajectory.insert(WaypointSE2::new(
-            t0 + time_point::Duration::from_secs(3),
-            1.0,
-            1.0,
-            180f64.to_radians(),
-        ));
-        assert_eq!(insertion.ok(), Some(2));
+//         let insertion = trajectory.insert(WaypointSE2::new(
+//             t0 + time_point::Duration::from_secs(3),
+//             1.0,
+//             1.0,
+//             180f64.to_radians(),
+//         ));
+//         assert_eq!(insertion.ok(), Some(2));
 
-        let insertion = trajectory.insert(WaypointSE2::new(
-            t0 + time_point::Duration::from_secs(1),
-            0.0,
-            1.0,
-            -45f64.to_radians(),
-        ));
-        assert_eq!(insertion.ok(), Some(1));
+//         let insertion = trajectory.insert(WaypointSE2::new(
+//             t0 + time_point::Duration::from_secs(1),
+//             0.0,
+//             1.0,
+//             -45f64.to_radians(),
+//         ));
+//         assert_eq!(insertion.ok(), Some(1));
 
-        assert_eq!(trajectory.len(), 4);
+//         assert_eq!(trajectory.len(), 4);
 
-        let motion = trajectory.motion();
-        let p = motion
-            .compute_position(&(t0 + time_point::Duration::from_secs_f64(0.5)))
-            .expect("Failed to calculate position");
-        assert_relative_eq!(p.translation.vector[0], 0.0);
-        assert_relative_eq!(p.translation.vector[1], 0.5);
-        assert_relative_eq!(p.rotation.angle(), (-45f64 / 2.0).to_radians());
+//         let motion = trajectory.motion();
+//         let p = motion
+//             .compute_position(&(t0 + time_point::Duration::from_secs_f64(0.5)))
+//             .expect("Failed to calculate position");
+//         assert_relative_eq!(p.translation.vector[0], 0.0);
+//         assert_relative_eq!(p.translation.vector[1], 0.5);
+//         assert_relative_eq!(p.rotation.angle(), (-45f64 / 2.0).to_radians());
 
-        let v = motion
-            .compute_velocity(&(t0 + time_point::Duration::from_secs_f64(0.6788612)))
-            .expect("Failed to calculate velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, -45f64.to_radians());
+//         let v = motion
+//             .compute_velocity(&(t0 + time_point::Duration::from_secs_f64(0.6788612)))
+//             .expect("Failed to calculate velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, -45f64.to_radians());
 
-        let p = motion
-            .compute_position(&(t0 + time_point::Duration::from_secs(3)))
-            .expect("Failed to calculate position");
-        assert_relative_eq!(p.translation.vector[0], 1.0);
-        assert_relative_eq!(p.translation.vector[1], 1.0);
-        assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
+//         let p = motion
+//             .compute_position(&(t0 + time_point::Duration::from_secs(3)))
+//             .expect("Failed to calculate position");
+//         assert_relative_eq!(p.translation.vector[0], 1.0);
+//         assert_relative_eq!(p.translation.vector[1], 1.0);
+//         assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
 
-        let v = motion
-            .compute_velocity(&(t0 + time_point::Duration::from_secs(3)))
-            .expect("Failed to compute velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, 90f64.to_radians());
+//         let v = motion
+//             .compute_velocity(&(t0 + time_point::Duration::from_secs(3)))
+//             .expect("Failed to compute velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, 90f64.to_radians());
 
-        let p = motion
-            .compute_position(&t0)
-            .expect("Failed to compute velocity");
-        assert_relative_eq!(p.translation.vector[0], 0.0);
-        assert_relative_eq!(p.translation.vector[1], 0.0);
-        assert_relative_eq!(p.rotation.angle(), 0.0);
+//         let p = motion
+//             .compute_position(&t0)
+//             .expect("Failed to compute velocity");
+//         assert_relative_eq!(p.translation.vector[0], 0.0);
+//         assert_relative_eq!(p.translation.vector[1], 0.0);
+//         assert_relative_eq!(p.rotation.angle(), 0.0);
 
-        let v = motion
-            .compute_velocity(&t0)
-            .expect("Failed to calculate velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, -45f64.to_radians());
+//         let v = motion
+//             .compute_velocity(&t0)
+//             .expect("Failed to calculate velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, -45f64.to_radians());
 
-        let err = motion.compute_position(&(t0 - time_point::Duration::new(1)));
-        assert_eq!(err, Err(InterpError::OutOfBounds));
+//         let err = motion.compute_position(&(t0 - time_point::Duration::new(1)));
+//         assert_eq!(err, Err(InterpError::OutOfBounds));
 
-        let err = motion.compute_velocity(&(t0 - time_point::Duration::new(1)));
-        assert_eq!(err, Err(InterpError::OutOfBounds));
-    }
-}
+//         let err = motion.compute_velocity(&(t0 - time_point::Duration::new(1)));
+//         assert_eq!(err, Err(InterpError::OutOfBounds));
+//     }
+// }

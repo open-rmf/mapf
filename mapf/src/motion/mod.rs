@@ -26,16 +26,13 @@ pub use waypoint::Waypoint;
 pub mod trajectory;
 pub use trajectory::Trajectory;
 
-pub mod extrapolator;
-pub use extrapolator::Extrapolator;
-
 // pub mod graph_search;
 
 pub mod hold;
 pub mod movable;
 pub mod reach;
 
-pub mod collide;
+// pub mod collide;
 
 pub use time_point::{Duration, TimePoint};
 

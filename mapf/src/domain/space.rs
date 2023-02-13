@@ -28,16 +28,6 @@ pub trait Space {
     fn waypoint(&self, state: &Self::State) -> Self::Waypoint;
 }
 
-pub trait KeyedSpace<K>: Space {
-    fn make_keyed_state(
-        &self,
-        key: K,
-        waypoint: Self::Waypoint,
-    ) -> Self::State;
-
-    fn key(&self, state: &Self::State) -> K;
-}
-
 /// [`PartialKeyedSpace`] is a trait for describing spaces whose states can
 /// usually be assigned a unique key while there may be exceptions. If the
 /// states can always be assigned a unique key then [`KeyedSpace`] should be
@@ -50,4 +40,17 @@ pub trait PartialKeyedSpace<K>: Space {
     ) -> Self::State;
 
     fn partial_key(&self, state: &Self::State) -> Option<K>;
+}
+
+/// [`KeyedSpace`] is a trait for described spaces whose states can always be
+/// assigned a unique key. If some states might not have a unique key,
+/// [`PartialKeyedSpace`] should be used instead. Anything that implements.
+pub trait KeyedSpace<K>: Space {
+    fn make_keyed_state(
+        &self,
+        key: K,
+        waypoint: Self::Waypoint,
+    ) -> Self::State;
+
+    fn key(&self, state: &Self::State) -> K;
 }

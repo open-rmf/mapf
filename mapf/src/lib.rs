@@ -14,7 +14,7 @@
  * limitations under the License.
  *
 */
-#![feature(associated_type_bounds, type_alias_impl_trait, result_flattening, min_specialization)]
+#![feature(associated_type_bounds, type_alias_impl_trait, result_flattening)]
 
 pub mod domain;
 
@@ -48,6 +48,8 @@ pub mod a_star;
 
 pub mod error;
 pub mod occupancy;
+
+pub mod predefined;
 
 mod util;
 

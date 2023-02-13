@@ -26,8 +26,8 @@ pub struct Velocity {
     pub rotational: f64,
 }
 
-pub mod timed_position;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+// pub mod timed_position;
+// pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
 
 // pub mod quickest_path;
 // pub use quickest_path::QuickestPath;

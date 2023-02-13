@@ -107,6 +107,7 @@ impl<G: Grid> VisibilityGraph<G> {
 impl<G: Grid> Graph for VisibilityGraph<G> {
     type Key = Cell;
     type Vertex = Point;
+    type EdgeAttributes = ();
     type Edge = (Cell, Cell);
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
@@ -117,7 +118,10 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         Some(cell.to_center_point(self.visibility.grid().cell_size()))
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a> {
+    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a>
+    where
+        Cell: 'a,
+    {
         // dbg!("visibility graph");
         [from_cell]
             .into_iter()
@@ -203,6 +207,7 @@ impl<G: Grid> NeighborhoodGraph<G> {
 impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Key = Cell;
     type Vertex = Point;
+    type EdgeAttributes = ();
     type Edge = (Cell, Cell);
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
@@ -214,12 +219,15 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         }
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a> {
+    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a>
+    where
+        Cell: 'a,
+    {
         // dbg!("neighborhood graph");
         let from_p = from_cell.to_center_point(self.visibility.grid().cell_size());
         [from_cell]
             .into_iter()
-            .filter(move |from_cell| {
+            .filter(move |_| {
                 // dbg!(from_cell);
                 self.visibility
                     .grid()
@@ -280,13 +288,17 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     }
 }
 
-impl Edge<Cell> for (Cell, Cell) {
+impl Edge<Cell, ()> for (Cell, Cell) {
     fn from_vertex(&self) -> &Cell {
         &self.0
     }
 
     fn to_vertex(&self) -> &Cell {
         &self.1
+    }
+
+    fn attributes(&self) -> &() {
+        &()
     }
 }
 

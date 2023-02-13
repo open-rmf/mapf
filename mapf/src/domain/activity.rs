@@ -38,7 +38,7 @@ pub trait Activity<State> {
     type ActivityError;
 
     /// Concrete type for the returned container of choices
-    type Choices<'a>: IntoIterator<Item = Result<(Self::ActivityAction, State), Self::ActivityError>>
+    type Choices<'a>: IntoIterator<Item = Result<(Self::ActivityAction, State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -46,29 +46,37 @@ pub trait Activity<State> {
         State: 'a;
 
     /// What choices can be made related to this activity from the provided state
-    fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>;
+    fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        State: 'a;
 }
 
-// /// [`NoActivity`] can be used as a placeholder where an Activity is required
-// /// but it doesn't need to do anything.
-// pub struct NoActivity<A>(std::marker::PhantomData<A>);
-// impl<State, A> Activity<State> for NoActivity<A> {
-//     type ActivityAction = A;
-//     type ActivityError = NoError;
-//     type Choices<'a> = [Result<(A, State), NoError>; 0]
-//     where
-//         A: 'a,
-//         State: 'a;
+/// [`NoActivity`] can be used as a placeholder where an Activity is required
+/// but it doesn't need to do anything.
+pub struct NoActivity<A>(std::marker::PhantomData<A>);
+impl<State, A> Activity<State> for NoActivity<A> {
+    type ActivityAction = A;
+    type ActivityError = NoError;
+    type Choices<'a> = [Result<(A, State), NoError>; 0]
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        State: 'a;
 
-//     fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
-//     where
-//         Self: 'a,
-//         A: 'a,
-//         State: 'a,
-//     {
-//         []
-//     }
-// }
+    fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        State: 'a,
+    {
+        []
+    }
+}
 
 /// The ActivityModifier can be used to change the behaviors of an activity,
 /// e.g. by enforcing constraints.
@@ -98,26 +106,31 @@ pub trait ActivityModifier<State, FromAction> {
         State: 'a;
 }
 
-// /// [`NoActivityModifier`] can be used as a placeholder where an ActivityModifier
-// /// is required but it doesn't need to do anything.
-// pub struct NoActivityModifier;
-// impl<State, FromAction> ActivityModifier<State, FromAction> for NoActivityModifier {
-//     type ModifiedAction = FromAction;
-//     type ModifiedActionError = NoError;
-//     type ModifiedChoices<'a> = [Result<(FromAction, State), NoError>; 1];
-//     fn modify_action<'a>(
-//         &'a self,
-//         from_state: State,
-//         from_action: FromAction,
-//         to_state: State,
-//     ) -> Self::ModifiedChoices<'a>
-//     where
-//         FromAction: 'a,
-//         State: 'a,
-//     {
-//         [Ok((from_action, to_state))]
-//     }
-// }
+/// [`NoActivityModifier`] can be used as a placeholder where an ActivityModifier
+/// is required but it doesn't need to do anything.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct NoActivityModifier;
+impl<State, FromAction> ActivityModifier<State, FromAction> for NoActivityModifier {
+    type ModifiedAction = FromAction;
+    type ModifiedActionError = NoError;
+    type ModifiedChoices<'a> = [Result<(FromAction, State), NoError>; 1]
+    where
+        FromAction: 'a,
+        State: 'a;
+
+    fn modify_action<'a>(
+        &'a self,
+        from_state: State,
+        from_action: FromAction,
+        to_state: State,
+    ) -> Self::ModifiedChoices<'a>
+    where
+        FromAction: 'a,
+        State: 'a,
+    {
+        [Ok((from_action, to_state))]
+    }
+}
 
 impl<Base, Prop> Activity<Base::State> for Incorporated<Base, Prop>
 where
@@ -137,7 +150,13 @@ where
         Self::ActivityError: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        Base::State: 'a,
+    {
         self.prop.choices(from_state)
             .into_iter()
             .map(|c| c.map(|(a, s)| (a.into(), s.into())).map_err(Into::into))
@@ -165,7 +184,13 @@ where
         Self::ActivityError: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        Base::State: 'a,
+    {
         self.base.choices(from_state.clone())
             .into_iter()
             .map(|c| c.map(|(a, s)| (a.into(), s.into())).map_err(Into::into))
@@ -196,7 +221,13 @@ where
         Self::ActivityError: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        Base::State: 'a,
+    {
         self.base.choices(from_state.clone())
             .into_iter()
             .flat_map(
@@ -242,7 +273,13 @@ where
         Self::ActivityError: 'a,
         Base::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        Base::State: 'a,
+    {
         [self.lifter.project(from_state.clone())]
             .into_iter()
             .filter_map(|r: Result<Option<Lifter::ProjectedState>, Lifter::ProjectionError>| r.transpose())
@@ -309,7 +346,13 @@ mod tests {
         type ActivityError = NoError;
         type Choices<'a> = impl Iterator<Item=Result<(Interval, u64), NoError>> + 'a;
 
-        fn choices<'a>(&'a self, s: u64) -> Self::Choices<'a> {
+        fn choices<'a>(&'a self, s: u64) -> Self::Choices<'a>
+        where
+            Self: 'a,
+            Self::ActivityAction: 'a,
+            Self::ActivityError: 'a,
+            u64: 'a,
+        {
             self.by_interval.iter().map(move |interval| Ok((Interval(*interval), s + *interval)))
         }
     }
@@ -457,7 +500,10 @@ mod tests {
         type ActivityAction = Buy;
         type ActivityError = NoError;
         type Choices<'a> = Option<Result<(Buy, Item), NoError>>;
-        fn choices<'a>(&'a self, mut from_state: Item) -> Option<Result<(Buy, Item), NoError>> {
+        fn choices<'a>(&'a self, mut from_state: Item) -> Option<Result<(Buy, Item), NoError>>
+        where
+            Item: 'a,
+        {
             if from_state.budget < self.0 {
                 None
             } else {
@@ -473,7 +519,10 @@ mod tests {
         type ActivityAction = Sell;
         type ActivityError = NoError;
         type Choices<'a> = Option<Result<(Sell, Item), NoError>>;
-        fn choices<'a>(&'a self, mut from_state: Item) -> Self::Choices<'a> {
+        fn choices<'a>(&'a self, mut from_state: Item) -> Self::Choices<'a>
+        where
+            Item: 'a,
+        {
             if from_state.count <= 0 {
                 None
             } else {

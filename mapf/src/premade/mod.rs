@@ -15,17 +15,4 @@
  *
 */
 
-/// If a trait is reversible then you can obtain its Reverse whose choices and
-/// dynamics can be used to search this domain in reverse.
-///
-/// This is useful for bidirectional search algorithms.
-pub trait Reversible {
-    /// The type of the reverse domain
-    type Reverse;
-
-    /// What kind of error can happen if the domain has the wrong values in it.
-    type ReversalError;
-
-    /// Get the reverse of this domain
-    fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
-}
+pub mod simple_r2;

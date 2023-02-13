@@ -15,21 +15,24 @@
  *
 */
 
-pub trait Edge<Key> {
+pub trait Edge<Key, Attributes> {
     fn from_vertex(&self) -> &Key;
     fn to_vertex(&self) -> &Key;
+    fn attributes(&self) -> &Attributes;
 }
 
 pub trait Graph {
-    type Key;
     type Vertex;
-    type Edge: Edge<Self::Key>;
+    type Key;
+    type EdgeAttributes;
+    type Edge: Edge<Self::Key, Self::EdgeAttributes>;
 
     type EdgeIter<'a>: IntoIterator<Item=Self::Edge> + 'a
     where
         Self: 'a,
-        Self::Key: 'a,
         Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a,
         Self::Edge: 'a;
 
     /// Get the vertex associated with `key`. If no such vertex exists, this
@@ -37,5 +40,11 @@ pub trait Graph {
     fn vertex(&self, key: &Self::Key) -> Option<Self::Vertex>;
 
     /// Get the edges that originate from the given vertex.
-    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>;
+    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a,
+        Self::Edge: 'a;
 }

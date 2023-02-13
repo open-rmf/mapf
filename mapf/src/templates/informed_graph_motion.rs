@@ -20,7 +20,7 @@ use crate::{
     domain::{
         Domain, Informed, Extrapolator, Activity, ActivityModifier, Weighted,
         Satisfiable, Closable, Space, PartialKeyedSpace, Initializable,
-        Connectable,
+        Connectable, NoConnector, NoActivityModifier, Chained,
     },
     util::FlatResultMapTrait,
     error::Error,
@@ -29,6 +29,9 @@ use thiserror::Error as ThisError;
 
 /// `InformedGraphMotion` template helps produce a domain for graph-based motion
 /// planning that is compatible with the [`AStar`] and [`AStarConnect`] algorithms.
+///
+/// Fill in this domain with the relevant components and then it can be passed
+/// into AStar, AStarConnect, or any other algorithm whose traits it satisfies.
 pub struct InformedGraphMotion<S, G, E, W, H, C, M> {
     pub space: S,
     pub graph: G,
@@ -39,11 +42,105 @@ pub struct InformedGraphMotion<S, G, E, W, H, C, M> {
     pub modifier: M,
 }
 
+impl<S, G, E, W, H> InformedGraphMotion<S, G, E, W, H, NoConnector<E::Extrapolation>, NoActivityModifier>
+where
+    S: Space,
+    G: Graph,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+{
+    /// Create a new InformedGraphMotion domain with the minimum required
+    /// components.
+    pub fn new(
+        space: S,
+        graph: G,
+        extrapolator: E,
+        weight: W,
+        heuristic: H,
+    ) -> Self {
+        Self {
+            space,
+            graph,
+            extrapolator,
+            weight,
+            heuristic,
+            connector: Default::default(),
+            modifier: Default::default(),
+        }
+    }
+}
+
+impl<S, G, E, W, H, M> InformedGraphMotion<S, G, E, W, H, NoConnector<E::Extrapolation>, M>
+where
+    S: Space,
+    G: Graph,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+{
+    /// Give a goal connector to the InformedGraphMotion
+    pub fn with_connector<C>(self, connector: C) -> InformedGraphMotion<S, G, E, W, H, C, M> {
+        InformedGraphMotion {
+            connector,
+            space: self.space,
+            graph: self.graph,
+            extrapolator: self.extrapolator,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            modifier: self.modifier,
+        }
+    }
+}
+
+impl<S, G, E, W, H, C, M> InformedGraphMotion<S, G, E, W, H, C, M> {
+    /// Add another goal connector to the domain
+    pub fn chain_connector<C2>(self, connector2: C2) -> InformedGraphMotion<S, G, E, W, H, Chained<C, C2>, M> {
+        InformedGraphMotion {
+            connector: Chained {
+                base: self.connector,
+                prop: connector2,
+            },
+            space: self.space,
+            graph: self.graph,
+            extrapolator: self.extrapolator,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            modifier: self.modifier
+        }
+    }
+
+    /// Replace the goal connector of the domain
+    pub fn replace_connector<C2>(self, new_connector: C2) -> InformedGraphMotion<S, G, E, W, H, C2, M> {
+        InformedGraphMotion {
+            connector: new_connector,
+            space: self.space,
+            graph: self.graph,
+            extrapolator: self.extrapolator,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            modifier: self.modifier
+        }
+    }
+}
+
+impl<S, G, E, W, H, C> InformedGraphMotion<S, G, E, W, H, C, NoActivityModifier> {
+    pub fn with_modifier<M>(self, modifier: M) -> InformedGraphMotion<S, G, E, W, H, C, M> {
+        InformedGraphMotion {
+            modifier,
+            space: self.space,
+            graph: self.graph,
+            extrapolator: self.extrapolator,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            connector: self.connector,
+        }
+    }
+}
+
+
+
 impl<S, G, E, W, H, C, M> Domain for InformedGraphMotion<S, G, E, W, H, C, M>
 where
     S: Space,
     G: Graph,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
     W: Weighted<S::Waypoint, E::Extrapolation>,
     M: ActivityModifier<S::State, E::Extrapolation>,
 {
@@ -96,8 +193,8 @@ where
     S::State: Clone,
     G: Graph,
     G::Key: Clone + 'static,
-    G::Edge: Clone + 'static,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge>,
+    G::EdgeAttributes: Clone + 'static,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
     E::ExtrapolationError: Error,
     M: ActivityModifier<S::State, E::Extrapolation>,
     M::ModifiedActionError: Error,
@@ -110,10 +207,16 @@ where
         Self::ActivityAction: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
-        G::Edge: 'a,
+        G::EdgeAttributes: 'a,
         S::State: 'a;
 
-    fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a> {
+    fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a>
+    where
+        Self: 'a,
+        Self::ActivityAction: 'a,
+        Self::ActivityError: 'a,
+        S::State: 'a,
+    {
         self
         .space
         .partial_key(&from_state)
@@ -127,7 +230,7 @@ where
             .flat_map(move |edge| {
                 let to_vertex = edge.to_vertex().clone();
                 let from_state = from_state.clone();
-                let edge = edge.clone();
+                let edge = edge.attributes().clone();
                 self
                 .graph
                 .vertex(&to_vertex)
@@ -167,7 +270,7 @@ impl<S, G, E, W, H, C, M> Weighted<S::State, M::ModifiedAction> for InformedGrap
 where
     S: Space,
     G: Graph,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
     W: Weighted<S::Waypoint, M::ModifiedAction>,
     W::WeightedError: Error,
     M: ActivityModifier<S::State, E::Extrapolation>,
@@ -229,7 +332,7 @@ where
     S::State: Clone,
     G: Graph + 'static,
     G::Key: 'static,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::Edge> + 'static,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + 'static,
     C: Connectable<S::State, Goal> + 'static,
     C::Connection: Into<E::Extrapolation>,
     C::ConnectionError: Error,

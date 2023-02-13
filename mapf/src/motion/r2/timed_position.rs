@@ -17,11 +17,13 @@
 
 use super::{Position, Velocity};
 use crate::{
+    motion::{self, se2, timed, InterpError, Interpolation},
+    domain::{Extrapolator, Reversible},
     error::NoError,
-    motion::{self, extrapolator, se2, timed, Extrapolator, InterpError, Interpolation},
 };
 use arrayvec::ArrayVec;
 use time_point::{Duration, TimePoint};
+use thiserror::Error as ThisError;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -136,34 +138,77 @@ impl LineFollow {
     pub fn speed(&self) -> f64 {
         self.speed
     }
-}
 
-impl Extrapolator<Waypoint, Position> for LineFollow {
-    type Extrapolation<'a> = ArrayVec<Waypoint, 1>;
-    type Error = NoError;
-
-    fn extrapolate<'a>(
-        &'a self,
+    fn extrapolate_impl(
+        &self,
         from_waypoint: &Waypoint,
         to_target: &Position,
-    ) -> Result<ArrayVec<Waypoint, 1>, Self::Error> {
+        speed_limit: Option<f64>,
+    ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, LineFollowError> {
+        let speed = if let Some(limit) = speed_limit {
+            if limit <= 0.0 {
+                return Err(LineFollowError::InvalidSpeedLimit(limit));
+            }
+            self.speed.min(limit)
+        } else {
+            self.speed
+        };
+
         let dx = (to_target - from_waypoint.position).norm();
         if dx <= self.distance_threshold {
-            return Ok(ArrayVec::new());
+            // The target is close enough to the start point that we treat it
+            // as though the agent is already there.
+            let wp = Waypoint::new(from_waypoint.time, to_target.x, to_target.y);
+            return Ok(Some((ArrayVec::new(), wp)));
         }
 
-        let t = Duration::from_secs_f64(self.direction * dx / self.speed) + from_waypoint.time;
-        Ok(ArrayVec::from_iter([Waypoint::new(
-            t,
-            to_target.x,
-            to_target.y,
-        )]))
+        let t = Duration::from_secs_f64(self.direction * dx / speed) + from_waypoint.time;
+        let wp = Waypoint::new(t, to_target.x, to_target.y);
+        let extrap = ArrayVec::from_iter([wp]);
+        Ok(Some((extrap, wp)))
     }
 }
 
-impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
+impl Extrapolator<Waypoint, Position, ()> for LineFollow {
+    type Extrapolation = ArrayVec<Waypoint, 1>;
+    type ExtrapolationError = LineFollowError;
+    fn extrapolate(
+        &self,
+        from_state: &Waypoint,
+        to_target: &Position,
+        _: &(),
+    ) -> Result<Option<(Self::Extrapolation, Waypoint)>, Self::ExtrapolationError> {
+        self.extrapolate_impl(from_state, to_target, None)
+    }
+}
+
+/// A trait for properties that can specify speed limits.
+pub trait SpeedLimiter {
+    fn speed_limit(&self) -> Option<f64>;
+}
+
+impl<T: SpeedLimiter> Extrapolator<Waypoint, Position, T> for LineFollow {
+    type Extrapolation = ArrayVec<Waypoint, 1>;
+    type ExtrapolationError = LineFollowError;
+    fn extrapolate(
+        &self,
+        from_state: &Waypoint,
+        to_target: &Position,
+        with_guidance: &T,
+    ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, Self::ExtrapolationError> {
+        self.extrapolate_impl(from_state, to_target, with_guidance.speed_limit())
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum LineFollowError {
+    #[error("LineFollow::extrapolate was provided with an invalid speed limit (must be >0.0): {0}")]
+    InvalidSpeedLimit(f64),
+}
+
+impl Reversible for LineFollow {
     type Reverse = LineFollow;
-    type Error = NoError;
+    type ReversalError = NoError;
 
     fn reverse(&self) -> Result<Self::Reverse, NoError> {
         Ok(Self {
@@ -174,12 +219,12 @@ impl extrapolator::Reversible<Waypoint, Position> for LineFollow {
     }
 }
 
-impl From<&se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
-    fn from(other: &se2::timed_position::DifferentialDriveLineFollow) -> Self {
-        LineFollow::new(other.translational_speed())
-            .expect("corrupt speed in DifferentialDriveLineFollow")
-    }
-}
+// impl From<&se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
+//     fn from(other: &se2::timed_position::DifferentialDriveLineFollow) -> Self {
+//         LineFollow::new(other.translational_speed())
+//             .expect("corrupt speed in DifferentialDriveLineFollow")
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -211,9 +256,10 @@ mod tests {
         let wp0 = Waypoint::new(t0, 1.0, -3.0);
         let movement = LineFollow::new(2.0).expect("Failed to make LineFollow");
         let p_target = Position::new(1.0, 3.0);
-        let waypoints = movement
-            .extrapolate(&wp0, &p_target)
-            .expect("Failed to extrapolate");
+        let (waypoints, end) = movement
+            .extrapolate(&wp0, &p_target, &())
+            .expect("Failed to extrapolate")
+            .expect("Missing extrapolation result");
         assert_eq!(waypoints.len(), 1);
         assert_relative_eq!(
             waypoints.last().unwrap().time.as_secs_f64(),

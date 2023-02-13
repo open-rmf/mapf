@@ -15,16 +15,17 @@
  *
 */
 
-use std::vec::Vec;
+use crate::{Graph, graph::Edge};
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Default)]
-pub struct SimpleGraph<Vertex: std::fmt::Debug + Clone> {
-    pub vertices: Vec<Vertex>,
-    pub edges: Vec<Vec<usize>>,
+pub struct SimpleGraph<V, E> {
+    pub vertices: Vec<V>,
+    pub edges: Vec<Vec<(usize, E)>>,
 }
 
-impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
-    pub fn new(vertices: Vec<Vertex>, edges: Vec<Vec<usize>>) -> Self {
+impl<V: Clone, E: Clone> SimpleGraph<V, E> {
+    pub fn new(vertices: Vec<V>, edges: Vec<Vec<(usize, E)>>) -> Self {
         Self {
             vertices,
             edges,
@@ -32,8 +33,8 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
     }
 
     pub fn from_iters(
-        vertices: impl IntoIterator<Item = Vertex>,
-        input_edges: impl IntoIterator<Item = (usize, usize)>,
+        vertices: impl IntoIterator<Item = V>,
+        input_edges: impl IntoIterator<Item = (usize, usize, E)>,
     ) -> Self {
         let mut edges = Vec::new();
         for edge in input_edges {
@@ -41,7 +42,7 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
                 edges.resize(edge.0 + 1, Vec::new());
             }
 
-            edges.get_mut(edge.0).unwrap().push(edge.1);
+            edges.get_mut(edge.0).unwrap().push((edge.1, edge.2));
         }
 
         Self {
@@ -54,8 +55,8 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
         let mut r_edges = Vec::new();
         r_edges.resize(self.edges.len(), Vec::new());
         for (r_v_to, edges) in self.edges.iter().enumerate() {
-            for r_v_from in edges {
-                r_edges.get_mut(*r_v_from).unwrap().push(r_v_to);
+            for (r_v_from, e) in edges {
+                r_edges.get_mut(*r_v_from).unwrap().push((r_v_to, e.clone()));
             }
         }
 
@@ -66,7 +67,7 @@ impl<Vertex: std::fmt::Debug + Clone> SimpleGraph<Vertex> {
     }
 }
 
-impl crate::graph::Edge<usize> for (usize, usize) {
+impl<E> Edge<usize, E> for (usize, usize, E) {
     fn from_vertex(&self) -> &usize {
         &self.0
     }
@@ -74,27 +75,37 @@ impl crate::graph::Edge<usize> for (usize, usize) {
     fn to_vertex(&self) -> &usize {
         &self.1
     }
+
+    fn attributes(&self) -> &E {
+        &self.2
+    }
 }
 
-impl<V: std::fmt::Debug + Clone> crate::Graph for SimpleGraph<V> {
+impl<V: Clone, E: Clone> Graph for SimpleGraph<V, E> {
     type Key = usize;
     type Vertex = V;
-    type Edge = (usize, usize);
+    type EdgeAttributes = E;
+    type Edge = (usize, usize, E);
 
-    type EdgeIter<'a> = impl Iterator<Item=(usize, usize)> + 'a
+    type EdgeIter<'a> = impl Iterator<Item=(usize, usize, E)> + 'a
     where
-        V: 'a;
+        V: 'a,
+        E: 'a;
 
     fn vertex(&self, key: &usize) -> Option<V> {
         self.vertices.get(*key).cloned()
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a> {
+    fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a>
+    where
+        V: 'a,
+        E: 'a,
+    {
         self
         .edges
         .get(from_key)
         .into_iter()
         .flat_map(|outgoing| outgoing.iter())
-        .map(move |to_key| (from_key, *to_key))
+        .map(move |(to_key, attr)| (from_key, *to_key, attr.clone()))
     }
 }
