@@ -198,3 +198,13 @@ impl<D: Domain> Lift for D {
         )
     }
 }
+
+pub trait Pickable<U, V> {
+    type Choice;
+}
+
+pub struct Pick<U, V>(std::marker::PhantomData<(U, V)>);
+
+impl<A> Pickable<A, A> for Pick<A, A> {
+    type Choice = A;
+}

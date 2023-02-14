@@ -22,6 +22,7 @@ pub trait Error: StdError + Send + Sync + 'static {}
 impl<T: StdError + Send + Sync + 'static> Error for T {}
 
 /// Use this enum for situations where you are required to provide an Error
-/// type but there is no possibility of an error being produced.
+/// type but there is no possibility of an error being produced. Since NoError
+/// has no variants, it is impossible to instantiate this enum.
 #[derive(ThisError, Debug)]
 pub enum NoError {}

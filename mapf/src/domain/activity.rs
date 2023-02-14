@@ -106,11 +106,9 @@ pub trait ActivityModifier<State, FromAction> {
         State: 'a;
 }
 
-/// [`NoActivityModifier`] can be used as a placeholder where an ActivityModifier
-/// is required but it doesn't need to do anything.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct NoActivityModifier;
-impl<State, FromAction> ActivityModifier<State, FromAction> for NoActivityModifier {
+// Allow an empty tuple to implement the ActivityModifier trait by not modifying
+// the action.
+impl<State, FromAction> ActivityModifier<State, FromAction> for () {
     type ModifiedAction = FromAction;
     type ModifiedActionError = NoError;
     type ModifiedChoices<'a> = [Result<(FromAction, State), NoError>; 1]
@@ -120,7 +118,7 @@ impl<State, FromAction> ActivityModifier<State, FromAction> for NoActivityModifi
 
     fn modify_action<'a>(
         &'a self,
-        from_state: State,
+        _: State,
         from_action: FromAction,
         to_state: State,
     ) -> Self::ModifiedChoices<'a>
@@ -167,14 +165,12 @@ impl<Base, Prop> Activity<Base::State> for Chained<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
-    Base::ActivityAction: Into<Base::Action>,
-    Base::ActivityError: Into<Base::Error>,
+    Base::ActivityAction: Into<Prop::ActivityAction>,
+    Base::ActivityError: Into<Prop::ActivityError>,
     Prop: Activity<Base::State>,
-    Prop::ActivityAction: Into<Base::Action>,
-    Prop::ActivityError: Into<Base::Error>,
 {
-    type ActivityAction = Base::Action;
-    type ActivityError = Base::Error;
+    type ActivityAction = Prop::ActivityAction;
+    type ActivityError = Prop::ActivityError;
     type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
@@ -207,10 +203,9 @@ where
     Base::State: Clone,
     Base::ActivityError: Into<Base::Error>,
     Prop: ActivityModifier<Base::State, Base::ActivityAction>,
-    Prop::ModifiedAction: Into<Base::Action>,
     Prop::ModifiedActionError: Into<Base::Error>,
 {
-    type ActivityAction = Base::Action;
+    type ActivityAction = Prop::ModifiedAction;
     type ActivityError = Base::Error;
     type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
@@ -240,7 +235,7 @@ where
                                 .into_iter()
                                 .map(|r| r
                                     .map_err(Into::into)
-                                    .map(|(a, s)| (a.into(), s.into()))
+                                    .map(|(a, s)| (a, s.into()))
                                 )
                         })
                         .map(|x| x.flatten())
@@ -415,9 +410,9 @@ mod tests {
         type ModifiedChoices<'a> = impl IntoIterator<Item=Result<(Interval, u64), Self::ModifiedActionError>> + 'a;
         fn modify_action<'a>(
             &'a self,
-            from_state: u64,
-            from_action: Interval,
-            to_state: u64,
+            _: u64,
+            _: Interval,
+            _: u64,
         ) -> Self::ModifiedChoices<'a>
         where
             Interval: 'a,
@@ -670,7 +665,7 @@ mod tests {
             budget: 25,
         };
         let choices: Result<HashSet<_>, _> = domain.choices(inventory)
-            .map(|r| r.map(|(a, s)| a))
+            .map(|r| r.map(|(a, _)| a))
             .collect();
         let choices = choices.unwrap();
         assert_eq!(choices.len(), 3);
@@ -684,7 +679,7 @@ mod tests {
             budget: 40,
         };
         let choices: Result<HashSet<_>, _> = domain.choices(inventory)
-            .map(|r| r.map(|(a, s)| a))
+            .map(|r| r.map(|(a, _)| a))
             .collect();
         let choices = choices.unwrap();
         assert_eq!(choices.len(), 3);

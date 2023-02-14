@@ -48,8 +48,8 @@ pub trait Connectable<State, Action, Target> {
         Target: 'a;
 }
 
-/// Allow an empty tuple to implement the Connectable trait by never attempting
-/// any connection.
+// Allow an empty tuple to implement the Connectable trait by never attempting
+// any connection.
 impl<State, Action, Target> Connectable<State, Action, Target> for () {
     type ConnectionError = NoError;
     type Connections<'a> = [Result<(Action, State), NoError>; 0]
@@ -60,8 +60,8 @@ impl<State, Action, Target> Connectable<State, Action, Target> for () {
 
     fn connect<'a>(
         &'a self,
-        from_state: State,
-        to_target: &'a Target,
+        _: State,
+        _: &'a Target,
     ) -> Self::Connections<'a>
     where
         Self: 'a,

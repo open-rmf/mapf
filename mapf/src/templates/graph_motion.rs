@@ -19,7 +19,7 @@ use crate::{
     Graph, graph::Edge,
     domain::{
         Domain, Space, Extrapolator, Activity, ActivityModifier,
-        Initializable, Satisfiable, Closable, PartialKeyedSpace,
+        Initializable, Satisfiable, Closable, PartialKeyedSpace, Chained,
     },
     util::FlatResultMapTrait,
     error::Error,
