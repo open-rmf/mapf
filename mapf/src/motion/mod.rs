@@ -16,6 +16,7 @@
 */
 
 pub mod timed;
+pub use timed::*;
 
 pub mod r2;
 pub mod se2;
@@ -25,6 +26,9 @@ pub use waypoint::Waypoint;
 
 pub mod trajectory;
 pub use trajectory::Trajectory;
+
+pub mod travel_time_cost;
+pub use travel_time_cost::*;
 
 // pub mod graph_search;
 

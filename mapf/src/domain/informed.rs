@@ -29,7 +29,7 @@ pub trait Informed<State, Goal> {
     /// `to_goal_state`. If it is know to be impossible to reach the goal from
     /// `from_state` then return Ok(None). If there is a problem with the input
     /// that makes it impossible to calculate any estimate, return Err(_).
-    fn remaining_cost_estimate(
+    fn estimate_remaining_cost(
         &self,
         from_state: &State,
         to_goal: &Goal,
@@ -71,12 +71,12 @@ where
 {
     type CostEstimate = Prop::CostEstimate;
     type InformedError = Base::Error;
-    fn remaining_cost_estimate(
+    fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        self.prop.remaining_cost_estimate(from_state, to_goal)
+        self.prop.estimate_remaining_cost(from_state, to_goal)
             .map_err(Into::into)
     }
 }
@@ -91,15 +91,15 @@ where
 {
     type CostEstimate = Base::CostEstimate;
     type InformedError = Base::Error;
-    fn remaining_cost_estimate(
+    fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let base_cost_estimate = self.base.remaining_cost_estimate(
+        let base_cost_estimate = self.base.estimate_remaining_cost(
             from_state, to_goal
         ).map_err(Into::into)?;
-        let prop_cost_estimate = self.prop.remaining_cost_estimate(
+        let prop_cost_estimate = self.prop.estimate_remaining_cost(
             from_state, to_goal
         ).map_err(Into::into)?;
 
@@ -125,12 +125,12 @@ where
 {
     type CostEstimate = Base::CostEstimate;
     type InformedError = Base::Error;
-    fn remaining_cost_estimate(
+    fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let original_estimate = match self.base.remaining_cost_estimate(
+        let original_estimate = match self.base.estimate_remaining_cost(
             from_state, to_goal
         ).map_err(Into::into)? {
             Some(c) => c,
@@ -155,18 +155,18 @@ where
 {
     type CostEstimate = Prop::CostEstimate;
     type InformedError = Base::Error;
-    fn remaining_cost_estimate(
+    fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let from_state_proj = match self.lifter.project(from_state.clone())
+        let from_state_proj = match self.lifter.project(from_state)
             .map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
         };
 
-        self.prop.remaining_cost_estimate(&from_state_proj, &to_goal)
+        self.prop.estimate_remaining_cost(&from_state_proj, &to_goal)
             .map_err(Into::into)
     }
 }
@@ -182,7 +182,7 @@ mod tests {
     impl<State: Mobile, Goal: Mobile> Informed<State, Goal> for EuclideanDistanceEstimate {
         type CostEstimate = f64;
         type InformedError = NoError;
-        fn remaining_cost_estimate(
+        fn estimate_remaining_cost(
             &self,
             from_state: &State,
             to_goal: &Goal,
@@ -195,7 +195,7 @@ mod tests {
     impl<State: BatteryPowered, Goal> Informed<State, Goal> for BatteryLevelCostEstimate {
         type CostEstimate = f64;
         type InformedError = NoError;
-        fn remaining_cost_estimate(
+        fn estimate_remaining_cost(
             &self,
             from_state: &State,
             _: &Goal,
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_cost_estimate() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .with(EuclideanDistanceEstimate)
             .map(ScaleWeight(0.1));
 
@@ -224,22 +224,22 @@ mod tests {
             battery: 0.5,
         };
 
-        let cost_estimate = domain.remaining_cost_estimate(&from_state, &to_goal_state).unwrap().unwrap();
+        let cost_estimate = domain.estimate_remaining_cost(&from_state, &to_goal_state).unwrap().unwrap();
         assert_relative_eq!(cost_estimate, 10.0 * 0.1);
     }
 
     #[test]
     fn test_lifted_cost_estimate() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .lift(
                 DefineDomainMap::for_subspace(StateInto::<Point>::new()),
-                DefineTrait::<Point, ()>::new()
+                DefineTrait::<Point>::new()
                     .with(EuclideanDistanceEstimate)
                     .map(ScaleWeight(0.1))
             )
             .chain_lift(
                 DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
-                DefineTrait::<Battery, ()>::new()
+                DefineTrait::<Battery>::new()
                     .with(BatteryLevelCostEstimate)
                     .map(ScaleWeight(0.2))
             );
@@ -253,7 +253,7 @@ mod tests {
             battery: 0.25,
         };
 
-        let cost_estimate = domain.remaining_cost_estimate(&from_state, &to_goal_state).unwrap().unwrap();
+        let cost_estimate = domain.estimate_remaining_cost(&from_state, &to_goal_state).unwrap().unwrap();
         assert_relative_eq!(cost_estimate, 10.0 * 0.1 + 1.0/0.35 * 0.2);
     }
 }

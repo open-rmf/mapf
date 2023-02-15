@@ -67,7 +67,7 @@ impl<State, A> Activity<State> for NoActivity<A> {
         Self::ActivityError: 'a,
         State: 'a;
 
-    fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
+    fn choices<'a>(&'a self, _: State) -> Self::Choices<'a>
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -134,10 +134,9 @@ impl<Base, Prop> Activity<Base::State> for Incorporated<Base, Prop>
 where
     Base: Domain,
     Prop: Activity<Base::State>,
-    Prop::ActivityAction: Into<Base::Action>,
     Prop::ActivityError: Into<Base::Error>,
 {
-    type ActivityAction = Base::Action;
+    type ActivityAction = Prop::ActivityAction;
     type ActivityError = Base::Error;
     type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
@@ -166,11 +165,12 @@ where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
     Base::ActivityAction: Into<Prop::ActivityAction>,
-    Base::ActivityError: Into<Prop::ActivityError>,
+    Base::ActivityError: Into<Base::Error>,
     Prop: Activity<Base::State>,
+    Prop::ActivityError: Into<Base::Error>,
 {
     type ActivityAction = Prop::ActivityAction;
-    type ActivityError = Prop::ActivityError;
+    type ActivityError = Base::Error;
     type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
@@ -247,11 +247,10 @@ where
 impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::ActivityAction, ToAction=Base::Action>,
+    Lifter: ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::ActivityAction>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::LiftError: Into<Base::Error>,
-    Lifter::ToAction: Into<Base::Action>,
     Prop: Activity<Lifter::ProjectedState>,
     Base::State: Clone,
     Prop::ActivityAction: Clone,
@@ -259,7 +258,7 @@ where
 {
     type ActivityAction = Lifter::ToAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<(Base::Action, Base::State), Self::ActivityError>> + 'a
+    type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
@@ -275,7 +274,7 @@ where
         Self::ActivityError: 'a,
         Base::State: 'a,
     {
-        [self.lifter.project(from_state.clone())]
+        [self.lifter.project(&from_state)]
             .into_iter()
             .filter_map(|r: Result<Option<Lifter::ProjectedState>, Lifter::ProjectionError>| r.transpose())
             .flat_map(move |r: Result<Lifter::ProjectedState, Lifter::ProjectionError>| {
@@ -292,7 +291,7 @@ where
                             .map_err(Into::into)
                             .flat_result_map(move |(action, state)| {
                                 let from_state = from_state.clone();
-                                self.lifter.lift(from_state.clone(), state)
+                                self.lifter.lift(&from_state, state)
                                     .map_err(Into::into)
                                     .flat_result_map(move |lifted_state_opt: Option<Base::State>| {
                                         let from_state = from_state.clone();
@@ -302,7 +301,7 @@ where
                                             .flat_map(move |lifted_state: Base::State| {
                                                 let from_state = from_state.clone();
                                                 let action = action.clone();
-                                                self.lifter.map_action(from_state.clone(), action)
+                                                self.lifter.map_action(from_state, action)
                                                     .into_iter()
                                                     .map(move |r| {
                                                         let lifted_state = lifted_state.clone();
@@ -381,7 +380,7 @@ mod tests {
             &'a self,
             from_state: u64,
             from_action: Interval,
-            to_state: u64,
+            _: u64,
         ) -> Self::ModifiedChoices<'a>
         where
             Interval: 'a,
@@ -424,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_activity_chain_map() {
-        let domain = DefineTrait::<u64, Interval>::new()
+        let domain = DefineTrait::<u64>::new()
             .with(Count { by_interval: vec![1, 2, 3]});
 
         let choices: Result<Vec<_>, _> = domain.choices(0).collect();
@@ -453,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_state_dependent_activity_map() {
-        let domain = DefineTrait::<u64, Interval>::new()
+        let domain = DefineTrait::<u64>::new()
             .with(Count { by_interval: vec![2, 3, 4, 5]})
             .map(DoubleTheOdds);
 
@@ -557,7 +556,7 @@ mod tests {
         type ProjectionError = NoError;
         fn project(
             &self,
-            state: Inventory,
+            state: &Inventory,
         ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
             Ok(Some(Item {
                 count: state.apples,
@@ -569,30 +568,31 @@ mod tests {
         type LiftError = NoError;
         fn lift(
             &self,
-            original: Inventory,
+            original: &Inventory,
             projection: Self::ProjectedState
         ) -> Result<Option<Inventory>, Self::LiftError> {
             Ok(Some(Inventory {
                 apples: projection.count,
                 budget: projection.budget,
-                ..original
+                ..original.clone()
             }))
         }
     }
-    impl ActionMap<Inventory, Transaction> for JustApples {
+    impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustApples {
         type ActionMapError = NoError;
         type ToAction = Order;
-        type ToActions<'a> = Option<Result<Order, NoError>>;
+        type ToActions<'a> = Option<Result<Order, NoError>> where A: 'a;
         fn map_action<'a>(
             &'a self,
             _: Inventory,
-            from_action: Transaction,
+            from_action: A,
         ) -> Self::ToActions<'a>
         where
             Transaction: 'a,
-            Inventory: 'a
+            Inventory: 'a,
+            A: 'a,
         {
-            Some(Ok(Order::Apples(from_action)))
+            Some(Ok(Order::Apples(from_action.into())))
         }
     }
 
@@ -604,7 +604,7 @@ mod tests {
         type ProjectionError = NoError;
         fn project(
             &self,
-            state: Inventory
+            state: &Inventory
         ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
             Ok(Some(Item {
                 count: state.bananas,
@@ -616,48 +616,41 @@ mod tests {
         type LiftError = NoError;
         fn lift(
             &self,
-            original: Inventory,
+            original: &Inventory,
             projection: Self::ProjectedState
         ) -> Result<Option<Inventory>, Self::LiftError> {
             Ok(Some(Inventory {
                 bananas: projection.count,
                 budget: projection.budget,
-                ..original
+                ..original.clone()
             }))
         }
     }
-    impl ActionMap<Inventory, Transaction> for JustBananas {
+    impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustBananas {
         type ActionMapError = NoError;
         type ToAction = Order;
-        type ToActions<'a> = Option<Result<Order, NoError>>;
+        type ToActions<'a> = Option<Result<Order, NoError>> where A: 'a;
         fn map_action<'a>(
             &'a self,
             _: Inventory,
-            from_action: Transaction,
+            from_action: A,
         ) -> Self::ToActions<'a>
         where
             Transaction: 'a,
-            Inventory: 'a
+            Inventory: 'a,
+            A: 'a,
         {
-            Some(Ok(Order::Bananas(from_action)))
+            Some(Ok(Order::Bananas(from_action.into())))
         }
     }
 
     #[test]
     fn test_lifted_activity() {
-        let domain = DefineTrait::<Inventory, Order>::new()
-            .lift(
-                JustApples,
-                DefineTrait::<Item, Transaction>::new()
-                    .with(Buy(20))
-                    .chain(Sell(60))
-            )
-            .chain_lift(
-                JustBananas,
-                DefineTrait::<Item, Transaction>::new()
-                    .with(Buy(30))
-                    .chain(Sell(80))
-            );
+        let domain = DefineTrait::<Inventory>::new()
+            .lift(JustApples, Buy(20))
+            .chain_lift(JustApples, Sell(60))
+            .chain_lift(JustBananas, Buy(30))
+            .chain_lift(JustBananas, Sell(80));
 
         let inventory = Inventory {
             apples: 5,

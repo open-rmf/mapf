@@ -17,44 +17,50 @@
 
 use crate::{
     graph::Graph,
-    heuristic::Heuristic,
-    motion::{r2, trajectory::CostCalculator, Extrapolator, TimePoint},
-    node::Keyed,
+    motion::{
+        TimePoint,
+        r2::{
+            Position, DiscreteSpaceTimeR2, StateR2 as StateR2,
+            timed_position::{LineFollow, LineFollowError, Waypoint},
+        },
+    },
+    domain::{Informed, Weighted, Extrapolator, Key, Space, Keyring, KeyedSpace, SelfKey},
 };
 use num::Zero;
-use std::sync::Arc;
+use arrayvec::ArrayVec;
+use std::{
+    sync::Arc,
+    borrow::Borrow,
+};
 
 #[derive(Debug)]
-pub struct DirectTravelHeuristic<
-    G: Graph<Vertex = r2::Position>,
-    C: CostCalculator<r2::timed_position::Waypoint>,
-> {
+pub struct DirectTravelHeuristic<G: Graph, W> {
+    pub space: DiscreteSpaceTimeR2<G::Key>,
     pub graph: Arc<G>,
-    pub cost_calculator: Arc<C>,
-    pub extrapolator: r2::timed_position::LineFollow,
+    pub weight: W,
+    pub extrapolator: LineFollow,
 }
 
-impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for DirectTravelHeuristic<G, C>
+impl<G, W, Goal> Informed<StateR2<G::Key>, Goal> for DirectTravelHeuristic<G, W>
 where
-    G: Graph<Vertex = r2::Position>,
-    C: CostCalculator<r2::timed_position::Waypoint>,
-    S: Into<G::Key> + Clone,
-    Goal: Keyed<Key = G::Key>,
+    G: Graph,
+    G::Key: Key + Clone,
+    G::Vertex: Borrow<Position>,
+    W: Weighted<StateR2<G::Key>, ArrayVec<Waypoint, 1>>,
+    Goal: SelfKey<Key=G::Key>,
 {
-    type Error = <r2::timed_position::LineFollow as Extrapolator<
-        r2::timed_position::Waypoint,
-        r2::Position,
-    >>::Error;
+    type CostEstimate = W::Cost;
+    type InformedError = DirectTravelError<W::WeightedError>;
 
-    fn estimate_cost(
+    fn estimate_remaining_cost(
         &self,
-        from_state: &S,
+        from_state: &StateR2<G::Key>,
         to_goal: &Goal,
-    ) -> Result<Option<C::Cost>, Self::Error> {
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let p0 = {
             // Should this be an error instead? The current state is off the
             // graph entirely.
-            if let Some(p) = self.graph.vertex(&from_state.clone().into()) {
+            if let Some(p) = self.graph.vertex(&self.space.key_for(from_state)) {
                 p
             } else {
                 return Ok(None);
@@ -62,23 +68,37 @@ where
         };
 
         let p1 = {
-            if let Some(p) = self.graph.vertex(&to_goal.key().clone()) {
+            if let Some(p) = self.graph.vertex(&to_goal.key()) {
                 p
             } else {
                 return Ok(None);
             }
         };
 
-        let wp0 = r2::timed_position::Waypoint {
+        let wp0 = Waypoint {
             time: TimePoint::zero(),
-            position: p0,
+            position: *p0.borrow().borrow(),
         };
 
-        let cost = self
-            .extrapolator
-            .make_trajectory(wp0, &p1)?
-            .map(|t| self.cost_calculator.compute_cost(&t))
-            .unwrap_or(C::Cost::zero());
-        Ok(Some(cost))
+        self
+        .extrapolator
+        .extrapolate(&from_state.waypoint, p1.borrow().borrow(), &())
+        .map_err(DirectTravelError::Extrapolator)
+        .map(|r|
+            r
+            .map(|(action, child_wp)| {
+                let child_state = self.space.make_keyed_state(to_goal.key(), child_wp);
+                self.weight.cost(from_state, &action, &child_state)
+                .map_err(DirectTravelError::Weighted)
+            })
+            .transpose()
+            .map(|x| x.flatten())
+        )
+        .flatten()
     }
+}
+
+pub enum DirectTravelError<W> {
+    Weighted(W),
+    Extrapolator(LineFollowError),
 }

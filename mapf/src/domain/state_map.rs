@@ -28,7 +28,7 @@ pub trait ProjectState<State>: StateSubspace {
     /// Project a state down to the target state space.
     fn project(
         &self,
-        state: State
+        state: &State
     ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
 }
 
@@ -41,7 +41,7 @@ pub trait LiftState<State>: StateSubspace {
     /// otherwise missing.
     fn lift(
         &self,
-        original: State,
+        original: &State,
         projection: Self::ProjectedState
     ) -> Result<Option<State>, Self::LiftError>;
 }
@@ -66,15 +66,15 @@ impl<State> NoStateSubspace<State> {
 impl<State> StateSubspace for NoStateSubspace<State> {
     type ProjectedState = State;
 }
-impl<State> ProjectState<State> for NoStateSubspace<State> {
+impl<State: Clone> ProjectState<State> for NoStateSubspace<State> {
     type ProjectionError = NoError;
-    fn project(&self, state: State) -> Result<Option<State>, NoError> {
-        Ok(Some(state))
+    fn project(&self, state: &State) -> Result<Option<State>, NoError> {
+        Ok(Some(state.clone()))
     }
 }
 impl<State> LiftState<State> for NoStateSubspace<State> {
     type LiftError = NoError;
-    fn lift(&self, _: State, projection: State) -> Result<Option<State>, NoError> {
+    fn lift(&self, _: &State, projection: State) -> Result<Option<State>, NoError> {
         Ok(Some(projection))
     }
 }
@@ -92,15 +92,15 @@ impl<ProjectedState> StateInto<ProjectedState> {
 impl<ProjectedState> StateSubspace for StateInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
-impl<State: Into<ProjectedState>, ProjectedState> ProjectState<State> for StateInto<ProjectedState> {
+impl<State: Clone + Into<ProjectedState>, ProjectedState> ProjectState<State> for StateInto<ProjectedState> {
     type ProjectionError = NoError;
-    fn project(&self, state: State) -> Result<Option<ProjectedState>, NoError> {
-        Ok(Some(state.into()))
+    fn project(&self, state: &State) -> Result<Option<ProjectedState>, NoError> {
+        Ok(Some(state.clone().into()))
     }
 }
 impl<State, ProjectedState: Into<State>> LiftState<State> for StateInto<ProjectedState> {
     type LiftError = NoError;
-    fn lift(&self, _: State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
+    fn lift(&self, _: &State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
         Ok(Some(projection.into()))
     }
 }
@@ -115,11 +115,11 @@ impl<ProjectedState> StateSubspace for StateMaybeInto<ProjectedState> {
 }
 impl<State, ProjectedState> ProjectState<State> for StateMaybeInto<ProjectedState>
 where
-    State: Into<Option<ProjectedState>>,
+    State: Clone + Into<Option<ProjectedState>>,
 {
     type ProjectionError = NoError;
-    fn project(&self, state: State) -> Result<Option<ProjectedState>, NoError> {
-        Ok(state.into())
+    fn project(&self, state: &State) -> Result<Option<ProjectedState>, NoError> {
+        Ok(state.clone().into())
     }
 }
 impl<State, ProjectedState> LiftState<State> for StateMaybeInto<ProjectedState>
@@ -127,7 +127,7 @@ where
     ProjectedState: Into<Option<State>>,
 {
     type LiftError = NoError;
-    fn lift(&self, _: State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
+    fn lift(&self, _: &State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
         Ok(projection.into())
     }
 }

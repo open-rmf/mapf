@@ -15,21 +15,19 @@
  *
 */
 
-use super::{ClosedSet, CloseResult, ClosedStatus, keyed_closed_set::{Key, Keyed}};
+use crate::domain::{PartialKeyed, Keyed, Keyring};
+use super::{Closable, ClosedSet, CloseResult, ClosedStatus};
 use std::collections::{HashMap, hash_map::Entry};
 
-/// The `PartialKeyed` trait is similar to `Keyed` except that some unique
-/// states might not be able to map to a unique key. A [`PartialKeyedClosedSet`]
-/// can be used to prune some state duplication but not all.
-pub trait PartialKeyed {
-    type PartialKey: Key;
-    fn partial_key(&self) -> Option<Self::PartialKey>;
-}
+pub struct PartialKeyedCloser<Ring>(pub Ring);
 
-impl<T: Keyed> PartialKeyed for T {
-    type PartialKey = T::Key;
-    fn partial_key(&self) -> Option<Self::PartialKey> {
-        Some(self.key())
+impl<State, Ring> Closable<State> for PartialKeyedCloser<Ring>
+where
+    Ring: PartialKeyed + Keyring<State, Key=Option<Ring::PartialKey>> + Clone,
+{
+    type ClosedSet<T> = PartialKeyedClosedSet<Ring, T>;
+    fn new_closed_set<T>(&self) -> Self::ClosedSet<T> {
+        PartialKeyedClosedSet::new(self.0.clone())
     }
 }
 
@@ -40,19 +38,35 @@ impl<T: Keyed> PartialKeyed for T {
 ///
 /// Note that keyless states will not be stored at all in the container of this
 /// set.
-pub struct PartialKeyedClosedSet<State: PartialKeyed, T> {
-    container: HashMap<State::PartialKey, T>,
+pub struct PartialKeyedClosedSet<Ring: PartialKeyed, T> {
+    keyring: Ring,
+    container: HashMap<Ring::PartialKey, T>,
 }
 
-impl<State: PartialKeyed, T> Default for PartialKeyedClosedSet<State, T> {
+impl<Ring: Default + PartialKeyed, T> Default for PartialKeyedClosedSet<Ring, T> {
     fn default() -> Self {
-        PartialKeyedClosedSet { container: Default::default() }
+        PartialKeyedClosedSet {
+            keyring: Default::default(),
+            container: Default::default(),
+        }
     }
 }
 
-impl<State: PartialKeyed, T> ClosedSet<State, T> for PartialKeyedClosedSet<State, T> {
-    fn close<'a>(&'a mut self, state: State, value: T) -> CloseResult<'a, T> {
-        let key = match state.partial_key() {
+impl<Ring: PartialKeyed, T> PartialKeyedClosedSet<Ring, T> {
+    pub fn new(keyring: Ring) -> Self {
+        Self {
+            keyring,
+            container: Default::default(),
+        }
+    }
+}
+
+impl<State, Ring, T> ClosedSet<State, T> for PartialKeyedClosedSet<Ring, T>
+where
+    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>> + Keyring<State>
+{
+    fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
+        let key = match self.keyring.key_for(state) {
             Some(key) => key,
             None => return CloseResult::Accepted,
         };
@@ -67,8 +81,8 @@ impl<State: PartialKeyed, T> ClosedSet<State, T> for PartialKeyedClosedSet<State
         }
     }
 
-    fn replace(&mut self, state: State, value: T) -> Option<T> {
-        let key = match state.partial_key() {
+    fn replace(&mut self, state: &State, value: T) -> Option<T> {
+        let key = match self.keyring.key_for(state) {
             Some(key) => key,
             None => return None,
         };
@@ -76,7 +90,7 @@ impl<State: PartialKeyed, T> ClosedSet<State, T> for PartialKeyedClosedSet<State
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
-        let key = match state.partial_key() {
+        let key = match self.keyring.key_for(state) {
             Some(key) => key,
             None => return ClosedStatus::Open,
         };
@@ -86,6 +100,7 @@ impl<State: PartialKeyed, T> ClosedSet<State, T> for PartialKeyedClosedSet<State
 
 mod tests {
     use super::*;
+    use crate::domain::{PartialKeyed, SelfKey, SelfPartialKeyring};
 
     struct TestState {
         index: Option<usize>,
@@ -100,21 +115,28 @@ mod tests {
 
     impl PartialKeyed for TestState {
         type PartialKey = usize;
-        fn partial_key(&self) -> Option<usize> {
+    }
+
+    impl Keyed for TestState {
+        type Key = Option<usize>;
+    }
+
+    impl SelfKey for TestState {
+        fn key(&self) -> Self::Key {
             self.index
         }
     }
 
     #[test]
     fn test_partial_keyed_closed_set() {
-        let mut closed_set = PartialKeyedClosedSet::default();
-        assert!(closed_set.close(TestState::new(Some(1), 0.24), 0).accepted());
+        let mut closed_set = PartialKeyedClosedSet::new(SelfPartialKeyring::<usize>::new());
+        assert!(closed_set.close(&TestState::new(Some(1), 0.24), 0).accepted());
         assert!(closed_set.status(&TestState::new(Some(1), 0.55)).is_closed());
-        assert!(closed_set.close(TestState::new(Some(1), 0.1), 32).rejected());
+        assert!(closed_set.close(&TestState::new(Some(1), 0.1), 32).rejected());
 
-        assert!(closed_set.close(TestState::new(None, 0.4), 0).accepted());
+        assert!(closed_set.close(&TestState::new(None, 0.4), 0).accepted());
         assert!(closed_set.status(&TestState::new(None, 123.4)).is_open());
-        assert!(closed_set.close(TestState::new(None, 0.01), 3).accepted());
+        assert!(closed_set.close(&TestState::new(None, 0.01), 3).accepted());
     }
 }
 

@@ -45,7 +45,7 @@ pub struct Solution<State, Action, Cost> {
 /// * [`Satisfiable`]
 ///
 /// The following templates implement these traits:
-/// * [`InformedGraphMotion`]
+/// * [`InformedSearch`]
 #[derive(Default, Debug)]
 pub struct AStar<D>(D);
 
@@ -99,9 +99,10 @@ impl<D> AStar<D>
 where
     D: Domain
     + Closable<D::State>
-    + Weighted<D::State, D::Action>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>,
     D::State: Clone,
-    D::Action: Clone,
+    D::ActivityAction: Clone,
     D::Error: Error,
     D::WeightedError: Into<D::Error>,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
@@ -130,7 +131,7 @@ where
                 Some(c) => c,
                 None => continue,
             };
-            let remaining_cost_estimate = match domain.remaining_cost_estimate(
+            let remaining_cost_estimate = match domain.estimate_remaining_cost(
                 &state, &goal
             ).map_err(Self::domain_err)? {
                 Some(c) => c,
@@ -153,11 +154,11 @@ where
         domain: &D,
         closed_set: &mut D::ClosedSet<usize>,
         queue: &mut BinaryHeap<Reverse<QueueTicket<D::Cost>>>,
-        arena: &Vec<Node<D::State, D::Action, D::Cost>>,
+        arena: &Vec<Node<D::State, D::ActivityAction, D::Cost>>,
         goal: &Goal,
-    ) -> Result<Flow<(usize, Node<D::State, D::Action, D::Cost>), D>, AStarSearchError<D::Error>>
+    ) -> Result<Flow<(usize, Node<D::State, D::ActivityAction, D::Cost>), D>, AStarSearchError<D::Error>>
     where
-        D: Satisfiable<D::State, Goal>,
+        D: Satisfiable<D::State, Goal> + Activity<D::State>,
         D::SatisfactionError: Into<D::Error>,
     {
         let top_id = match queue.pop().map(|x| x.0) {
@@ -174,9 +175,7 @@ where
             return Ok(Flow::Return(Status::Solved(solution)));
         }
 
-        if let CloseResult::Rejected { prior, .. } = closed_set.close(
-            top.state.clone(), top_id
-        ) {
+        if let CloseResult::Rejected { prior, .. } = closed_set.close(&top.state, top_id) {
             let prior_node = arena.get_node(*prior).map_err(Self::algo_err)?;
             if prior_node.cost <= top.cost {
                 // The state we are attempting to expand has already been closed
@@ -198,12 +197,12 @@ where
         domain: &D,
         memory: &mut <Self as Algorithm>::Memory,
         parent_id: usize,
-        parent: &Node<D::State, D::Action, D::Cost>,
+        parent: &Node<D::State, D::ActivityAction, D::Cost>,
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
     where
         D: Activity<D::State>,
-        D::ActivityAction: Into<D::Action>,
+        D::ActivityAction: Into<D::ActivityAction>,
         D::ActivityError: Into<D::Error>,
         D: Informed<D::State, Goal, CostEstimate=D::Cost>,
         D::InformedError: Into<D::Error>,
@@ -227,7 +226,7 @@ where
         parent_id: usize,
         parent_state: &D::State,
         parent_cost: &D::Cost,
-        action: D::Action,
+        action: D::ActivityAction,
         child_state: D::State,
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
@@ -243,7 +242,7 @@ where
         } + parent_cost.clone();
 
         let remaining_cost_estimate = match domain
-            .remaining_cost_estimate(&child_state, goal)
+            .estimate_remaining_cost(&child_state, goal)
             .map_err(Self::domain_err)? {
             Some(c) => c,
             None => return Ok(()),
@@ -264,9 +263,10 @@ impl<D> Algorithm for AStar<D>
 where
     D: Domain
     + Closable<D::State>
-    + Weighted<D::State, D::Action>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>,
 {
-    type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
+    type Memory = Memory<D::ClosedSet<usize>, D::State, D::ActivityAction, D::Cost>;
 }
 
 impl<D, Start, Goal> Coherent<Start, Goal> for AStar<D>
@@ -274,10 +274,11 @@ where
     D: Domain
     + Initializable<Start, D::State>
     + Closable<D::State>
-    + Weighted<D::State, D::Action>
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
     + Informed<D::State, Goal, CostEstimate=D::Cost>,
     D::State: Clone,
-    D::Action: Clone,
+    D::ActivityAction: Clone,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
     D::Error: Error,
     D::InitialError: Into<D::Error>,
@@ -299,12 +300,12 @@ impl<D, Goal> Solvable<Goal> for AStar<D>
 where
     D: Domain
     + Closable<D::State>
-    + Activity<D::State, ActivityAction=D::Action>
-    + Weighted<D::State, D::Action>
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
     + Informed<D::State, Goal, CostEstimate=D::Cost>
     + Satisfiable<D::State, Goal>,
     D::State: Clone,
-    D::Action: Clone,
+    D::ActivityAction: Clone,
     D::Error: Error,
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
@@ -312,7 +313,7 @@ where
     D::WeightedError: Into<D::Error>,
     D::InformedError: Into<D::Error>,
 {
-    type Solution = Solution<D::State, D::Action, D::Cost>;
+    type Solution = Solution<D::State, D::ActivityAction, D::Cost>;
     type StepError = AStarSearchError<D::Error>;
 
     fn step(
@@ -341,9 +342,10 @@ impl<D> Algorithm for AStarConnect<D>
 where
     D: Domain
     + Closable<D::State>
-    + Weighted<D::State, D::Action>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>,
 {
-    type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
+    type Memory = Memory<D::ClosedSet<usize>, D::State, D::ActivityAction, D::Cost>;
 }
 
 impl<D, Start, Goal> Coherent<Start, Goal> for AStarConnect<D>
@@ -351,10 +353,11 @@ where
     D: Domain
     + Initializable<Start, D::State>
     + Closable<D::State>
-    + Weighted<D::State, D::Action>
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
     + Informed<D::State, Goal, CostEstimate=D::Cost>,
     D::State: Clone,
-    D::Action: Clone,
+    D::ActivityAction: Clone,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
     D::Error: Error,
     D::InitialError: Into<D::Error>,
@@ -376,13 +379,13 @@ impl<D, Goal> Solvable<Goal> for AStarConnect<D>
 where
     D: Domain
     + Closable<D::State>
-    + Activity<D::State, ActivityAction=D::Action>
-    + Weighted<D::State, D::Action>
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
     + Informed<D::State, Goal, CostEstimate=D::Cost>
     + Satisfiable<D::State, Goal>
-    + Connectable<D::State, D::Action, Goal>,
+    + Connectable<D::State, D::ActivityAction, Goal>,
     D::State: Clone,
-    D::Action: Clone,
+    D::ActivityAction: Clone,
     D::Error: Error,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
@@ -391,7 +394,7 @@ where
     D::InformedError: Into<D::Error>,
     D::ConnectionError: Into<D::Error>,
 {
-    type Solution = Solution<D::State, D::Action, D::Cost>;
+    type Solution = Solution<D::State, D::ActivityAction, D::Cost>;
     type StepError = AStarSearchError<D::Error>;
 
     fn step(
@@ -462,11 +465,11 @@ impl<Cost: Ord> Ord for QueueTicket<Cost> {
 /// Control flow return value for functions that constitute step()
 enum Flow<T, D>
 where
-    D: Domain + Weighted<D::State, D::Action>,
+    D: Domain + Activity<D::State> + Weighted<D::State, D::ActivityAction>,
     D::Error: Error,
 {
     Continue(T),
-    Return(Status<Solution<D::State, D::Action, D::Cost>>),
+    Return(Status<Solution<D::State, D::ActivityAction, D::Cost>>),
 }
 
 impl<Closed, State, Action, Cost> Memory<Closed, State, Action, Cost> {

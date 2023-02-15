@@ -17,15 +17,15 @@
 
 use crate::{
     Graph, graph::Edge,
-    domain::{
-        Domain, Space, Extrapolator, Activity, ActivityModifier,
-        Initializable, Satisfiable, Closable, PartialKeyedSpace, Chained,
-    },
+    domain::{Domain, Extrapolator, Activity, KeyedSpace},
     util::FlatResultMapTrait,
     error::Error,
 };
 use thiserror::Error as ThisError;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    borrow::Borrow,
+};
 
 pub struct GraphMotion<S, G, E> {
     pub space: S,
@@ -33,9 +33,19 @@ pub struct GraphMotion<S, G, E> {
     pub extrapolator: E,
 }
 
+impl<S, G, E> Domain for GraphMotion<S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    G: Graph,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+{
+    type State = S::State;
+    type Error = GraphMotionError<G::Key, E::ExtrapolationError>;
+}
+
 impl<S, G, E> Activity<S::State> for GraphMotion<S, G, E>
 where
-    S: PartialKeyedSpace<G::Key>,
+    S: KeyedSpace<G::Key>,
     S::State: Clone,
     G: Graph,
     G::Key: Clone + 'static,
@@ -62,44 +72,39 @@ where
         S::State: 'a,
     {
         self
-        .space
-        .partial_key(&from_state)
+        .graph
+        .edges_from_vertex(self.space.key_for(&from_state))
         .into_iter()
-        .flat_map(move |k| {
+        .flat_map(move |edge| {
             let from_state = from_state.clone();
+            let to_vertex = edge.to_vertex().clone();
+            let edge = edge.attributes().clone();
             self
             .graph
-            .edges_from_vertex(k.clone())
-            .into_iter()
-            .flat_map(move |edge| {
-                let to_vertex = edge.to_vertex().clone();
+            .vertex(&to_vertex)
+            .ok_or_else(|| GraphMotionError::MissingVertex(to_vertex.clone()))
+            .flat_result_map(move |v| {
                 let from_state = from_state.clone();
-                let edge = edge.attributes().clone();
-                self
-                .graph
-                .vertex(&to_vertex)
-                .ok_or_else(|| GraphMotionError::MissingVertex(to_vertex.clone()))
-                .flat_result_map(move |v| {
-                    let from_state = from_state.clone();
+                let to_vertex = to_vertex.clone();
+                let extrapolation = self.extrapolator.extrapolate(
+                    self.space.waypoint(&from_state).borrow(), v.borrow(), &edge
+                );
+
+                extrapolation
+                .map_err(GraphMotionError::Extrapolator)
+                .flat_result_map(move |r| {
                     let to_vertex = to_vertex.clone();
-                    self
-                    .extrapolator
-                    .extrapolate(&self.space.waypoint(&from_state), &v, &edge)
-                    .map_err(GraphMotionError::Extrapolator)
-                    .flat_result_map(move |r| {
-                        let to_vertex = to_vertex.clone();
-                        r
-                        .into_iter()
-                        .map(move |(action, waypoint)| {
-                            let state = self.space.make_partial_keyed_state(
-                                Some(to_vertex.clone()), waypoint
-                            );
-                            (action, state)
-                        })
+                    r
+                    .into_iter()
+                    .map(move |(action, waypoint)| {
+                        let state = self.space.make_keyed_state(
+                            to_vertex.clone(), waypoint
+                        );
+                        (action, state)
                     })
                 })
-                .map(|x| x.flatten())
             })
+            .map(|x| x.flatten())
         })
     }
 }
@@ -116,8 +121,40 @@ pub enum GraphMotionError<K, E> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{
+        directed::SimpleGraph,
+        motion::r2::{
+            Position, DiscreteSpaceTimeR2,
+            timed_position::{Waypoint, LineFollow},
+        },
+    };
+    use time_point::TimePoint;
+    use std::sync::Arc;
+
     #[test]
     fn test_motion_activity_map() {
+        let graph = SimpleGraph::from_iters(
+            [
+                Position::new(0.0, 0.0),
+                Position::new(1.0, 0.0),
+                Position::new(3.0, -1.0),
+            ],
+            [
+                (0, 1, ()),
+                (1, 0, ()),
+                (0, 2, ()),
+                (2, 1, ()),
+            ],
+        );
+        let graph = Arc::new(graph);
+
+        let motion = GraphMotion {
+            space: DiscreteSpaceTimeR2::<usize>::default(),
+            graph,
+            extrapolator: LineFollow::new(1.0),
+        };
+
 
     }
 }

@@ -16,12 +16,27 @@
 */
 
 use crate::{
-    templates::InformedGraphMotion,
-    motion::r2::*,
+    templates::{InformedSearch, GraphMotion},
+    motion::{r2::{*, timed_position::LineFollow}, TravelTimeCost},
     directed::simple::SimpleGraph,
+    domain::KeyedCloser,
 };
 
-// pub type SimpleR2 = InformedGraphMotion<
-//     DiscreteSpaceTimeR2<usize>,
+pub struct SpeedLimit(pub Option<f64>);
 
-// >;
+pub type SimpleR2 = InformedSearch<
+    GraphMotion<
+        DiscreteSpaceTimeR2<usize>,
+        SimpleGraph<Position, SpeedLimit>,
+        LineFollow,
+    >,
+    TravelTimeCost,
+    DirectTravelHeuristic<
+        SimpleGraph<Position, SpeedLimit>,
+        TravelTimeCost,
+    >,
+    KeyedCloser<DiscreteSpaceTimeR2<usize>>,
+    (),
+    (),
+    (),
+>;

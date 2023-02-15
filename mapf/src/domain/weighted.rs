@@ -94,10 +94,10 @@ where
     }
 }
 
-impl<Base, Prop> Weighted<Base::State, Base::Action> for Incorporated<Base, Prop>
+impl<Base, Prop, Action> Weighted<Base::State, Action> for Incorporated<Base, Prop>
 where
     Base: Domain,
-    Prop: Weighted<Base::State, Base::Action>,
+    Prop: Weighted<Base::State, Action>,
     Prop::WeightedError: Into<Base::Error>,
 {
     type Cost = Prop::Cost;
@@ -105,7 +105,7 @@ where
     fn cost(
         &self,
         from_state: &Base::State,
-        action: &Base::Action,
+        action: &Action,
         to_state: &Base::State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         self.prop.cost(from_state, action, to_state).map_err(Into::into)
@@ -119,11 +119,11 @@ where
     }
 }
 
-impl<Base, Prop> Weighted<Base::State, Base::Action> for Chained<Base, Prop>
+impl<Base, Prop, Action> Weighted<Base::State, Action> for Chained<Base, Prop>
 where
-    Base: Domain + Weighted<Base::State, Base::Action>,
+    Base: Domain + Weighted<Base::State, Action>,
     Base::WeightedError: Into<Base::Error>,
-    Prop: Weighted<Base::State, Base::Action, Cost=Base::Cost>,
+    Prop: Weighted<Base::State, Action, Cost=Base::Cost>,
     Prop::WeightedError: Into<Base::Error>,
     Base::Cost: std::ops::Add<Base::Cost, Output=Base::Cost>,
 {
@@ -132,7 +132,7 @@ where
     fn cost(
         &self,
         from_state: &Base::State,
-        action: &Base::Action,
+        action: &Action,
         to_state: &Base::State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let base_cost = self.base.cost(from_state, action, to_state)
@@ -172,11 +172,11 @@ where
     }
 }
 
-impl<Base, Prop> Weighted<Base::State, Base::Action> for Mapped<Base, Prop>
+impl<Base, Prop, Action> Weighted<Base::State, Action> for Mapped<Base, Prop>
 where
-    Base: Domain + Weighted<Base::State, Base::Action>,
+    Base: Domain + Weighted<Base::State, Action>,
     Base::WeightedError: Into<Base::Error>,
-    Prop: CostModifier<Base::State, Base::Action, Base::Cost>,
+    Prop: CostModifier<Base::State, Action, Base::Cost>,
     Prop::CostModifierError: Into<Base::Error>,
 {
     type Cost = Base::Cost;
@@ -184,7 +184,7 @@ where
     fn cost(
         &self,
         from_state: &Base::State,
-        action: &Base::Action,
+        action: &Action,
         to_state: &Base::State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let base_cost = match self.base.cost(
@@ -212,12 +212,12 @@ where
     }
 }
 
-impl<Base, Lifter, Prop> Weighted<Base::State, Base::Action> for Lifted<Base, Lifter, Prop>
+impl<Base, Lifter, Prop, Action> Weighted<Base::State, Action> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
     Base::State: Clone,
-    Base::Action: Clone,
-    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Base::Action>,
+    Action: Clone,
+    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Action>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Weighted<Lifter::ProjectedState, Lifter::ToAction>,
@@ -229,16 +229,16 @@ where
     fn cost(
         &self,
         from_state: &Base::State,
-        action: &Base::Action,
+        action: &Action,
         to_state: &Base::State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
-        let from_state_proj = match self.lifter.project(from_state.clone())
+        let from_state_proj = match self.lifter.project(from_state)
             .map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
         };
 
-        let to_state_proj = match self.lifter.project(to_state.clone())
+        let to_state_proj = match self.lifter.project(to_state)
             .map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
@@ -267,7 +267,7 @@ where
         &self,
         for_state: &Base::State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
-        let for_state_proj = match self.lifter.project(for_state.clone())
+        let for_state_proj = match self.lifter.project(for_state)
             .map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
@@ -393,14 +393,14 @@ pub(crate) mod tests {
 
     #[test]
     fn test_cost_calculation() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .with(
-                DefineTrait::<TestState, ()>::new()
+                DefineTrait::<TestState>::new()
                     .with(DistanceWeight(0.1))
                     .map(ScaleWeight(2.0))
             )
             .chain(
-                DefineTrait::<TestState, ()>::new()
+                DefineTrait::<TestState>::new()
                     .with(BatteryLossWeight(10.0))
                     .map(ScaleWeight(3.0))
             );
@@ -420,16 +420,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_lifted_weight_calculation() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .lift(
                 DefineDomainMap::for_subspace(StateInto::<Point>::new()),
-                DefineTrait::<Point, ()>::new()
+                DefineTrait::<Point>::new()
                     .with(DistanceWeight(0.1))
                     .map(ScaleWeight(2.0))
             )
             .chain_lift(
                 DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
-                DefineTrait::<Battery, ()>::new()
+                DefineTrait::<Battery>::new()
                     .with(BatteryLossWeight(10.0))
                     .map(ScaleWeight(3.0))
             );

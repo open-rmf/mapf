@@ -16,7 +16,7 @@
 */
 
 use crate::{Graph, graph::Edge};
-use std::fmt::Debug;
+use std::{fmt::Debug, borrow::Borrow};
 
 #[derive(Debug, Clone, Default)]
 pub struct SimpleGraph<V, E> {
@@ -24,7 +24,7 @@ pub struct SimpleGraph<V, E> {
     pub edges: Vec<Vec<(usize, E)>>,
 }
 
-impl<V: Clone, E: Clone> SimpleGraph<V, E> {
+impl<V, E> SimpleGraph<V, E> {
     pub fn new(vertices: Vec<V>, edges: Vec<Vec<(usize, E)>>) -> Self {
         Self {
             vertices,
@@ -35,7 +35,10 @@ impl<V: Clone, E: Clone> SimpleGraph<V, E> {
     pub fn from_iters(
         vertices: impl IntoIterator<Item = V>,
         input_edges: impl IntoIterator<Item = (usize, usize, E)>,
-    ) -> Self {
+    ) -> Self
+    where
+        E: Clone,
+    {
         let mut edges = Vec::new();
         for edge in input_edges {
             if edges.len() <= edge.0 {
@@ -51,7 +54,13 @@ impl<V: Clone, E: Clone> SimpleGraph<V, E> {
         }
     }
 
-    pub fn reverse(&self) -> Self {
+    // TODO(MXG): We could make an into_reverse(self) for cases where V and E
+    // cannot be cloned.
+    pub fn reverse(&self) -> Self
+    where
+        V: Clone,
+        E: Clone,
+    {
         let mut r_edges = Vec::new();
         r_edges.resize(self.edges.len(), Vec::new());
         for (r_v_to, edges) in self.edges.iter().enumerate() {
@@ -65,9 +74,10 @@ impl<V: Clone, E: Clone> SimpleGraph<V, E> {
             edges: r_edges,
         }
     }
+
 }
 
-impl<E> Edge<usize, E> for (usize, usize, E) {
+impl<E> Edge<usize, E> for (usize, usize, &E) {
     fn from_vertex(&self) -> &usize {
         &self.0
     }
@@ -81,19 +91,30 @@ impl<E> Edge<usize, E> for (usize, usize, E) {
     }
 }
 
-impl<V: Clone, E: Clone> Graph for SimpleGraph<V, E> {
+impl<V, E> Graph for SimpleGraph<V, E> {
     type Key = usize;
     type Vertex = V;
     type EdgeAttributes = E;
-    type Edge = (usize, usize, E);
 
-    type EdgeIter<'a> = impl Iterator<Item=(usize, usize, E)> + 'a
+    type VertexRef<'a> = &'a Self::Vertex
+    where
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a;
+
+    type Edge<'a> = (usize, usize, &'a E)
+    where
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a;
+
+    type EdgeIter<'a> = impl Iterator<Item=(usize, usize, &'a E)> + 'a
     where
         V: 'a,
         E: 'a;
 
-    fn vertex(&self, key: &usize) -> Option<V> {
-        self.vertices.get(*key).cloned()
+    fn vertex<'a, 'b>(&'a self, key: &'b usize) -> Option<&'a V> {
+        self.vertices.get(*key)
     }
 
     fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a>
@@ -106,6 +127,6 @@ impl<V: Clone, E: Clone> Graph for SimpleGraph<V, E> {
         .get(from_key)
         .into_iter()
         .flat_map(|outgoing| outgoing.iter())
-        .map(move |(to_key, attr)| (from_key, *to_key, attr.clone()))
+        .map(move |(to_key, attr)| (from_key, *to_key, attr))
     }
 }

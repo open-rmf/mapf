@@ -15,42 +15,34 @@
  *
 */
 
+use crate::domain::{Keyed, Keyring};
+use std::borrow::Borrow;
+
 /// The `Space` trait describes the data structures of a state space
 pub trait Space {
+    /// The domain state that is searched over
+    type State;
+
     /// The portion of the search state that describes the physical aspects of
     /// the state
     type Waypoint;
 
-    /// The domain state that is searched over
-    type State;
+    /// The return type that provides access to waypoint data.
+    type WaypointRef<'a>: Borrow<Self::Waypoint> + 'a
+    where
+        Self: 'a,
+        Self::Waypoint: 'a;
 
     /// Extract a waypoint for the given state
-    fn waypoint(&self, state: &Self::State) -> Self::Waypoint;
+    fn waypoint<'a>(&'a self, state: &'a Self::State) -> Self::WaypointRef<'a>;
 }
 
-/// [`PartialKeyedSpace`] is a trait for describing spaces whose states can
-/// usually be assigned a unique key while there may be exceptions. If the
-/// states can always be assigned a unique key then [`KeyedSpace`] should be
-/// used instead.
-pub trait PartialKeyedSpace<K>: Space {
-    fn make_partial_keyed_state(
-        &self,
-        key: Option<K>,
-        waypoint: Self::Waypoint,
-    ) -> Self::State;
-
-    fn partial_key(&self, state: &Self::State) -> Option<K>;
-}
-
-/// [`KeyedSpace`] is a trait for described spaces whose states can always be
-/// assigned a unique key. If some states might not have a unique key,
-/// [`PartialKeyedSpace`] should be used instead. Anything that implements.
-pub trait KeyedSpace<K>: Space {
+/// [`KeyedSpace`] is a trait for describing spaces whose states can be
+/// assigned a unique key.
+pub trait KeyedSpace<K>: Space + Keyed<Key=K> + Keyring<Self::State> {
     fn make_keyed_state(
         &self,
         key: K,
         waypoint: Self::Waypoint,
     ) -> Self::State;
-
-    fn key(&self, state: &Self::State) -> K;
 }

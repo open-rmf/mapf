@@ -40,6 +40,25 @@ pub trait Initializable<Start, State> {
         State: 'a;
 }
 
+// An empty tuple implements Initializable by simply accepting an initial state.
+impl<T> Initializable<T, T> for () {
+    type InitialError = NoError;
+    type InitialStates<'a> = [Result<T, NoError>; 1] where T: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: T,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        T: 'a,
+        T: 'a,
+    {
+        [Ok(from_start)]
+    }
+}
+
 /// This struct implements Initializable for any Start that implements Into<State>
 pub struct InitFrom<Start> {
     _ignore: std::marker::PhantomData<Start>,
@@ -186,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_single_start() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .with(InitFrom::<usize>::new());
 
         let initial_state: Result<Vec<_>, _> = domain.initialize(5).into_iter().collect();
@@ -197,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_multi_start() {
-        let domain = DefineTrait::<TestState, ()>::new()
+        let domain = DefineTrait::<TestState>::new()
             .with(ManyInit(InitFrom::<Point>::new()));
 
         let initial_states: Result<Vec<_>, _> = domain.initialize(

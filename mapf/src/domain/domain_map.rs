@@ -56,7 +56,7 @@ impl<State, S: ProjectState<State>, A> ProjectState<State> for DomainMap<S, A> {
     type ProjectionError = S::ProjectionError;
     fn project(
         &self,
-        state: State
+        state: &State
     ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
         self.state_map.project(state)
     }
@@ -66,7 +66,7 @@ impl<State, S: LiftState<State>, A> LiftState<State> for DomainMap<S, A> {
     type LiftError = S::LiftError;
     fn lift(
         &self,
-        original: State,
+        original: &State,
         projection: Self::ProjectedState
     ) -> Result<Option<State>, Self::LiftError> {
         self.state_map.lift(original, projection)

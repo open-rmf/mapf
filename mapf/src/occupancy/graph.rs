@@ -108,7 +108,9 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     type Key = Cell;
     type Vertex = Point;
     type EdgeAttributes = ();
-    type Edge = (Cell, Cell);
+
+    type VertexRef<'a> = Self::Vertex where G: 'a;
+    type Edge<'a> = (Cell, Cell) where G: 'a;
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
     fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {
@@ -208,7 +210,9 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Key = Cell;
     type Vertex = Point;
     type EdgeAttributes = ();
-    type Edge = (Cell, Cell);
+
+    type VertexRef<'a> = Self::Vertex where G: 'a;
+    type Edge<'a> = (Cell, Cell) where G: 'a;
     type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
 
     fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {

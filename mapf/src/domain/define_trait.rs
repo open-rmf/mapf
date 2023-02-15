@@ -20,11 +20,11 @@ use super::*;
 use anyhow::Error as AnyError;
 
 /// To begin defining a trait for a domain, use [`DefineTrait::new()`].
-pub struct DefineTrait<State, Action, Error=AnyError> {
-    _ignore: std::marker::PhantomData<(State, Action, Error)>
+pub struct DefineTrait<State, Error=AnyError> {
+    _ignore: std::marker::PhantomData<(State, Error)>
 }
 
-impl<State, Action, Error> DefineTrait<State, Action, Error> {
+impl<State, Error> DefineTrait<State, Error> {
     /// This function begins defining a domain by indicating what the top-level
     /// state and action representation is.
     ///
@@ -40,9 +40,8 @@ impl<State, Action, Error> DefineTrait<State, Action, Error> {
     }
 }
 
-impl<State, Action, Error> Domain for DefineTrait<State, Action, Error> {
+impl<State, Error> Domain for DefineTrait<State, Error> {
     type State = State;
-    type Action = Action;
     type Error = Error;
 }
 
@@ -54,7 +53,6 @@ pub struct Incorporated<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Incorporated<Base, Prop> {
     type State = Base::State;
-    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -88,7 +86,6 @@ pub struct Chained<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Chained<Base, Prop> {
     type State = Base::State;
-    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -115,7 +112,6 @@ pub struct Mapped<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Mapped<Base, Prop> {
     type State = Base::State;
-    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -144,7 +140,6 @@ pub struct Lifted<Base, Lifter, Prop> {
 }
 impl<Base: Domain, Lifter, Prop> Domain for Lifted<Base, Lifter, Prop> {
     type State = Base::State;
-    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -172,7 +167,7 @@ pub trait Lift {
 type ChainedLift<Base, Lifter, Prop> = Chained<
     Base,
     Lifted<
-        DefineTrait<<Base as Domain>::State, <Base as Domain>::Action, <Base as Domain>::Error>,
+        DefineTrait<<Base as Domain>::State, <Base as Domain>::Error>,
         Lifter,
         Prop,
     >,
@@ -193,18 +188,8 @@ impl<D: Domain> Lift for D {
         prop: Prop,
     ) -> ChainedLift<Self, Lifter, Prop> where Self: Sized {
         self.chain(
-            DefineTrait::<D::State, D::Action, D::Error>::new()
+            DefineTrait::<D::State, D::Error>::new()
             .lift(lifter, prop)
         )
     }
-}
-
-pub trait Pickable<U, V> {
-    type Choice;
-}
-
-pub struct Pick<U, V>(std::marker::PhantomData<(U, V)>);
-
-impl<A> Pickable<A, A> for Pick<A, A> {
-    type Choice = A;
 }

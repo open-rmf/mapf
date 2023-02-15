@@ -15,8 +15,6 @@
  *
 */
 
-use crate::domain::space::{Space, KeyedSpace};
-
 pub type Position = nalgebra::geometry::Point2<f64>;
 pub type Point = Position;
 pub type Velocity = nalgebra::Vector2<f64>;
@@ -24,26 +22,9 @@ pub type Velocity = nalgebra::Vector2<f64>;
 pub mod timed_position;
 pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
 
-pub struct DiscreteSpaceTimeR2<Key, Extra>(std::marker::PhantomData<(Key, Extra)>);
-impl<Key, Extra> DiscreteSpaceTimeR2<Key, Extra> {
-    pub fn new() -> Self {
-        Self(Default::default())
-    }
-}
+pub mod space;
+pub use space::*;
 
-impl<Key, Extra> Default for DiscreteSpaceTimeR2<Key, Extra> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<Key, Extra> Space for DiscreteSpaceTimeR2<Key, Extra> {
-    type Waypoint = timed_position::Waypoint;
-    type State = (Key, Self::Waypoint, Extra);
-    fn waypoint(&self, state: &Self::State) -> Self::Waypoint {
-        state.1
-    }
-}
-
-// pub mod direct_travel;
+pub mod direct_travel;
+pub use direct_travel::*;
 // pub mod graph_search;

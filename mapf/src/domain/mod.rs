@@ -25,7 +25,6 @@
 /// the sub-modules of this domain module, such as Activity and Dynamics.
 pub trait Domain {
     type State;
-    type Action;
     type Error;
 }
 
@@ -35,10 +34,10 @@ pub mod closable;
 pub mod connectable;
 pub mod define_trait;
 pub mod domain_map;
-pub mod dynamics;
 pub mod extrapolator;
 pub mod informed;
 pub mod initializable;
+pub mod keyed;
 pub mod reversible;
 pub mod satisfiable;
 pub mod space;
@@ -51,10 +50,10 @@ pub use closable::*;
 pub use connectable::*;
 pub use define_trait::*;
 pub use domain_map::*;
-pub use dynamics::*;
 pub use extrapolator::*;
 pub use informed::*;
 pub use initializable::*;
+pub use keyed::*;
 pub use reversible::*;
 pub use satisfiable::*;
 pub use space::*;

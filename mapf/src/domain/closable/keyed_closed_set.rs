@@ -15,35 +15,47 @@
  *
 */
 
-use super::{ClosedSet, CloseResult, ClosedStatus};
-use std::{cmp::Eq, hash::Hash, collections::{HashMap, hash_map::Entry}};
+use crate::domain::{Keyed, Keyring};
+use super::{Closable, ClosedSet, CloseResult, ClosedStatus};
+use std::{collections::{HashMap, hash_map::Entry}};
 
-/// The `Key` trait describes objects that can be used as Keys by KeyedClosedSet
-pub trait Key: Hash + Eq + Send + Sync + 'static {}
-impl<T: Hash + Eq + Send + Sync + 'static> Key for T {}
+/// [`KeyedCloser`] implements the [`Closable`] trait by providing a
+/// [`KeyedClosedSet`].
+pub struct KeyedCloser<Ring>(pub Ring);
 
-/// The `Keyed` trait should be implemented by states to be used with
-/// KeyedClosedSet
-// TODO(MXG): Provide a derive macro for giving the Keyed trait to structs with
-// the necessary traits to be the key themselves.
-pub trait Keyed {
-    type Key: Key;
-    fn key(&self) -> Self::Key;
-}
-
-pub struct KeyedClosedSet<State: Keyed, T> {
-    container: HashMap<State::Key, T>,
-}
-
-impl<State: Keyed, T> Default for KeyedClosedSet<State, T> {
-    fn default() -> Self {
-        KeyedClosedSet { container: Default::default() }
+impl<State, Ring: Keyring<State> + Clone> Closable<State> for KeyedCloser<Ring> {
+    type ClosedSet<T> = KeyedClosedSet<Ring, T>;
+    fn new_closed_set<T>(&self) -> Self::ClosedSet<T> {
+        KeyedClosedSet::new(self.0.clone())
     }
 }
 
-impl<State: Keyed, T> ClosedSet<State, T> for KeyedClosedSet<State, T> {
-    fn close<'a>(&'a mut self, state: State, value: T) -> CloseResult<'a, T> {
-        let key = state.key();
+pub struct KeyedClosedSet<Ring: Keyed, T> {
+    keyring: Ring,
+    container: HashMap<Ring::Key, T>,
+}
+
+impl<Ring: Keyed + Default, T> Default for KeyedClosedSet<Ring, T> {
+    fn default() -> Self {
+        KeyedClosedSet {
+            keyring: Default::default(),
+            container: Default::default(),
+        }
+    }
+}
+
+impl<Ring: Keyed, T> KeyedClosedSet<Ring, T> {
+    pub fn new(keyring: Ring) -> Self {
+        Self {
+            keyring,
+            container: Default::default(),
+        }
+    }
+}
+
+impl<State, Ring: Keyring<State>, T> ClosedSet<State, T> for KeyedClosedSet<Ring, T> {
+    fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
+        let key = self.keyring.key_for(state);
         match self.container.entry(key) {
             Entry::Occupied(entry) => {
                 CloseResult::Rejected { value, prior: entry.into_mut() }
@@ -55,19 +67,20 @@ impl<State: Keyed, T> ClosedSet<State, T> for KeyedClosedSet<State, T> {
         }
     }
 
-    fn replace(&mut self, state: State, value: T) -> Option<T> {
-        let key = state.key();
+    fn replace(&mut self, state: &State, value: T) -> Option<T> {
+        let key = self.keyring.key_for(state);
         self.container.insert(key, value)
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
-        let key = state.key();
+        let key = self.keyring.key_for(state);
         self.container.get(&key).into()
     }
 }
 
 mod tests {
     use super::*;
+    use crate::domain::{Keyed, SelfKey, SelfKeyring};
 
     struct TestState {
         index: usize,
@@ -82,6 +95,9 @@ mod tests {
 
     impl Keyed for TestState {
         type Key = usize;
+    }
+
+    impl SelfKey for TestState {
         fn key(&self) -> Self::Key {
             self.index
         }
@@ -89,9 +105,9 @@ mod tests {
 
     #[test]
     fn test_keyed_closed_set() {
-        let mut closed_set = KeyedClosedSet::default();
-        assert!(closed_set.close(TestState::new(1, 0.24), 0).accepted());
+        let mut closed_set = KeyedClosedSet::new(SelfKeyring::<usize>::new());
+        assert!(closed_set.close(&TestState::new(1, 0.24), 0).accepted());
         assert!(closed_set.status(&TestState::new(1, 0.55)).is_closed());
-        assert!(closed_set.close(TestState::new(1, 0.1), 32).rejected());
+        assert!(closed_set.close(&TestState::new(1, 0.1), 32).rejected());
     }
 }

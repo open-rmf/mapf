@@ -92,12 +92,12 @@ impl<'a, T> From<Option<&'a T>> for ClosedStatus<'a, T> {
 pub trait ClosedSet<State, T> {
     /// Close a state with a value. If the state was already closed with a prior
     /// value, it will retain its original value.
-    fn close<'a>(&'a mut self, state: State, value: T) -> CloseResult<'a, T>;
+    fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T>;
 
     /// Replace a state's value. It will take on the new value regardless of
     /// whether the state was already closed. If a value already existed for
     /// this state, it will be returned.
-    fn replace(&mut self, state: State, value: T) -> Option<T>;
+    fn replace(&mut self, state: &State, value: T) -> Option<T>;
 
     /// Get the status of the specified state.
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T>;
