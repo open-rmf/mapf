@@ -45,11 +45,15 @@ pub mod directed;
 pub mod motion;
 
 pub mod a_star;
+pub use a_star::{AStar, AStarConnect};
 
 pub mod error;
 pub mod occupancy;
 
 pub mod premade;
+
+pub mod cost;
+pub use cost::*;
 
 mod util;
 

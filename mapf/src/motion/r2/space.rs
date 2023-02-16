@@ -15,9 +15,12 @@
  *
 */
 
-use crate::domain::{
-    keyed::{Key, Keyed, Keyring},
-    space::{Space, KeyedSpace},
+use crate::{
+    domain::{
+        keyed::{Key, Keyed, Keyring},
+        space::{Space, KeyedSpace},
+    },
+    motion::{Timed, TimePoint},
 };
 use super::*;
 
@@ -69,4 +72,14 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
 pub struct StateR2<K> {
     pub key: K,
     pub waypoint: timed_position::Waypoint,
+}
+
+impl<K> Timed for StateR2<K> {
+    fn set_time(&mut self, new_time: TimePoint) {
+        self.waypoint.set_time(new_time);
+    }
+
+    fn time(&self) -> &TimePoint {
+        self.waypoint.time()
+    }
 }

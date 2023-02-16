@@ -28,10 +28,8 @@ use crate::{
 };
 use num::Zero;
 use arrayvec::ArrayVec;
-use std::{
-    sync::Arc,
-    borrow::Borrow,
-};
+use thiserror::Error as ThisError;
+use std::{sync::Arc, borrow::Borrow};
 
 #[derive(Debug)]
 pub struct DirectTravelHeuristic<G: Graph, W> {
@@ -98,7 +96,10 @@ where
     }
 }
 
+#[derive(ThisError, Debug, Clone)]
 pub enum DirectTravelError<W> {
+    #[error("The cost calculator had an error:\n{0}")]
     Weighted(W),
+    #[error("The extrapolator had an error:\n{0}")]
     Extrapolator(LineFollowError),
 }

@@ -11,8 +11,7 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
-# nalgebra is waiting on a release of https://github.com/dimforge/nalgebra/pull/1094
-nalgebra = "0.31.1" #{ git = "https://github.com/dimforge/nalgebra", branch = "dev" }
+nalgebra = "0.31.1"
 time-point = "0.1"
 sorted-vec = "0.8.2"
 simba = "*"
@@ -25,6 +24,7 @@ derivative = "*"
 anyhow = "*"
 thiserror = "*"
 paste = "0.1"
+float-ord = "*"
 
 [dev-dependencies]
 approx = "*"

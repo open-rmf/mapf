@@ -73,13 +73,13 @@ impl<A: Domain, W, H, X> InformedSearch<A, W, H, X, (), (), ()> {
     /// Create a new InformedSearch domain with the minimum required
     /// components.
     pub fn new(
-        motion: A,
+        activity: A,
         weight: W,
         heuristic: H,
         closer: X,
     ) -> Self {
         Self {
-            activity: motion,
+            activity,
             weight,
             heuristic,
             closer,

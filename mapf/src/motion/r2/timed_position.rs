@@ -200,7 +200,7 @@ impl<T: SpeedLimiter> Extrapolator<Waypoint, Position, T> for LineFollow {
     }
 }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, ThisError, Clone, Copy)]
 pub enum LineFollowError {
     #[error("LineFollow::extrapolate was provided with an invalid speed limit (must be >0.0): {0}")]
     InvalidSpeedLimit(f64),

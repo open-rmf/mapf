@@ -15,16 +15,19 @@
  *
 */
 
+
+
 use crate::{
     domain::Weighted,
     motion::{Timed, Duration},
     error::NoError,
+    Cost,
 };
 
 pub struct TravelTimeCost(pub f64);
 
 impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
-    type Cost = f64;
+    type Cost = Cost<f64>;
     type WeightedError = NoError;
 
     fn cost(
@@ -34,13 +37,13 @@ impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
         to_state: &State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         let duration = (*to_state.time() - *from_state.time()).as_secs_f64();
-        Ok(Some(duration*self.0))
+        Ok(Some(Cost(duration*self.0)))
     }
 
     fn initial_cost(
         &self,
         _: &State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
-        Ok(Some(0.0))
+        Ok(Some(Cost(0.0)))
     }
 }

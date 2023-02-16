@@ -35,14 +35,11 @@ impl<V, E> SimpleGraph<V, E> {
     pub fn from_iters(
         vertices: impl IntoIterator<Item = V>,
         input_edges: impl IntoIterator<Item = (usize, usize, E)>,
-    ) -> Self
-    where
-        E: Clone,
-    {
+    ) -> Self {
         let mut edges = Vec::new();
         for edge in input_edges {
             if edges.len() <= edge.0 {
-                edges.resize(edge.0 + 1, Vec::new());
+                edges.resize_with(edge.0 + 1, || Vec::new());
             }
 
             edges.get_mut(edge.0).unwrap().push((edge.1, edge.2));
