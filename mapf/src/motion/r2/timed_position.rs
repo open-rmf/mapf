@@ -17,13 +17,14 @@
 
 use super::{Position, Velocity};
 use crate::{
-    motion::{self, se2, timed, InterpError, Interpolation},
+    motion::{self, SpeedLimiter, se2, timed, InterpError, Interpolation},
     domain::{Extrapolator, Reversible},
     error::NoError,
 };
 use arrayvec::ArrayVec;
 use time_point::{Duration, TimePoint};
 use thiserror::Error as ThisError;
+use std::borrow::Borrow;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -169,34 +170,20 @@ impl LineFollow {
     }
 }
 
-impl Extrapolator<Waypoint, Position, ()> for LineFollow {
+impl<Target, Guidance> Extrapolator<Waypoint, Target, Guidance> for LineFollow
+where
+    Target: Borrow<Position>,
+    Guidance: SpeedLimiter,
+{
     type Extrapolation = ArrayVec<Waypoint, 1>;
     type ExtrapolationError = LineFollowError;
     fn extrapolate(
         &self,
         from_state: &Waypoint,
-        to_target: &Position,
-        _: &(),
-    ) -> Result<Option<(Self::Extrapolation, Waypoint)>, Self::ExtrapolationError> {
-        self.extrapolate_impl(from_state, to_target, None)
-    }
-}
-
-/// A trait for properties that can specify speed limits.
-pub trait SpeedLimiter {
-    fn speed_limit(&self) -> Option<f64>;
-}
-
-impl<T: SpeedLimiter> Extrapolator<Waypoint, Position, T> for LineFollow {
-    type Extrapolation = ArrayVec<Waypoint, 1>;
-    type ExtrapolationError = LineFollowError;
-    fn extrapolate(
-        &self,
-        from_state: &Waypoint,
-        to_target: &Position,
-        with_guidance: &T,
+        to_target: &Target,
+        with_guidance: &Guidance,
     ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, Self::ExtrapolationError> {
-        self.extrapolate_impl(from_state, to_target, with_guidance.speed_limit())
+        self.extrapolate_impl(from_state, to_target.borrow(), with_guidance.speed_limit())
     }
 }
 

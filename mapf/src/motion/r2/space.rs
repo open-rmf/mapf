@@ -17,12 +17,15 @@
 
 use crate::{
     domain::{
-        keyed::{Key, Keyed, Keyring, SelfKey},
-        space::{Space, KeyedSpace},
+        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace,
+        Initializable,
     },
     motion::{Timed, TimePoint},
+    graph::Graph,
+    error::ThisError,
 };
-use super::*;
+use super::{*, timed_position::Waypoint};
+use std::{sync::Arc, borrow::Borrow};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DiscreteSpaceTimeR2<Key>(std::marker::PhantomData<Key>);
@@ -103,4 +106,55 @@ impl<K> From<(TimePoint, K)> for StartR2<K> {
     fn from((time, key): (TimePoint, K)) -> Self {
         StartR2 { key, time }
     }
+}
+
+impl<K> From<K> for StartR2<K> {
+    fn from(key: K) -> Self {
+        StartR2 { key, time: TimePoint::zero() }
+    }
+}
+
+pub struct InitializeR2<G>(pub Arc<G>);
+
+impl<G, Start> Initializable<Start, StateR2<G::Key>> for InitializeR2<G>
+where
+    G: Graph,
+    G::Key: Clone,
+    G::Vertex: Borrow<Position>,
+    Start: Into<StartR2<G::Key>>,
+{
+    type InitialError = InitializeR2Error<G::Key>;
+    type InitialStates<'a> = [Result<StateR2<G::Key>, InitializeR2Error<G::Key>>; 1]
+    where
+        Self: 'a,
+        Start: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: Start,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        Start: 'a,
+    {
+        let start: StartR2<G::Key> = from_start.into();
+        [
+            self.0.vertex(&start.key)
+            .ok_or_else(|| InitializeR2Error::MissingVertex(start.key.clone()))
+            .map(|v| {
+                let v: &Position = v.borrow().borrow();
+                StateR2 {
+                    key: start.key,
+                    waypoint: Waypoint::new(start.time, v.x, v.y),
+                }
+            })
+        ]
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum InitializeR2Error<K> {
+    #[error("The graph was missing the start vertex: {0}")]
+    MissingVertex(K),
 }

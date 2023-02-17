@@ -30,6 +30,9 @@ pub use trajectory::Trajectory;
 pub mod travel_time_cost;
 pub use travel_time_cost::*;
 
+pub mod speed_limit;
+pub use speed_limit::*;
+
 // pub mod graph_search;
 
 pub mod hold;

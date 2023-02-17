@@ -15,4 +15,24 @@
  *
 */
 
-pub mod search_r2;
+/// A trait for properties that can specify speed limits.
+pub trait SpeedLimiter {
+    fn speed_limit(&self) -> Option<f64>;
+}
+
+/// Empty tuples `()` can be used for [`SpeedLimiter`]. They always return that
+/// there is no speed limit.
+impl SpeedLimiter for () {
+    fn speed_limit(&self) -> Option<f64> {
+        None
+    }
+}
+
+/// A simple struct for implementing the SpeedLimiter trait.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpeedLimit(pub Option<f64>);
+impl SpeedLimiter for SpeedLimit {
+    fn speed_limit(&self) -> Option<f64> {
+        self.0
+    }
+}
