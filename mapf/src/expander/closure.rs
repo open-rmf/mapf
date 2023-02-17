@@ -15,7 +15,7 @@
  *
 */
 
-use crate::{error::Error, expander::traits::*};
+use crate::{error::StdError, expander::traits::*};
 use std::{fmt::Debug, sync::Arc};
 
 pub struct Closure<
@@ -57,7 +57,7 @@ where
 impl<N, G, Err, Exp, F> Targeted<G> for Closure<N, G, Err, Exp, F>
 where
     G: Goal<N>,
-    Err: Error,
+    Err: StdError,
     Exp: IntoIterator<Item = Result<Arc<N>, Err>>,
     F: Fn(&Arc<N>, &G) -> Exp,
 {

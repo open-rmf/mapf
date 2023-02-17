@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    error::Error,
+    error::StdError,
     expander::{traits::*, Closure},
 };
 use std::sync::Arc;
@@ -28,7 +28,7 @@ pub struct Chain<E: Expander, C: Expander<Node = E::Node>> {
 }
 
 #[derive(ThisError, Debug)]
-pub enum ChainErr<E: Error, C: Error> {
+pub enum ChainErr<E: StdError, C: StdError> {
     #[error("An error occurred in the base expander:\n{0}")]
     Base(E),
     #[error("An error occurred in the chained expander:\n{0}")]
@@ -132,7 +132,7 @@ pub trait Chainable {
     where
         Self: Sized,
         G: Goal<NodeOf<Self::Base>>,
-        Err: Error,
+        Err: StdError,
         Exp: IntoIterator<Item = Result<Arc<NodeOf<Self::Base>>, Err>>,
         F: Fn(&Arc<NodeOf<Self::Base>>, &G) -> Exp,
     {

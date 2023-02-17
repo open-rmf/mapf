@@ -15,22 +15,22 @@
  *
 */
 
-use crate::{error::Error, expander::traits::*};
+use crate::{error::StdError, expander::traits::*};
 use std::{marker::PhantomData, sync::Arc};
 use thiserror::Error as ThisError;
 
 pub trait AimlessConstraint<N> {
-    type ConstraintError: Error;
+    type ConstraintError: StdError;
     fn constrain(&self, node: Arc<N>) -> Result<Option<Arc<N>>, Self::ConstraintError>;
 }
 
 pub trait TargetedConstraint<N, G> {
-    type ConstraintError: Error;
+    type ConstraintError: StdError;
     fn constrain(&self, node: Arc<N>, goal: &G) -> Result<Option<Arc<N>>, Self::ConstraintError>;
 }
 
 pub trait ReversibleConstraint {
-    type ReversalError: Error;
+    type ReversalError: StdError;
     type Reverse;
     fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
 }
@@ -41,7 +41,7 @@ pub struct Constrain<E: Expander, C> {
 }
 
 #[derive(ThisError, Debug)]
-pub enum ConstrainErr<E: Error, C: Error> {
+pub enum ConstrainErr<E: StdError, C: StdError> {
     #[error("An error occurred in the expander:\n{0}")]
     Base(E),
     #[error("An error occurred in the constraint:\n{0}")]
@@ -170,7 +170,7 @@ where
 
 impl<F, N, Err> AimlessConstraint<N> for AimlessConstraintClosure<F, N, Err>
 where
-    Err: Error,
+    Err: StdError,
     F: Fn(Arc<N>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
@@ -199,7 +199,7 @@ where
 impl<F, N, G, Err> TargetedConstraint<N, G> for TargetedConstraintClosure<F, N, G, Err>
 where
     G: Goal<N>,
-    Err: Error,
+    Err: StdError,
     F: Fn(Arc<N>, &G) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
@@ -228,7 +228,7 @@ where
 impl<F, N, G, Err> AimlessConstraint<N> for ConstraintClosure<F, N, G, Err>
 where
     G: Goal<N>,
-    Err: Error,
+    Err: StdError,
     F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;
@@ -240,7 +240,7 @@ where
 impl<F, N, G, Err> TargetedConstraint<N, G> for ConstraintClosure<F, N, G, Err>
 where
     G: Goal<N>,
-    Err: Error,
+    Err: StdError,
     F: Fn(Arc<N>, Option<&G>) -> Result<Option<Arc<N>>, Err>,
 {
     type ConstraintError = Err;

@@ -41,21 +41,22 @@ pub trait Initializable<Start, State> {
 }
 
 // An empty tuple implements Initializable by simply accepting an initial state.
-impl<T> Initializable<T, T> for () {
+impl<Start: Into<State>, State> Initializable<Start, State> for () {
     type InitialError = NoError;
-    type InitialStates<'a> = [Result<T, NoError>; 1] where T: 'a;
+    type InitialStates<'a> = [Result<State, NoError>; 1]
+    where
+        Start: 'a,
+        State: 'a;
 
     fn initialize<'a>(
         &'a self,
-        from_start: T,
+        from_start: Start,
     ) -> Self::InitialStates<'a>
     where
-        Self: 'a,
-        Self::InitialError: 'a,
-        T: 'a,
-        T: 'a,
+        Start: 'a,
+        State: 'a,
     {
-        [Ok(from_start)]
+        [Ok(from_start.into())]
     }
 }
 

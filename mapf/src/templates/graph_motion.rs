@@ -19,7 +19,7 @@ use crate::{
     Graph, graph::Edge,
     domain::{Domain, Extrapolator, Activity, KeyedSpace},
     util::FlatResultMapTrait,
-    error::Error,
+    error::StdError,
 };
 use thiserror::Error as ThisError;
 use std::{
@@ -51,7 +51,7 @@ where
     G::Key: Clone + 'static,
     G::EdgeAttributes: Clone + 'static,
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
-    E::ExtrapolationError: Error,
+    E::ExtrapolationError: StdError,
 {
     type ActivityAction = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;

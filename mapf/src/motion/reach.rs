@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    error::{Error, NoError},
+    error::{StdError, NoError},
     motion::{Trajectory, Waypoint},
 };
 
@@ -25,7 +25,7 @@ use crate::{
 /// motion decision. This returns an iterator in case there are multiple options
 /// for how to reach the goal with a single motion decision.
 pub trait Reachable<Node, Goal, W: Waypoint> {
-    type ReachError: Error;
+    type ReachError: StdError;
     type Reaching<'a>: IntoIterator<Item = Result<Trajectory<W>, Self::ReachError>>
     where
         Self: 'a,

@@ -16,12 +16,12 @@
 */
 
 use crate::{
-    error::{Error, NoError},
+    error::{StdError, NoError},
     node::Cost,
 };
 
 pub trait Heuristic<Start, Goal, C: Cost> {
-    type Error: Error;
+    type Error: StdError;
 
     fn estimate_cost(&self, from_state: &Start, to_goal: &Goal) -> Result<Option<C>, Self::Error>;
 }

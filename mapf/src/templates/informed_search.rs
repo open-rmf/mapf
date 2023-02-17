@@ -23,9 +23,8 @@ use crate::{
         Connectable, Chained,
     },
     util::FlatResultMapTrait,
-    error::Error,
+    error::{StdError, ThisError, Anyhow},
 };
-use thiserror::Error as ThisError;
 
 /// `InformedSearch` template helps produce a domain for graph-based motion
 /// planning that is compatible with the [`AStar`] and [`AStarConnect`] algorithms.
@@ -86,6 +85,34 @@ impl<A: Domain, W, H, X> InformedSearch<A, W, H, X, (), (), ()> {
             initializer: (),
             satisfier: (),
             connector: (),
+        }
+    }
+}
+
+impl<A, W, H, X, S, C> InformedSearch<A, W, H, X, (), S, C> {
+    pub fn with_initializer<I>(self, initializer: I) -> InformedSearch<A, W, H, X, I, S, C> {
+        InformedSearch {
+            initializer,
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer,
+            satisfier: self.satisfier,
+            connector: self.connector
+        }
+    }
+}
+
+impl<A, W, H, X, I1, S, C> InformedSearch<A, W, H, X, I1, S, C> {
+    pub fn replace_initializer<I2>(self, new_initializer: I2) -> InformedSearch<A, W, H, X, I2, S, C> {
+        InformedSearch {
+            initializer: new_initializer,
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer,
+            satisfier: self.satisfier,
+            connector: self.connector
         }
     }
 }
@@ -208,7 +235,7 @@ impl<A, W, H, X, I, S, C> Weighted<A::State, A::ActivityAction> for InformedSear
 where
     A: Domain + Activity<A::State>,
     W: Weighted<A::State, A::ActivityAction>,
-    W::WeightedError: Error,
+    W::WeightedError: StdError,
 {
     type Cost = W::Cost;
     type WeightedError = W::WeightedError;
@@ -233,7 +260,7 @@ impl<A, W, H, X, I, S, C, Goal> Informed<A::State, Goal> for InformedSearch<A, W
 where
     A: Domain,
     H: Informed<A::State, Goal>,
-    H::InformedError: Error,
+    H::InformedError: StdError,
 {
     type CostEstimate = H::CostEstimate;
     type InformedError = H::InformedError;
@@ -250,7 +277,7 @@ impl<A, W, H, X, I, S, C, Goal> Satisfiable<A::State, Goal> for InformedSearch<A
 where
     A: Domain,
     S: Satisfiable<A::State, Goal>,
-    S::SatisfactionError: Error,
+    S::SatisfactionError: StdError,
 {
     type SatisfactionError = S::SatisfactionError;
     fn is_satisfied(
@@ -272,7 +299,7 @@ where
     S: 'static,
     A::State: Clone,
     C: Connectable<A::State, A::ActivityAction, Goal> + 'static,
-    C::ConnectionError: Error,
+    C::ConnectionError: Into<Anyhow>,
 {
     type ConnectionError = anyhow::Error;
     type Connections<'a> = impl IntoIterator<Item=Result<(A::ActivityAction, A::State), Self::ConnectionError>> + 'a

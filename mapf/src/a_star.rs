@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    error::StdError,
+    error::{StdError, Anyhow, ThisError},
     algorithm::{Algorithm, Coherent, Solvable, Status, MinimumCostBound, Measure},
     domain::{
         Domain, Activity, Weighted, Initializable, Informed, Satisfiable,
@@ -28,8 +28,8 @@ use std::{
     collections::BinaryHeap,
     ops::Add,
 };
-use thiserror::Error as ThisError;
 
+#[derive(Debug, Clone)]
 pub struct Solution<State, Action, Cost> {
     pub initial_state: State,
     pub sequence: Vec<(Action, State)>,
@@ -62,7 +62,7 @@ pub struct Memory<Closed, State, Action, Cost> {
 }
 
 #[derive(ThisError, Debug)]
-pub enum AStarSearchError<D: StdError> {
+pub enum AStarSearchError<D> {
     #[error("An error occurred in the algorithm:\n{0}")]
     Algorithm(AStarImplError),
     #[error("An error occurred in the domain:\n{0}")]
@@ -81,7 +81,7 @@ impl<D> AStar<D> {
     pub fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
     where
         D: Domain,
-        D::Error: StdError,
+        // D::Error: StdError,
     {
         AStarSearchError::Domain(err.into())
     }
@@ -89,7 +89,7 @@ impl<D> AStar<D> {
     pub fn algo_err(err: AStarImplError) -> AStarSearchError<D::Error>
     where
         D: Domain,
-        D::Error: StdError,
+        // D::Error: StdError,
     {
         AStarSearchError::Algorithm(err)
     }
@@ -103,7 +103,7 @@ where
     + Weighted<D::State, D::ActivityAction>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Error: StdError,
+    // D::Error: StdError,
     D::WeightedError: Into<D::Error>,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
 {
@@ -280,7 +280,7 @@ where
     D::State: Clone,
     D::ActivityAction: Clone,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
-    D::Error: StdError,
+    // D::Error: Into<Anyhow>,
     D::InitialError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::InformedError: Into<D::Error>,
@@ -306,7 +306,7 @@ where
     + Satisfiable<D::State, Goal>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Error: StdError,
+    D::Error: Into<Anyhow>,
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
     D::ActivityError: Into<D::Error>,
@@ -466,7 +466,7 @@ impl<Cost: Ord> Ord for QueueTicket<Cost> {
 enum Flow<T, D>
 where
     D: Domain + Activity<D::State> + Weighted<D::State, D::ActivityAction>,
-    D::Error: StdError,
+    // D::Error: StdError,
 {
     Continue(T),
     Return(Status<Solution<D::State, D::ActivityAction, D::Cost>>),

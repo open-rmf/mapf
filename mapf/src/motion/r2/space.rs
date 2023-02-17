@@ -17,7 +17,7 @@
 
 use crate::{
     domain::{
-        keyed::{Key, Keyed, Keyring},
+        keyed::{Key, Keyed, Keyring, SelfKey},
         space::{Space, KeyedSpace},
     },
     motion::{Timed, TimePoint},
@@ -81,5 +81,26 @@ impl<K> Timed for StateR2<K> {
 
     fn time(&self) -> &TimePoint {
         self.waypoint.time()
+    }
+}
+
+impl<K: Key + Clone> Keyed for StateR2<K> {
+    type Key = K;
+}
+
+impl<K: Key + Clone> SelfKey for StateR2<K> {
+    fn key(&self) -> Self::Key {
+        self.key.clone()
+    }
+}
+
+pub struct StartR2<K> {
+    pub time: TimePoint,
+    pub key: K,
+}
+
+impl<K> From<(TimePoint, K)> for StartR2<K> {
+    fn from((time, key): (TimePoint, K)) -> Self {
+        StartR2 { key, time }
     }
 }

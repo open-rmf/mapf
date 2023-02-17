@@ -26,6 +26,10 @@ pub trait Keyed {
     type Key: Key;
 }
 
+impl<T: Key + Clone> Keyed for T {
+    type Key = T;
+}
+
 pub trait PartialKeyed {
     type PartialKey: Key;
 }
@@ -40,6 +44,12 @@ pub trait Keyring<State>: Keyed {
 /// can be obtained without a [`Keyring`].
 pub trait SelfKey: Keyed {
     fn key(&self) -> Self::Key;
+}
+
+impl<T: Key + Clone> SelfKey for T {
+    fn key(&self) -> Self::Key {
+        self.clone()
+    }
 }
 
 /// Implements a [`Keyring`] for states that implement [`SelfKey`].

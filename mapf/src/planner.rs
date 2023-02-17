@@ -19,7 +19,7 @@ use crate::{
     algorithm::{Coherent, Solvable},
     search::{Search, AbstractSearch},
     halt::Halt,
-    error::Error,
+    error::{StdError, Anyhow},
 };
 use anyhow;
 use std::{cell::RefCell, sync::Arc};
@@ -102,8 +102,8 @@ impl<Algo, Halting> Planner<Algo, Halting> {
     pub fn into_abstract<S, G>(self) -> AbstractPlanner<S, G, Algo::Solution>
     where
         Algo: Coherent<S, G> + Solvable<G> + 'static,
-        Algo::InitError: Error + 'static,
-        Algo::StepError: Error + 'static,
+        Algo::InitError: Into<Anyhow> + 'static,
+        Algo::StepError: Into<Anyhow> + 'static,
         Halting: Halt<Algo::Memory> + 'static,
         G: 'static,
     {
@@ -120,15 +120,15 @@ pub trait PlannerInterface<S, G, Solution> {
 impl<A, H, S, G> PlannerInterface<S, G, A::Solution> for Planner<A, H>
 where
     A: Solvable<G> + Coherent<S, G> + 'static,
-    A::InitError: Error,
-    A::StepError: Error,
+    A::InitError: Into<Anyhow>,
+    A::StepError: Into<Anyhow>,
     H: Halt<A::Memory> + 'static,
     G: 'static,
 {
     fn plan(&self, start: S, goal: G) -> anyhow::Result<AbstractSearch<A::Solution>> {
         Planner::plan(self, start, goal)
             .map(Into::into)
-            .map_err(anyhow::Error::new)
+            .map_err(Into::into)
     }
 }
 

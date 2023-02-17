@@ -18,11 +18,12 @@
 use crate::{
     templates::{InformedSearch, GraphMotion},
     motion::{
-        TravelTimeCost,
-        r2::{*, timed_position::{LineFollow, SpeedLimiter}},
+        TravelTimeCost, TimePoint,
+        r2::{*, timed_position::{Waypoint, LineFollow, SpeedLimiter}},
     },
     directed::simple::SimpleGraph,
-    domain::KeyedCloser,
+    domain::{KeyedCloser, Initializable},
+    error::ThisError,
 };
 use std::sync::Arc;
 
@@ -32,6 +33,68 @@ impl SpeedLimiter for SpeedLimit {
     fn speed_limit(&self) -> Option<f64> {
         self.0
     }
+}
+
+pub struct InitializeSimpleR2(pub Arc<SimpleGraph<Position, SpeedLimit>>);
+
+impl Initializable<usize, StateR2<usize>> for InitializeSimpleR2 {
+    type InitialError = InitializeSimpleR2Error;
+    type InitialStates<'a> = [Result<StateR2<usize>, InitializeSimpleR2Error>; 1];
+    fn initialize<'a>(
+        &'a self,
+        from_start: usize,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+    {
+        [
+            self.0.vertices.get(from_start)
+            .ok_or_else(|| InitializeSimpleR2Error::MissingVertex(from_start))
+            .map(|v|
+                StateR2 {
+                    key: from_start,
+                    waypoint: Waypoint::new(TimePoint::zero(), v.x, v.y),
+                }
+            )
+        ]
+    }
+}
+
+impl<S: Into<StartR2<usize>>> Initializable<S, StateR2<usize>> for InitializeSimpleR2 {
+    type InitialError = InitializeSimpleR2Error;
+    type InitialStates<'a> = [Result<StateR2<usize>, InitializeSimpleR2Error>; 1]
+    where
+        S: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: S,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        S: 'a,
+        StateR2<usize>: 'a,
+    {
+        let start: StartR2<usize> = from_start.into();
+        [
+            self.0.vertices.get(start.key)
+            .ok_or_else(|| InitializeSimpleR2Error::MissingVertex(start.key))
+            .map(|v|
+                StateR2 {
+                    key: start.key,
+                    waypoint: Waypoint::new(start.time, v.x, v.y),
+                }
+            )
+        ]
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum InitializeSimpleR2Error {
+    #[error("The graph was missing the start vertex: {0}")]
+    MissingVertex(usize),
 }
 
 pub type SimpleR2 = InformedSearch<
@@ -46,7 +109,7 @@ pub type SimpleR2 = InformedSearch<
         TravelTimeCost,
     >,
     KeyedCloser<DiscreteSpaceTimeR2<usize>>,
-    (),
+    InitializeSimpleR2,
     (),
     (),
 >;
@@ -65,12 +128,13 @@ impl SimpleR2 {
             TravelTimeCost(1.0),
             DirectTravelHeuristic {
                 space: DiscreteSpaceTimeR2::<usize>::new(),
-                graph,
+                graph: graph.clone(),
                 weight: TravelTimeCost(1.0),
                 extrapolator: line_follow,
             },
             KeyedCloser(DiscreteSpaceTimeR2::<usize>::new()),
         )
+        .with_initializer(InitializeSimpleR2(graph))
     }
 }
 
@@ -125,6 +189,7 @@ mod tests {
             )
         );
 
-        planner.plan(0usize, 8usize).unwrap();
+        let solution = planner.plan(0usize, 8usize).unwrap().solve().unwrap();
+        println!("{solution:#?}");
     }
 }

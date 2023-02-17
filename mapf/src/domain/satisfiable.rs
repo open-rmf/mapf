@@ -15,7 +15,10 @@
  *
 */
 
-use crate::error::NoError;
+use crate::{
+    domain::SelfKey,
+    error::NoError,
+};
 
 /// The `Satisfiable` trait allows search algorithms to recognize when a state
 /// has reached a goal.
@@ -29,15 +32,13 @@ pub trait Satisfiable<State, Goal> {
     ) -> Result<bool, Self::SatisfactionError>;
 }
 
-// Implement Satisfiable for an empty tuple by accepting a state as the goal and
-// doing an equality comparison.
-impl<State: PartialEq> Satisfiable<State, State> for () {
+impl<State: SelfKey> Satisfiable<State, State::Key> for () {
     type SatisfactionError = NoError;
     fn is_satisfied(
         &self,
         by_state: &State,
-        for_goal: &State,
+        for_goal: &State::Key,
     ) -> Result<bool, Self::SatisfactionError> {
-        Ok(by_state.eq(for_goal))
+        Ok(by_state.key() == *for_goal)
     }
 }

@@ -16,10 +16,11 @@
 */
 
 pub use std::error::Error as StdError;
-use thiserror::Error as ThisError;
+pub use anyhow::Error as Anyhow;
+pub use thiserror::Error as ThisError;
 
-pub trait Error: StdError + Send + Sync + 'static {}
-impl<T: StdError + Send + Sync + 'static> Error for T {}
+// pub trait Error: StdError + Send + Sync + 'static {}
+// impl<T: StdError + Send + Sync + 'static> Error for T {}
 
 /// Use this enum for situations where you are required to provide an Error
 /// type but there is no possibility of an error being produced. Since NoError

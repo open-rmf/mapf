@@ -21,7 +21,7 @@ use std::{cell::RefCell, sync::Arc};
 use crate::{
     algorithm::{Algorithm, Solvable, Status},
     halt::Halt,
-    error::Error,
+    error::{StdError, Anyhow},
 };
 
 /// Search manages the progress of a planning effort.
@@ -126,14 +126,14 @@ impl<A, G, H> SearchInterface<A::Solution> for Search<A, G, H>
 where
     A: Solvable<G>,
     H: Halt<A::Memory>,
-    A::StepError: Error,
+    A::StepError: Into<Anyhow>,
 {
     fn solve(&mut self) -> anyhow::Result<Status<A::Solution>> {
-        Search::solve(self).map_err(anyhow::Error::new)
+        Search::solve(self).map_err(Into::into)
     }
 
     fn step(&mut self) -> anyhow::Result<Status<A::Solution>> {
-        Search::step(self).map_err(anyhow::Error::new)
+        Search::step(self).map_err(Into::into)
     }
 }
 
@@ -198,7 +198,7 @@ pub struct AbstractSearch<Solution> {
 impl<A, G, H> From<Search<A, G, H>> for AbstractSearch<A::Solution>
 where
     A: Solvable<G> + 'static,
-    A::StepError: Error,
+    A::StepError: Into<Anyhow>,
     H: Halt<A::Memory> + 'static,
     G: 'static,
 {
@@ -225,7 +225,7 @@ impl<A, G, H> From<Search<A, G, H>> for AbstractSearchWithHalting<A::Solution, H
 where
     A: Solvable<G> + 'static,
     H: Halt<A::Memory> + 'static,
-    A::StepError: Error,
+    A::StepError: Into<Anyhow>,
     G: 'static,
 {
     fn from(value: Search<A, G, H>) -> Self {
