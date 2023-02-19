@@ -22,6 +22,20 @@ pub enum Status<Solution> {
     Solved(Solution),
 }
 
+impl<S> Status<S> {
+    pub fn incomplete(&self) -> bool {
+        matches!(self, Status::Incomplete)
+    }
+
+    pub fn impossible(&self) -> bool {
+        matches!(self, Status::Impossible)
+    }
+
+    pub fn solved(&self) -> bool {
+        matches!(self, Status::Solved(_))
+    }
+}
+
 impl<S> From<S> for Status<S> {
     fn from(value: S) -> Self {
         Status::Solved(value)

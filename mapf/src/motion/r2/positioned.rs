@@ -15,8 +15,20 @@
  *
 */
 
-pub mod search_r2;
-pub use search_r2::*;
+use crate::motion::{r2::Point, se2};
 
-pub mod search_se2;
-pub use search_se2::*;
+pub trait Positioned {
+    fn point(&self) -> Point;
+}
+
+impl Positioned for Point {
+    fn point(&self) -> Point {
+        *self
+    }
+}
+
+impl Positioned for se2::Position {
+    fn point(&self) -> Point {
+        self.translation.vector.into()
+    }
+}

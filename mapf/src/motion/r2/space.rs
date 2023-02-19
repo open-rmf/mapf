@@ -155,6 +155,6 @@ where
 
 #[derive(Debug, ThisError)]
 pub enum InitializeR2Error<K> {
-    #[error("The graph was missing the start vertex: {0}")]
+    #[error("The graph was missing the start vertex: {0:?}")]
     MissingVertex(K),
 }

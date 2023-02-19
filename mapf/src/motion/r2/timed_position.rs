@@ -15,7 +15,7 @@
  *
 */
 
-use super::{Position, Velocity};
+use super::{Position, Velocity, Positioned};
 use crate::{
     motion::{self, SpeedLimiter, se2, timed, InterpError, Interpolation},
     domain::{Extrapolator, Reversible},
@@ -172,7 +172,7 @@ impl LineFollow {
 
 impl<Target, Guidance> Extrapolator<Waypoint, Target, Guidance> for LineFollow
 where
-    Target: Borrow<Position>,
+    Target: Positioned,
     Guidance: SpeedLimiter,
 {
     type Extrapolation = ArrayVec<Waypoint, 1>;
@@ -183,13 +183,13 @@ where
         to_target: &Target,
         with_guidance: &Guidance,
     ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, Self::ExtrapolationError> {
-        self.extrapolate_impl(from_state, to_target.borrow(), with_guidance.speed_limit())
+        self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit())
     }
 }
 
 #[derive(Debug, ThisError, Clone, Copy)]
 pub enum LineFollowError {
-    #[error("LineFollow::extrapolate was provided with an invalid speed limit (must be >0.0): {0}")]
+    #[error("provided with an invalid speed limit (must be >0.0): {0}")]
     InvalidSpeedLimit(f64),
 }
 

@@ -15,13 +15,15 @@
  *
 */
 
-use super::{Point, Position, Vector, Velocity};
+use super::{Point, Position, Vector, Velocity, MaybeOriented};
 use crate::{
-    error::NoError,
-    motion::{self, r2, timed, Extrapolator, InterpError, Interpolation},
+    motion::{self, SpeedLimiter, r2, timed, InterpError, Interpolation, Duration},
+    domain::{Extrapolator, Reversible},
+    error::{NoError, ThisError},
 };
 use arrayvec::ArrayVec;
 use time_point::TimePoint;
+use std::borrow::Borrow;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -232,12 +234,18 @@ impl DifferentialDriveLineFollow {
         &self,
         from_waypoint: &Waypoint,
         to_target: &Point,
-    ) -> Result<ReachedTarget, NoError> {
+        speed_limiter: &impl SpeedLimiter,
+    ) -> Result<ReachedTarget, DifferentialDriveLineFollowError> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
         let mut output: ArrayVec<Waypoint, 3> = ArrayVec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
+
+        let translational_speed = speed_limiter
+            .speed_limit()
+            .map(|s| s.min(self.translational_speed))
+            .unwrap_or(self.translational_speed);
 
         let p0 = Point::from(from_waypoint.position.translation.vector);
         let p1 = to_target;
@@ -262,7 +270,7 @@ impl DifferentialDriveLineFollow {
 
             current_yaw = approach_yaw;
             current_time +=
-                time_point::Duration::from_secs_f64(distance / self.translational_speed);
+                time_point::Duration::from_secs_f64(distance / translational_speed);
             output.push(Waypoint {
                 time: current_time,
                 position: Position::new(p1.coords, approach_yaw.angle()),
@@ -283,46 +291,52 @@ struct ReachedTarget {
     yaw: nalgebra::UnitComplex<f64>,
 }
 
-impl Extrapolator<Waypoint, Position> for DifferentialDriveLineFollow {
-    type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
-    type Error = NoError;
+impl<Target, Guidance> Extrapolator<Waypoint, Target, Guidance> for DifferentialDriveLineFollow
+where
+    Target: r2::Positioned + MaybeOriented,
+    Guidance: SpeedLimiter,
+{
+    type Extrapolation = ArrayVec<Waypoint, 3>;
+    type ExtrapolationError = DifferentialDriveLineFollowError;
 
     fn extrapolate(
         &self,
-        from_waypoint: &Waypoint,
-        to_position: &Position,
-    ) -> Result<ArrayVec<Waypoint, 3>, NoError> {
-        let mut arrival =
-            self.move_towards_target(from_waypoint, &Point::from(to_position.translation.vector))?;
+        from_state: &Waypoint,
+        to_target: &Target,
+        with_guidance: &Guidance,
+    ) -> Result<Option<(ArrayVec<Waypoint, 3>, Waypoint)>, Self::ExtrapolationError> {
+        let target_point = to_target.point();
+        let mut arrival = self.move_towards_target(
+            from_state,
+            &target_point,
+            with_guidance,
+        )?;
 
-        let delta_yaw_abs = (to_position.rotation / arrival.yaw).angle().abs();
-        if delta_yaw_abs > self.rotational_threshold {
-            // Rotate towards the target orientation if we're not already facing
-            // it.
-            arrival.time +=
-                time_point::Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
-            arrival.waypoints.push(Waypoint {
-                time: arrival.time,
-                position: *to_position,
-            });
+        if let Some(target_yaw) = to_target.maybe_oriented() {
+            let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
+            if delta_yaw_abs > self.rotational_threshold {
+                // Rotate towards the target orientation if we're not already facing
+                // it.
+                arrival.time += Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
+                arrival.waypoints.push(Waypoint {
+                    time: arrival.time,
+                    position: Position::new(
+                        target_point.coords,
+                        target_yaw.angle(),
+                    ),
+                });
+            }
         }
 
-        return Ok(arrival.waypoints);
+        let wp = *arrival.waypoints.last().unwrap_or(from_state);
+        return Ok(Some((arrival.waypoints, wp)));
     }
 }
 
-impl Extrapolator<Waypoint, Point> for DifferentialDriveLineFollow {
-    type Extrapolation<'a> = ArrayVec<Waypoint, 3>;
-    type Error = NoError;
-
-    fn extrapolate<'a>(
-        &'a self,
-        from_waypoint: &Waypoint,
-        to_target: &Point,
-    ) -> Result<ArrayVec<Waypoint, 3>, NoError> {
-        self.move_towards_target(from_waypoint, to_target)
-            .map(|arrival| arrival.waypoints)
-    }
+#[derive(Debug, ThisError, Clone, Copy)]
+pub enum DifferentialDriveLineFollowError {
+    #[error("provided with an invalid speed limit (must be >0.0): {0}")]
+    InvalidSpeedLimit(f64),
 }
 
 #[cfg(test)]
@@ -362,9 +376,10 @@ mod tests {
         let movement = DifferentialDriveLineFollow::new(2.0, 3.0)
             .expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
-        let waypoints = movement
-            .extrapolate(&wp0, &p_target)
-            .expect("Failed to extrapolate");
+        let (waypoints, end) = movement
+            .extrapolate(&wp0, &p_target, &())
+            .expect("Failed to extrapolate")
+            .expect("The extrapolation should have produced a path");
         assert_eq!(waypoints.len(), 3);
         assert_relative_eq!(
             waypoints.last().unwrap().time.as_secs_f64(),
@@ -377,15 +392,15 @@ mod tests {
         );
 
         assert_relative_eq!(
-            waypoints.last().unwrap().position.translation.vector[0],
+            end.position.translation.vector[0],
             p_target.translation.vector[0]
         );
         assert_relative_eq!(
-            waypoints.last().unwrap().position.translation.vector[1],
+            end.position.translation.vector[1],
             p_target.translation.vector[1]
         );
         assert_relative_eq!(
-            waypoints.last().unwrap().position.rotation.angle(),
+            end.position.rotation.angle(),
             p_target.rotation.angle()
         );
 

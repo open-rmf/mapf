@@ -111,9 +111,9 @@ where
 
 #[derive(ThisError, Debug)]
 pub enum GraphMotionError<K, E> {
-    #[error("The graph is missing the requested vertex [{0}]")]
+    #[error("The graph is missing the requested vertex [{0:?}]")]
     MissingVertex(K),
-    #[error("The extrapolator experienced an error:\n{0}")]
+    #[error("The extrapolator experienced an error:\n{0:?}")]
     Extrapolator(E),
     #[error("An action modifier experienced an error:\n{0}")]
     Modifier(anyhow::Error),

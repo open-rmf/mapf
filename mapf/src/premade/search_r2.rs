@@ -19,12 +19,12 @@ use crate::{
     templates::{InformedSearch, GraphMotion},
     motion::{
         TravelTimeCost, SpeedLimiter,
-        r2::{*, timed_position::LineFollow},
+        r2::{*, timed_position::LineFollow, Positioned},
     },
     graph::Graph,
     domain::{Key, KeyedCloser},
 };
-use std::{sync::Arc, borrow::Borrow};
+use std::sync::Arc;
 
 /// A specialization of InformedSearch for searching through R2 (real^2) space,
 /// e.g. the x-y plane.
@@ -42,7 +42,7 @@ impl<G> SearchR2<G>
 where
     G: Graph,
     G::Key: Key + Clone,
-    G::Vertex: Borrow<Position>,
+    G::Vertex: Positioned,
     G::EdgeAttributes: SpeedLimiter,
 {
     /// Create an informed search to explore a graph for an agent that moves
@@ -126,6 +126,46 @@ mod tests {
         );
 
         let solution = planner.plan(0usize, 8usize).unwrap().solve().unwrap();
-        println!("{solution:#?}");
+        // println!("{solution:#?}");
+        assert!(solution.solved());
+    }
+
+    use crate::{
+        occupancy::{
+            Visibility, SparseGrid, Cell,
+            graph::NeighborhoodGraph,
+        },
+    };
+
+    #[test]
+    fn test_occupancy_r2() {
+        let mut visibility = Visibility::new(SparseGrid::new(0.5), 1.25);
+
+        // Fill in a square for the range x=[0, 5], y=[0, 5]
+        visibility.change_cells(
+            &(0..=5).into_iter()
+            .flat_map(|i|
+                (0..=5).into_iter()
+                .map(move |j|
+                    (Cell::new(i, j), true)
+                )
+            )
+            .collect()
+        );
+
+        let graph = NeighborhoodGraph::new(Arc::new(visibility), []);
+
+        let planner = Planner::new(
+            AStar(
+                InformedSearch::new_r2(
+                    Arc::new(graph),
+                    LineFollow::new(2.0).unwrap(),
+                )
+            )
+        );
+
+        let solution = planner.plan(Cell::new(-3, -3), Cell::new(10, 10)).unwrap().solve().unwrap();
+        // println!("{solution:#?}");
+        assert!(solution.solved());
     }
 }

@@ -34,7 +34,7 @@ pub struct VisibilityGraph<G: Grid> {
 
 fn gather_points_of_interest<G: Grid>(
     visibility: &Visibility<G>,
-    points_of_interest: impl Iterator<Item = Cell>,
+    points_of_interest: impl IntoIterator<Item = Cell>,
 ) -> (HashSet<Cell>, HashMap<Cell, HashSet<Cell>>) {
     let mut connections: HashMap<Cell, HashSet<Cell>> = Default::default();
     let mut valid = HashSet::new();
@@ -192,7 +192,7 @@ pub struct NeighborhoodGraph<G: Grid> {
 impl<G: Grid> NeighborhoodGraph<G> {
     pub fn new(
         visibility: Arc<Visibility<G>>,
-        points_of_interest: impl Iterator<Item = Cell>,
+        points_of_interest: impl IntoIterator<Item = Cell>,
     ) -> Self {
         let (points_of_interest, visibility_of_interest) =
             gather_points_of_interest(visibility.as_ref(), points_of_interest);

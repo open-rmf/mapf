@@ -15,8 +15,12 @@
  *
 */
 
-pub mod search_r2;
-pub use search_r2::*;
+use crate::{
+    templates::{InformedSearch, GraphMotion},
+    motion::{
+        TravelTimeCost, SpeedLimiter,
+        se2::{*, timed_position::DifferentialDriveLineFollow},
+    }
+};
 
-pub mod search_se2;
-pub use search_se2::*;
+// pub type SearchSE2<G> = Infor

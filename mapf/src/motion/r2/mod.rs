@@ -27,4 +27,7 @@ pub use space::*;
 
 pub mod direct_travel;
 pub use direct_travel::*;
+
+pub mod positioned;
+pub use positioned::*;
 // pub mod graph_search;
