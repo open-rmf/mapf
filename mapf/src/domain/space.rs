@@ -39,10 +39,10 @@ pub trait Space {
 
 /// [`KeyedSpace`] is a trait for describing spaces whose states can be
 /// assigned a unique key.
-pub trait KeyedSpace<K>: Space + Keyed<Key=K> + Keyring<Self::State> {
+pub trait KeyedSpace<K>: Space + Keyed + Keyring<Self::State> {
     fn make_keyed_state(
         &self,
-        key: K,
+        vertex: K,
         waypoint: Self::Waypoint,
     ) -> Self::State;
 }

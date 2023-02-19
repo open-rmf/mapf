@@ -114,11 +114,12 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         self.vertices.get(*key)
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_key: usize) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a, 'b>(&'a self, from_key: &'b usize) -> Self::EdgeIter<'a>
     where
         V: 'a,
         E: 'a,
     {
+        let from_key = *from_key;
         self
         .edges
         .get(from_key)

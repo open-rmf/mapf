@@ -15,7 +15,7 @@
  *
 */
 
-use std::{cmp::Eq, hash::Hash};
+use std::{cmp::Eq, hash::Hash, borrow::Borrow};
 
 /// The `Key` trait describes objects that can be used as Keys by Keyed domains
 pub trait Key: Hash + Eq + Send + Sync + 'static {}
@@ -37,18 +37,27 @@ pub trait PartialKeyed {
 /// The `Keyring` trait is implemented by structs that can produce a key for a
 /// given state.
 pub trait Keyring<State>: Keyed {
-    fn key_for(&self, state: &State) -> Self::Key;
+    type KeyRef<'a>: Borrow<Self::Key> + 'a
+    where
+        Self: 'a,
+        State: 'a;
+    fn key_for<'a>(&'a self, state: &'a State) -> Self::KeyRef<'a>
+    where
+        Self: 'a,
+        State: 'a;
 }
 
 /// If a State contains its own key, it can implement SelfKey so that its key
 /// can be obtained without a [`Keyring`].
 pub trait SelfKey: Keyed {
-    fn key(&self) -> Self::Key;
+    type KeyRef<'a>: Borrow<Self::Key> + 'a where Self: 'a;
+    fn key<'a>(&'a self) -> Self::KeyRef<'a> where Self: 'a;
 }
 
 impl<T: Key + Clone> SelfKey for T {
-    fn key(&self) -> Self::Key {
-        self.clone()
+    type KeyRef<'a> = &'a Self::Key where Self: 'a;
+    fn key<'a>(&'a self) -> &'a Self::Key where Self: 'a {
+        self
     }
 }
 
@@ -72,7 +81,11 @@ impl<K: Key> Keyed for SelfKeyring<K> {
 }
 
 impl<State: SelfKey> Keyring<State> for SelfKeyring<State::Key> {
-    fn key_for(&self, state: &State) -> Self::Key {
+    type KeyRef<'a> = State::KeyRef<'a> where State: 'a;
+    fn key_for<'a>(&'a self, state: &'a State) -> State::KeyRef<'a>
+    where
+        State: 'a,
+    {
         state.key()
     }
 }
@@ -100,7 +113,18 @@ impl<K: Key> Keyed for SelfPartialKeyring<K> {
 }
 
 impl<K: Key, State: SelfKey<Key=Option<K>>> Keyring<State> for SelfPartialKeyring<K> {
-    fn key_for(&self, state: &State) -> Self::Key {
+    type KeyRef<'a> = State::KeyRef<'a>
+    where
+        Self: 'a,
+        State: 'a,
+        K: 'a;
+
+    fn key_for<'a>(&'a self, state: &'a State) -> State::KeyRef<'a>
+    where
+        Self: 'a,
+        State: 'a,
+        K: 'a,
+    {
         state.key()
     }
 }

@@ -20,7 +20,9 @@ pub type Point = Position;
 pub type Velocity = nalgebra::Vector2<f64>;
 
 pub mod timed_position;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+pub use timed_position::*;
+
+pub type LinearTrajectory = super::Trajectory<Waypoint>;
 
 pub mod space;
 pub use space::*;

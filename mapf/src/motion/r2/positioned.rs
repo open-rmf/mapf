@@ -17,18 +17,34 @@
 
 use crate::motion::{r2::Point, se2};
 
-pub trait Positioned {
-    fn point(&self) -> Point;
+pub trait MaybePositioned {
+    fn maybe_point(&self) -> Option<Point>;
 }
 
-impl Positioned for Point {
+pub trait Positioned: MaybePositioned {
     fn point(&self) -> Point {
-        *self
+        self.maybe_point().unwrap()
     }
 }
 
-impl Positioned for se2::Position {
-    fn point(&self) -> Point {
-        self.translation.vector.into()
+impl MaybePositioned for Point {
+    fn maybe_point(&self) -> Option<Point> {
+        Some(*self)
+    }
+}
+
+impl Positioned for Point {}
+
+impl MaybePositioned for se2::Position {
+    fn maybe_point(&self) -> Option<Point> {
+        Some(self.translation.vector.into())
+    }
+}
+
+impl Positioned for se2::Position {}
+
+impl MaybePositioned for usize {
+    fn maybe_point(&self) -> Option<Point> {
+        None
     }
 }

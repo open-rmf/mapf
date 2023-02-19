@@ -16,14 +16,12 @@
 */
 
 use crate::{
-    Graph, graph::Edge,
     domain::{
-        Domain, Informed, Extrapolator, Activity, ActivityModifier, Weighted,
-        Satisfiable, Closable, Space, Initializable,
+        Domain, Informed, Activity, Weighted,
+        Satisfiable, Closable, Initializable,
         Connectable, Chained,
     },
-    util::FlatResultMapTrait,
-    error::{StdError, ThisError, Anyhow},
+    error::Anyhow,
 };
 
 /// `InformedSearch` template helps produce a domain for graph-based motion
@@ -103,21 +101,21 @@ impl<A, W, H, X, S, C> InformedSearch<A, W, H, X, (), S, C> {
     }
 }
 
-impl<A, W, H, X, I1, S, C> InformedSearch<A, W, H, X, I1, S, C> {
-    pub fn replace_initializer<I2>(self, new_initializer: I2) -> InformedSearch<A, W, H, X, I2, S, C> {
+impl<A, W, H, X, I, C> InformedSearch<A, W, H, X, I, (), C> {
+    pub fn with_satisfier<S>(self, satisfier: S) -> InformedSearch<A, W, H, X, I, S, C> {
         InformedSearch {
-            initializer: new_initializer,
+            satisfier,
             activity: self.activity,
             weight: self.weight,
             heuristic: self.heuristic,
             closer: self.closer,
-            satisfier: self.satisfier,
-            connector: self.connector
+            initializer: self.initializer,
+            connector: self.connector,
         }
     }
 }
 
-impl<A: Domain, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
+impl<A, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
     /// Give a goal connector to the InformedSearch
     pub fn with_connector<C>(self, connector: C) -> InformedSearch<A, W, H, X, I, S, C> {
         InformedSearch {
@@ -132,14 +130,37 @@ impl<A: Domain, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
     }
 }
 
-impl<A, W, H, X, I, S, C1> InformedSearch<A, W, H, X, I, S, C1> {
-    /// Add another goal connector to the domain
-    pub fn chain_connector<C2>(self, connector2: C2) -> InformedSearch<A, W, H, X, I, S, Chained<C1, C2>> {
+impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
+    /// Replace the initializer of the domain
+    pub fn replace_initializer<I2>(self, new_initializer: I2) -> InformedSearch<A, W, H, X, I2, S, C> {
         InformedSearch {
-            connector: Chained {
-                base: self.connector,
-                prop: connector2,
-            },
+            initializer: new_initializer,
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer,
+            satisfier: self.satisfier,
+            connector: self.connector
+        }
+    }
+
+    /// Replace the satisfier of the domain
+    pub fn replace_satisfier<S2>(self, new_satisfier: S2) -> InformedSearch<A, W, H, X, I, S2, C> {
+        InformedSearch {
+            satisfier: new_satisfier,
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer,
+            initializer: self.initializer,
+            connector: self.connector,
+        }
+    }
+
+    /// Replace the goal connector of the domain
+    pub fn replace_connector<C2>(self, new_connector: C2) -> InformedSearch<A, W, H, X, I, S, C2> {
+        InformedSearch {
+            connector: new_connector,
             activity: self.activity,
             weight: self.weight,
             heuristic: self.heuristic,
@@ -149,10 +170,13 @@ impl<A, W, H, X, I, S, C1> InformedSearch<A, W, H, X, I, S, C1> {
         }
     }
 
-    /// Replace the goal connector of the domain
-    pub fn replace_connector<C2>(self, new_connector: C2) -> InformedSearch<A, W, H, X, I, S, C2> {
+    /// Add another goal connector to the domain
+    pub fn chain_connector<C2>(self, connector2: C2) -> InformedSearch<A, W, H, X, I, S, Chained<C, C2>> {
         InformedSearch {
-            connector: new_connector,
+            connector: Chained {
+                base: self.connector,
+                prop: connector2,
+            },
             activity: self.activity,
             weight: self.weight,
             heuristic: self.heuristic,
@@ -235,7 +259,7 @@ impl<A, W, H, X, I, S, C> Weighted<A::State, A::ActivityAction> for InformedSear
 where
     A: Domain + Activity<A::State>,
     W: Weighted<A::State, A::ActivityAction>,
-    W::WeightedError: StdError,
+    W::WeightedError: Into<Anyhow>,
 {
     type Cost = W::Cost;
     type WeightedError = W::WeightedError;
@@ -260,7 +284,7 @@ impl<A, W, H, X, I, S, C, Goal> Informed<A::State, Goal> for InformedSearch<A, W
 where
     A: Domain,
     H: Informed<A::State, Goal>,
-    H::InformedError: StdError,
+    H::InformedError: Into<Anyhow>,
 {
     type CostEstimate = H::CostEstimate;
     type InformedError = H::InformedError;
@@ -277,7 +301,7 @@ impl<A, W, H, X, I, S, C, Goal> Satisfiable<A::State, Goal> for InformedSearch<A
 where
     A: Domain,
     S: Satisfiable<A::State, Goal>,
-    S::SatisfactionError: StdError,
+    S::SatisfactionError: Into<Anyhow>,
 {
     type SatisfactionError = S::SatisfactionError;
     fn is_satisfied(

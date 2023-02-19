@@ -15,11 +15,14 @@
  *
 */
 
-use super::{Point, Position, Vector, Velocity, MaybeOriented};
+use super::{Point, Position, Vector, Velocity, MaybeOriented, StateSE2};
 use crate::{
-    motion::{self, SpeedLimiter, r2, timed, InterpError, Interpolation, Duration},
-    domain::{Extrapolator, Reversible},
-    error::{NoError, ThisError},
+    motion::{
+        self, SpeedLimiter, timed, InterpError, Interpolation, Duration,
+        r2::{self, MaybePositioned},
+    },
+    domain::{Extrapolator, SelfKey, Connectable, Reversible},
+    error::ThisError,
 };
 use arrayvec::ArrayVec;
 use time_point::TimePoint;
@@ -337,6 +340,61 @@ where
 pub enum DifferentialDriveLineFollowError {
     #[error("provided with an invalid speed limit (must be >0.0): {0}")]
     InvalidSpeedLimit(f64),
+}
+
+#[derive(Debug, Clone)]
+pub struct MergeIntoGoal<const R: u32>(pub DifferentialDriveLineFollow);
+
+impl<K, Target, const R: u32> Connectable<StateSE2<K, R>, ArrayVec<Waypoint, 3>, Target> for MergeIntoGoal<R>
+where
+    Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
+    K: PartialEq + std::fmt::Debug,
+{
+    type ConnectionError = DifferentialDriveLineFollowError;
+    type Connections<'a> = Option<Result<(ArrayVec<Waypoint, 3>, StateSE2<K, R>), Self::ConnectionError>>
+    where
+        K: 'a,
+        Target: 'a;
+
+    fn connect<'a>(
+        &'a self,
+        from_state: StateSE2<K, R>,
+        to_target: &'a Target,
+    ) -> Self::Connections<'a>
+    where
+        Self: 'a,
+        Self::ConnectionError: 'a,
+        StateSE2<K, R>: 'a,
+        ArrayVec<Waypoint, 3>: 'a,
+        Target: 'a,
+    {
+        let goal_key = to_target.key();
+        if from_state.key.vertex != *goal_key.borrow() {
+            return None;
+        }
+
+        let target_pos = to_target.maybe_point();
+        let target_orientation = to_target.maybe_oriented();
+        if target_pos.is_none() && target_orientation.is_none() {
+            // If there isn't a position or orientation specified for the goal,
+            // then simply return. We don't need to do anything special to reach
+            // the goal.
+            return None;
+        }
+
+        let target_pos = Position::from_parts(
+            target_pos.unwrap_or(from_state.waypoint.position.translation.vector.into()).into(),
+            target_orientation.unwrap_or(from_state.waypoint.position.rotation),
+        );
+
+        self.0.extrapolate(&from_state.waypoint, &target_pos, &())
+        .transpose()
+        .map(|r|
+            r.map(|(action, wp)|
+                (action, StateSE2::new(from_state.key.vertex, wp))
+            )
+        )
+    }
 }
 
 #[cfg(test)]

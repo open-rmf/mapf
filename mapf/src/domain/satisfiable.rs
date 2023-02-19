@@ -19,6 +19,7 @@ use crate::{
     domain::SelfKey,
     error::NoError,
 };
+use std::borrow::Borrow;
 
 /// The `Satisfiable` trait allows search algorithms to recognize when a state
 /// has reached a goal.
@@ -32,13 +33,17 @@ pub trait Satisfiable<State, Goal> {
     ) -> Result<bool, Self::SatisfactionError>;
 }
 
-impl<State: SelfKey> Satisfiable<State, State::Key> for () {
+impl<State, Goal> Satisfiable<State, Goal> for ()
+where
+    State: Borrow<Goal>,
+    Goal: PartialEq,
+{
     type SatisfactionError = NoError;
     fn is_satisfied(
         &self,
         by_state: &State,
-        for_goal: &State::Key,
+        for_goal: &Goal,
     ) -> Result<bool, Self::SatisfactionError> {
-        Ok(by_state.key() == *for_goal)
+        Ok(*by_state.borrow() == *for_goal)
     }
 }

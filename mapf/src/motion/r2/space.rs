@@ -16,15 +16,11 @@
 */
 
 use crate::{
-    domain::{
-        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace,
-        Initializable,
-    },
-    motion::{Timed, TimePoint},
+    domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable},
+    motion::{Timed, TimePoint, r2::*, se2::StateSE2},
     graph::Graph,
     error::ThisError,
 };
-use super::{*, timed_position::Waypoint};
 use std::{sync::Arc, borrow::Borrow};
 
 #[derive(Debug, Clone, Copy)]
@@ -56,8 +52,15 @@ impl<K: Key> Keyed for DiscreteSpaceTimeR2<K> {
 }
 
 impl<K: Key + Clone> Keyring<StateR2<K>> for DiscreteSpaceTimeR2<K> {
-    fn key_for(&self, state: &StateR2<K>) -> Self::Key {
-        state.key.clone()
+    type KeyRef<'a> = &'a Self::Key
+    where
+        K: 'a;
+
+    fn key_for<'a>(&'a self, state: &'a StateR2<K>) -> &'a Self::Key
+    where
+        K: 'a,
+    {
+        &state.key
     }
 }
 
@@ -77,6 +80,12 @@ pub struct StateR2<K> {
     pub waypoint: timed_position::Waypoint,
 }
 
+impl<K> Borrow<K> for StateR2<K> {
+    fn borrow(&self) -> &K {
+        &self.key
+    }
+}
+
 impl<K> Timed for StateR2<K> {
     fn set_time(&mut self, new_time: TimePoint) {
         self.waypoint.set_time(new_time);
@@ -92,11 +101,31 @@ impl<K: Key + Clone> Keyed for StateR2<K> {
 }
 
 impl<K: Key + Clone> SelfKey for StateR2<K> {
-    fn key(&self) -> Self::Key {
-        self.key.clone()
+    type KeyRef<'a> = &'a Self::Key
+    where
+        K: 'a;
+
+    fn key<'a>(&'a self) -> &'a Self::Key
+    where
+        K: 'a
+    {
+        &self.key
     }
 }
 
+impl<K, const R: u32> From<StateSE2<K, R>> for StateR2<K> {
+    fn from(value: StateSE2<K, R>) -> Self {
+        StateR2 {
+            key: value.key.vertex,
+            waypoint: Waypoint {
+                time: value.waypoint.time,
+                position: value.waypoint.position.point(),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StartR2<K> {
     pub time: TimePoint,
     pub key: K,

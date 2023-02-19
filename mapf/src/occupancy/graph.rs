@@ -120,11 +120,11 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         Some(cell.to_center_point(self.visibility.grid().cell_size()))
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a, 'b>(&'a self, from_cell: &'b Self::Key) -> Self::EdgeIter<'a>
     where
         Cell: 'a,
     {
-        // dbg!("visibility graph");
+        let from_cell = *from_cell;
         [from_cell]
             .into_iter()
             .filter(|from_cell| {
@@ -175,7 +175,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
                                             )
                                             .is_none()
                                     })
-                                    .map(move |poi| (from_cell.clone(), *poi))
+                                    .map(move |poi| (from_cell, *poi))
                             }),
                     )
             })
@@ -223,11 +223,12 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         }
     }
 
-    fn edges_from_vertex<'a>(&'a self, from_cell: Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a, 'b>(&'a self, from_cell: &'b Self::Key) -> Self::EdgeIter<'a>
     where
         Cell: 'a,
     {
         // dbg!("neighborhood graph");
+        let from_cell = *from_cell;
         let from_p = from_cell.to_center_point(self.visibility.grid().cell_size());
         [from_cell]
             .into_iter()

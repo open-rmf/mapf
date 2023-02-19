@@ -73,7 +73,7 @@ pub trait Graph {
     fn vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Option<Self::VertexRef<'a>>;
 
     /// Get the edges that originate from the given vertex.
-    fn edges_from_vertex<'a>(&'a self, key: Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Self::EdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,

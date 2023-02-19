@@ -24,9 +24,8 @@ use crate::{
             timed_position::{LineFollow, LineFollowError, Waypoint},
         },
     },
-    domain::{Informed, Weighted, Extrapolator, Key, Space, Keyring, KeyedSpace, SelfKey},
+    domain::{Informed, Weighted, Extrapolator, Key, Keyring, KeyedSpace, SelfKey},
 };
-use num::Zero;
 use arrayvec::ArrayVec;
 use thiserror::Error as ThisError;
 use std::{sync::Arc, borrow::Borrow};
@@ -55,37 +54,24 @@ where
         from_state: &StateR2<G::Key>,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let p0 = {
-            // Should this be an error instead? The current state is off the
-            // graph entirely.
-            if let Some(p) = self.graph.vertex(&self.space.key_for(from_state)) {
+        let p_target = {
+            if let Some(p) = self.graph.vertex(to_goal.key().borrow()) {
                 p
             } else {
                 return Ok(None);
             }
-        };
-
-        let p1 = {
-            if let Some(p) = self.graph.vertex(&to_goal.key()) {
-                p
-            } else {
-                return Ok(None);
-            }
-        };
-
-        let wp0 = Waypoint {
-            time: TimePoint::zero(),
-            position: *p0.borrow().borrow(),
         };
 
         self
         .extrapolator
-        .extrapolate(&from_state.waypoint, p1.borrow().borrow(), &())
+        .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
         .map_err(DirectTravelError::Extrapolator)
         .map(|r|
             r
             .map(|(action, child_wp)| {
-                let child_state = self.space.make_keyed_state(to_goal.key(), child_wp);
+                let child_state = self.space.make_keyed_state(
+                    to_goal.key().borrow().clone(), child_wp
+                );
                 self.weight.cost(from_state, &action, &child_state)
                 .map_err(DirectTravelError::Weighted)
             })

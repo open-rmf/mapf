@@ -28,9 +28,15 @@ pub struct Velocity {
 }
 
 pub mod timed_position;
+pub use timed_position::*;
+
+pub mod space;
+pub use space::*;
+
 pub mod oriented;
 pub use oriented::*;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+
+pub type LinearTrajectory = super::Trajectory<Waypoint>;
 
 // pub mod quickest_path;
 // pub use quickest_path::QuickestPath;

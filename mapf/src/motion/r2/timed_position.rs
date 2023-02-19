@@ -206,12 +206,12 @@ impl Reversible for LineFollow {
     }
 }
 
-// impl From<&se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
-//     fn from(other: &se2::timed_position::DifferentialDriveLineFollow) -> Self {
-//         LineFollow::new(other.translational_speed())
-//             .expect("corrupt speed in DifferentialDriveLineFollow")
-//     }
-// }
+impl From<se2::timed_position::DifferentialDriveLineFollow> for LineFollow {
+    fn from(other: se2::timed_position::DifferentialDriveLineFollow) -> Self {
+        LineFollow::new(other.translational_speed())
+            .expect("corrupt speed in DifferentialDriveLineFollow")
+    }
+}
 
 #[cfg(test)]
 mod tests {

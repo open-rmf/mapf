@@ -54,3 +54,11 @@ impl MaybeOriented for se2::Position {
 }
 
 impl Oriented for se2::Position {}
+
+// NOTE: usize is commonly used as a graph key which means it could also be used
+// as a goal for SE(2) planning, as long as we implement MaybeOriented for it.
+impl MaybeOriented for usize {
+    fn maybe_oriented(&self) -> Option<Orientation> {
+        None
+    }
+}

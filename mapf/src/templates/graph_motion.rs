@@ -46,6 +46,7 @@ where
 impl<S, G, E> Activity<S::State> for GraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
+    S::Key: Borrow<G::Key>,
     S::State: Clone,
     G: Graph,
     G::Key: Clone + 'static,
@@ -73,7 +74,7 @@ where
     {
         self
         .graph
-        .edges_from_vertex(self.space.key_for(&from_state))
+        .edges_from_vertex(self.space.key_for(&from_state.clone()).borrow().borrow())
         .into_iter()
         .flat_map(move |edge| {
             let from_state = from_state.clone();
@@ -126,10 +127,9 @@ mod tests {
         directed::SimpleGraph,
         motion::r2::{
             Position, DiscreteSpaceTimeR2,
-            timed_position::{Waypoint, LineFollow},
+            timed_position::LineFollow,
         },
     };
-    use time_point::TimePoint;
     use std::sync::Arc;
 
     #[test]
@@ -154,7 +154,5 @@ mod tests {
             graph,
             extrapolator: LineFollow::new(1.0),
         };
-
-
     }
 }

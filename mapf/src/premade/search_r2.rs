@@ -17,10 +17,7 @@
 
 use crate::{
     templates::{InformedSearch, GraphMotion},
-    motion::{
-        TravelTimeCost, SpeedLimiter,
-        r2::{*, timed_position::LineFollow, Positioned},
-    },
+    motion::{TravelTimeCost, SpeedLimiter, r2::*},
     graph::Graph,
     domain::{Key, KeyedCloser},
 };

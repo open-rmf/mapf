@@ -17,13 +17,20 @@
 
 use crate::domain::{Keyed, Keyring};
 use super::{Closable, ClosedSet, CloseResult, ClosedStatus};
-use std::{collections::{HashMap, hash_map::Entry}};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    borrow::Borrow,
+};
 
 /// [`KeyedCloser`] implements the [`Closable`] trait by providing a
 /// [`KeyedClosedSet`].
 pub struct KeyedCloser<Ring>(pub Ring);
 
-impl<State, Ring: Keyring<State> + Clone> Closable<State> for KeyedCloser<Ring> {
+impl<State, Ring> Closable<State> for KeyedCloser<Ring>
+where
+    Ring: Keyring<State> + Clone,
+    Ring::Key: Clone,
+{
     type ClosedSet<T> = KeyedClosedSet<Ring, T>;
     fn new_closed_set<T>(&self) -> Self::ClosedSet<T> {
         KeyedClosedSet::new(self.0.clone())
@@ -53,10 +60,14 @@ impl<Ring: Keyed, T> KeyedClosedSet<Ring, T> {
     }
 }
 
-impl<State, Ring: Keyring<State>, T> ClosedSet<State, T> for KeyedClosedSet<Ring, T> {
+impl<State, Ring, T> ClosedSet<State, T> for KeyedClosedSet<Ring, T>
+where
+    Ring: Keyring<State>,
+    Ring::Key: Clone,
+{
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
         let key = self.keyring.key_for(state);
-        match self.container.entry(key) {
+        match self.container.entry(key.borrow().clone()) {
             Entry::Occupied(entry) => {
                 CloseResult::Rejected { value, prior: entry.into_mut() }
             }
@@ -69,12 +80,12 @@ impl<State, Ring: Keyring<State>, T> ClosedSet<State, T> for KeyedClosedSet<Ring
 
     fn replace(&mut self, state: &State, value: T) -> Option<T> {
         let key = self.keyring.key_for(state);
-        self.container.insert(key, value)
+        self.container.insert(key.borrow().clone(), value)
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
         let key = self.keyring.key_for(state);
-        self.container.get(&key).into()
+        self.container.get(key.borrow()).into()
     }
 }
 
@@ -98,8 +109,12 @@ mod tests {
     }
 
     impl SelfKey for TestState {
-        fn key(&self) -> Self::Key {
-            self.index
+        type KeyRef<'a> = &'a Self::Key;
+        fn key<'a>(&'a self) -> &'a Self::Key
+        where
+            Self: 'a,
+        {
+            &self.index
         }
     }
 
