@@ -105,5 +105,9 @@ pub trait ClosedSet<State, T> {
 
 pub mod keyed_closed_set;
 pub use keyed_closed_set::*;
+
 pub mod partial_keyed_closed_set;
 pub use partial_keyed_closed_set::*;
+
+pub mod time_variant_partial_key_closed_set;
+pub use time_variant_partial_key_closed_set::*;
