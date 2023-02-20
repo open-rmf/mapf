@@ -17,7 +17,7 @@
 
 use crate::{
     domain::{PartialKeyed, Keyed, Keyring},
-    motion::{TimePoint, Timed},
+    motion::Timed,
 };
 use super::{Closable, ClosedSet, CloseResult, ClosedStatus};
 use std::{
@@ -27,6 +27,9 @@ use std::{
 
 const DEFAULT_TIME_THRESH: i64 = 100_000_000;
 
+/// Factory for [`TimeVariantPartialKeyedCloser`]. Provide this to your domain,
+/// e.g. [`crate::templates::InformedSearch`], to implement the [`Closable`]
+/// trait for search spaces that are partially keyed and time variant.
 pub struct TimeVariantPartialKeyedCloser<Ring>{
     pub ring: Ring,
     pub time_thresh: i64,
@@ -41,6 +44,8 @@ impl<Ring: Default> Default for TimeVariantPartialKeyedCloser<Ring> {
     }
 }
 
+/// Similar to [`super::PartialKeyedClosedSet`] except values are also considered
+/// unique based on their time value.
 impl<State, Ring> Closable<State> for TimeVariantPartialKeyedCloser<Ring>
 where
     Ring: PartialKeyed + Keyring<State, Key=Option<Ring::PartialKey>> + Clone,

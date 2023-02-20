@@ -22,6 +22,9 @@ use std::{
     borrow::Borrow,
 };
 
+/// Factory for [`PartialKeyedClosedSet`]. Provide this to your domain, e.g.
+/// [`crate::templates::InformedSearch`], to implement the [`Closable`] trait
+/// for search spaces that are partially keyed.
 pub struct PartialKeyedCloser<Ring>(pub Ring);
 
 impl<State, Ring> Closable<State> for PartialKeyedCloser<Ring>
