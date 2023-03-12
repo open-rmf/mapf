@@ -16,7 +16,10 @@
 */
 
 use crate::domain::{Keyed, Keyring};
-use super::{Closable, ClosedSet, CloseResult, ClosedStatus};
+use super::{
+    Closable, ClosedSet, CloseResult, ClosedStatus,
+    AsTimeInvariant, AsTimeVariant, TimeVariantKeyedCloser,
+};
 use std::{
     collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
@@ -34,6 +37,20 @@ where
     type ClosedSet<T> = KeyedClosedSet<Ring, T>;
     fn new_closed_set<T>(&self) -> Self::ClosedSet<T> {
         KeyedClosedSet::new(self.0.clone())
+    }
+}
+
+impl<Ring> AsTimeInvariant for KeyedCloser<Ring> {
+    type TimeInvariantClosable = Self;
+    fn as_time_invariant(self) -> Self::TimeInvariantClosable {
+        self
+    }
+}
+
+impl<Ring> AsTimeVariant for KeyedCloser<Ring> {
+    type TimeVariantClosable = TimeVariantKeyedCloser<Ring>;
+    fn as_time_variant(self) -> Self::TimeVariantClosable {
+        TimeVariantKeyedCloser::new(self.0)
     }
 }
 

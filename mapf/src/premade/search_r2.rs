@@ -74,10 +74,10 @@ mod tests {
         AStar, Planner,
         directed::SimpleGraph,
         motion::SpeedLimit,
+        domain::AsTimeVariant,
     };
 
-    #[test]
-    fn test_simple_r2() {
+    fn make_test_graph() -> SimpleGraph<Position, SpeedLimit> {
         /*
          * 0-----1-----2-----3
          *           /       |
@@ -89,7 +89,7 @@ mod tests {
          */
 
         let s = SpeedLimit(None);
-        let graph = SimpleGraph::from_iters(
+        SimpleGraph::from_iters(
             [
                 Position::new(0.0, 0.0), // 0
                 Position::new(1.0, 0.0), // 1
@@ -111,12 +111,15 @@ mod tests {
                 (5, 7, s), (7, 5, s),
                 (7, 8, s), (8, 7, s),
             ]
-        );
+        )
+    }
 
+    #[test]
+    fn test_simple_r2() {
         let planner = Planner::new(
             AStar(
                 InformedSearch::new_r2(
-                    Arc::new(graph),
+                    Arc::new(make_test_graph()),
                     LineFollow::new(2.0).unwrap(),
                 )
             )
@@ -163,6 +166,23 @@ mod tests {
 
         let solution = planner.plan(Cell::new(-3, -3), Cell::new(10, 10)).unwrap().solve().unwrap();
         // println!("{solution:#?}");
+        assert!(solution.solved());
+    }
+
+    #[test]
+    fn test_simple_time_variant_r2() {
+        let planner = Planner::new(
+            AStar(
+                InformedSearch::new_r2(
+                    Arc::new(make_test_graph()),
+                    LineFollow::new(2.0).unwrap(),
+                )
+                .as_time_variant()
+            )
+        );
+
+        let solution = planner.plan(0usize, 8usize).unwrap().solve().unwrap();
+        println!("{solution:#?}");
         assert!(solution.solved());
     }
 }

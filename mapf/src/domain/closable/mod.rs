@@ -103,11 +103,30 @@ pub trait ClosedSet<State, T> {
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T>;
 }
 
+/// A trait for closables that can be converted to time variant.
+/// This can also be implemented for closables that are already time variant as
+/// they can return themselves unchanged.
+pub trait AsTimeVariant {
+    type TimeVariantClosable;
+    fn as_time_variant(self) -> Self::TimeVariantClosable;
+}
+
+/// A trait for closables that can be converted to time invariant.
+/// This can also be implemented for closables that are already time invariant
+/// as they can return themselves unchanged.
+pub trait AsTimeInvariant {
+    type TimeInvariantClosable;
+    fn as_time_invariant(self) -> Self::TimeInvariantClosable;
+}
+
 pub mod keyed_closed_set;
 pub use keyed_closed_set::*;
 
 pub mod partial_keyed_closed_set;
 pub use partial_keyed_closed_set::*;
 
-pub mod time_variant_partial_key_closed_set;
-pub use time_variant_partial_key_closed_set::*;
+pub mod time_variant_keyed_closed_set;
+pub use time_variant_keyed_closed_set::*;
+
+pub mod time_variant_partial_keyed_closed_set;
+pub use time_variant_partial_keyed_closed_set::*;

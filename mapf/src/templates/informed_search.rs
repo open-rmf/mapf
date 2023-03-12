@@ -19,7 +19,7 @@ use crate::{
     domain::{
         Domain, Informed, Activity, Weighted,
         Satisfiable, Closable, Initializable,
-        Connectable, Chained,
+        Connectable, Chained, AsTimeInvariant, AsTimeVariant,
     },
     error::Anyhow,
 };
@@ -126,6 +126,42 @@ impl<A, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
             closer: self.closer,
             initializer: self.initializer,
             satisfier: self.satisfier,
+        }
+    }
+}
+
+impl<A, W, H, X, I, S, C> AsTimeInvariant for InformedSearch<A, W, H, X, I, S, C>
+where
+    X: AsTimeInvariant,
+{
+    type TimeInvariantClosable = InformedSearch<A, W, H, X::TimeInvariantClosable, I, S, C>;
+    fn as_time_invariant(self) -> Self::TimeInvariantClosable {
+        InformedSearch {
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer.as_time_invariant(),
+            initializer: self.initializer,
+            satisfier: self.satisfier,
+            connector: self.connector,
+        }
+    }
+}
+
+impl<A, W, H, X, I, S, C> AsTimeVariant for InformedSearch<A, W, H, X, I, S, C>
+where
+    X: AsTimeVariant,
+{
+    type TimeVariantClosable = InformedSearch<A, W, H, X::TimeVariantClosable, I, S, C>;
+    fn as_time_variant(self) -> Self::TimeVariantClosable {
+        InformedSearch {
+            activity: self.activity,
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer.as_time_variant(),
+            initializer: self.initializer,
+            satisfier: self.satisfier,
+            connector: self.connector,
         }
     }
 }
