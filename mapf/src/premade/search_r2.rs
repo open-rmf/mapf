@@ -182,7 +182,7 @@ mod tests {
         );
 
         let solution = planner.plan(0usize, 8usize).unwrap().solve().unwrap();
-        println!("{solution:#?}");
+        // println!("{solution:#?}");
         assert!(solution.solved());
     }
 }

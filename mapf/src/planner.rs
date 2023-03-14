@@ -19,7 +19,7 @@ use crate::{
     algorithm::{Coherent, Solvable},
     search::{Search, AbstractSearch},
     halt::Halt,
-    error::{StdError, Anyhow},
+    error::Anyhow,
 };
 use anyhow;
 use std::{cell::RefCell, sync::Arc};

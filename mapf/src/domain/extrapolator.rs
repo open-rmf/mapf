@@ -19,7 +19,9 @@ use crate::error::NoError;
 
 /// Create an action that extrapolates from an initial state to a target.
 ///
-/// See also: [`Connectable`]
+/// See also:
+/// * [`IncrementalExtrapolator`]
+/// * [`crate::domain::Connectable`]
 pub trait Extrapolator<State, Target, Guidance> {
     /// What kind of action is produced during extrapolation
     type Extrapolation;
@@ -45,6 +47,42 @@ pub trait Extrapolator<State, Target, Guidance> {
     ) -> Result<Option<(Self::Extrapolation, State)>, Self::ExtrapolationError>;
 }
 
+/// Incrementally extrapolate an action from a state to a target with the
+/// provided guidance.
+///
+/// This is similar to [`Extrapolator`] except the action from the initial
+/// state to the target can be broken down into a sequence of incremental
+/// actions and states. In [`Extrapolator`] the action must bring the state
+/// all the way to the target, but that is not a requirement for
+/// `IncrementalExtrapolator`.
+///
+/// This can be useful for domain+algorithm combinations that benefit from
+/// more granularity in the actions taken by the agent. For example, a
+/// SE(2) agent using Dijkstra's algorithm can cover more states in its
+/// search cache by breaking down rotations and translations into separate
+/// search nodes. Single-use algorithms like A* do not benefit from covering
+/// more states in its search, and should therefore prefer [`Extrapolator`].
+pub trait IncrementalExtrapolator<State, Target, Guidance> {
+    /// What kind of action is
+    type IncrementalExtrapolation;
+
+    /// What kind of error can happen during extrapolation
+    type IncrementalExtrapolationError;
+
+    /// Move towards a target from a given state.
+    fn incremental_extrapolate(
+        &self,
+        from_state: &State,
+        to_target: &Target,
+        with_guidance: &Guidance,
+    ) -> Result<Option<(ExtrapolationProgress<Self::IncrementalExtrapolation>, State)>, Self::IncrementalExtrapolationError>;
+}
+
+enum ExtrapolationProgress<E> {
+    Incomplete(E),
+    Arrived(E),
+}
+
 pub struct NoExtrapolation<E>(std::marker::PhantomData<E>);
 impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExtrapolation<E> {
     type Extrapolation = E;
@@ -59,3 +97,15 @@ impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExt
     }
 }
 
+impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance> for NoExtrapolation<E> {
+    type IncrementalExtrapolation = E;
+    type IncrementalExtrapolationError = NoError;
+    fn incremental_extrapolate(
+        &self,
+        from_state: &State,
+        to_target: &Target,
+        with_guidance: &Guidance,
+    ) -> Result<Option<(ExtrapolationProgress<Self::IncrementalExtrapolation>, State)>, Self::IncrementalExtrapolationError> {
+        Ok(None)
+    }
+}

@@ -17,7 +17,7 @@
 
 use crate::domain::{PartialKeyed, Keyed, Keyring};
 use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus,
+    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
     AsTimeInvariant, AsTimeVariant, TimeVariantPartialKeyedCloser,
 };
 use std::{
@@ -123,6 +123,23 @@ where
             None => return ClosedStatus::Open,
         };
         self.container.get(key).into()
+    }
+}
+
+impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T> for PartialKeyedClosedSet<Ring, T>
+where
+    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>>,
+{
+    fn status_for_key<'a>(&'a self, key: &Option<Ring::PartialKey>) -> ClosedStatus<'a, T> {
+        if let Some(key) = key {
+            self.container.get(key).into()
+        } else {
+            ClosedStatus::Open
+        }
+    }
+
+    fn closed_keys_len(&self) -> usize {
+        self.container.len()
     }
 }
 

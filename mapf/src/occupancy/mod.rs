@@ -15,7 +15,7 @@
  *
 */
 
-use crate::{node::Key, util::triangular_for};
+use crate::util::triangular_for;
 use bitfield::{bitfield, Bit, BitMut};
 use std::collections::{hash_map, HashMap, HashSet};
 use std::ops::Sub;

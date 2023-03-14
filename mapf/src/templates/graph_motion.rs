@@ -17,7 +17,7 @@
 
 use crate::{
     Graph, graph::Edge,
-    domain::{Domain, Extrapolator, Activity, KeyedSpace},
+    domain::{Domain, Extrapolator, Activity, KeyedSpace, Keyed, PartialKeyed},
     util::FlatResultMapTrait,
     error::StdError,
 };
@@ -108,6 +108,20 @@ where
             .map(|x| x.flatten())
         })
     }
+}
+
+impl<S, G, E> Keyed for GraphMotion<S, G, E>
+where
+    S: Keyed,
+{
+    type Key = S::Key;
+}
+
+impl<S, G, E> PartialKeyed for GraphMotion<S, G, E>
+where
+    S: PartialKeyed,
+{
+    type PartialKey = S::PartialKey;
 }
 
 #[derive(ThisError, Debug)]

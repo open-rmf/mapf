@@ -17,7 +17,7 @@
 
 use crate::domain::{Keyed, Keyring};
 use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus,
+    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
     AsTimeInvariant, AsTimeVariant, TimeVariantKeyedCloser,
 };
 use std::{
@@ -103,6 +103,16 @@ where
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
         let key = self.keyring.key_for(state);
         self.container.get(key.borrow()).into()
+    }
+}
+
+impl<Ring: Keyed, T> ClosedStatusForKey<Ring::Key, T> for KeyedClosedSet<Ring, T> {
+    fn status_for_key<'a>(&'a self, key: &Ring::Key) -> ClosedStatus<'a, T> {
+        self.container.get(key).into()
+    }
+
+    fn closed_keys_len(&self) -> usize {
+        self.container.len()
     }
 }
 

@@ -41,6 +41,7 @@ pub trait Keyring<State>: Keyed {
     where
         Self: 'a,
         State: 'a;
+
     fn key_for<'a>(&'a self, state: &'a State) -> Self::KeyRef<'a>
     where
         Self: 'a,

@@ -39,13 +39,16 @@ pub mod algorithm;
 
 pub mod templates;
 pub mod trace;
-// pub mod tree;
+pub mod tree;
 
 pub mod directed;
 pub mod motion;
 
 pub mod a_star;
 pub use a_star::{AStar, AStarConnect};
+
+pub mod dijkstra;
+pub use dijkstra::Dijkstra;
 
 pub mod error;
 pub mod occupancy;

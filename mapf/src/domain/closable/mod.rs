@@ -103,6 +103,17 @@ pub trait ClosedSet<State, T> {
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T>;
 }
 
+/// This trait can supplement [`ClosedSet`] by allowing the closed items to be
+/// looked up by a key. If there are multiple closed items per key then it is
+/// up to the implementation to decide which to return.
+pub trait ClosedStatusForKey<Key, T> {
+    /// Get the closed status for this key.
+    fn status_for_key<'a>(&'a self, key: &Key) -> ClosedStatus<'a, T>;
+
+    /// How many keys have been closed in this set.
+    fn closed_keys_len(&self) -> usize;
+}
+
 /// A trait for closables that can be converted to time variant.
 /// This can also be implemented for closables that are already time variant as
 /// they can return themselves unchanged.

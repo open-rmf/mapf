@@ -27,8 +27,8 @@ pub trait Weighted<State, Action> {
     /// What kind of error can happen if a bad state or activity is provided
     type WeightedError;
 
-    /// Calculate the cost for performing `action` which transitions `from_state`
-    /// to `to_state`.
+    /// Calculate the cost for performing `action` which transitions
+    /// `from_state` to `to_state`.
     ///
     /// When cost returns `None` that implies the state is too expensive for
     /// consideration.

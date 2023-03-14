@@ -17,7 +17,7 @@
 
 use crate::{
     domain::{
-        Domain, Informed, Activity, Weighted,
+        Domain, Informed, Activity, Weighted, Keyed, PartialKeyed,
         Satisfiable, Closable, Initializable,
         Connectable, Chained, AsTimeInvariant, AsTimeVariant,
     },
@@ -386,6 +386,14 @@ where
         .into_iter()
         .map(|r| r.map_err(Into::into))
     }
+}
+
+impl<A: Keyed, W, H, X, I, S, C> Keyed for InformedSearch<A, W, H, X, I, S, C> {
+    type Key = A::Key;
+}
+
+impl<A: PartialKeyed, W, H, X, I, S, C> PartialKeyed for InformedSearch<A, W, H, X, I, S, C> {
+    type PartialKey = A::PartialKey;
 }
 
 #[cfg(test)]
