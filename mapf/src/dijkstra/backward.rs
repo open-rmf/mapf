@@ -59,34 +59,37 @@ where
     + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
     + Closable<ReverseStateOf<D>>,
 {
-    goal: ReverseKeyOf<D>,
     backward: Memory<D::Reverse>,
 }
 
-impl<D: Reversible> Coherent<ReverseKeyOf<D>, ReverseKeyOf<D>> for BackwardDijkstra<D>
+impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
 where
     D::Reverse: Domain
     + Keyring<ReverseStateOf<D>>
-    + Initializable<ReverseKeyOf<D>, ReverseStateOf<D>>
+    + Initializable<Start, ReverseStateOf<D>>
+    + Initializable<Goal, ReverseStateOf<D>>
     + Activity<ReverseStateOf<D>>
     + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
     + Closable<ReverseStateOf<D>>,
-    <D::Reverse as Initializable<ReverseKeyOf<D>, ReverseStateOf<D>>>::InitialError: Into<ReverseErrorOf<D>>,
+    <D::Reverse as Initializable<Start, ReverseStateOf<D>>>::InitialError: Into<ReverseErrorOf<D>>,
+    <D::Reverse as Initializable<Goal, ReverseStateOf<D>>>::InitialError: Into<ReverseErrorOf<D>>,
     <D::Reverse as Weighted<ReverseStateOf<D>, ReverseActionOf<D>>>::WeightedError: Into<ReverseErrorOf<D>>,
+    ReverseStateOf<D>: Clone,
     ReverseCostOf<D>: Clone + Ord,
     ReverseKeyOf<D>: Clone,
+    Start: Clone,
+    Goal: Clone,
 {
     type InitError = DijkstraSearchError<ReverseErrorOf<D>>;
 
     fn initialize(
         &self,
-        start: ReverseKeyOf<D>,
-        goal: &ReverseKeyOf<D>,
+        start: Start,
+        goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
         let memory = self.backward.initialize(goal.clone(), &start)?;
         Ok(BackwardMemory {
             backward: memory,
-            goal: start.clone(),
         })
     }
 }
@@ -124,7 +127,9 @@ where
         memory: &mut Self::Memory,
         _: &ReverseKeyOf<D>,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
-        self.backward.step(&mut memory.backward, &memory.goal)
+        // Note: Passing in the goal doesn't matter because the Dijkstra
+        // algorithm memory saves the goal information anyway.
+        self.backward.step(&mut memory.backward, &())
             .and_then(|r|
                 // If a solution is found, backtrack the path to make it run
                 // forward instead of being in reverse.
