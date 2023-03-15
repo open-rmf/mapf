@@ -76,6 +76,13 @@ impl<'a, T> ClosedStatus<'a, T> {
     pub fn is_closed(&self) -> bool {
         !self.is_open()
     }
+
+    pub fn closed(self) -> Option<&'a T> {
+        match self {
+            Self::Open => None,
+            Self::Closed(t) => Some(t),
+        }
+    }
 }
 
 impl<'a, T> From<Option<&'a T>> for ClosedStatus<'a, T> {

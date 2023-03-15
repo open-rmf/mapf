@@ -75,58 +75,75 @@ where
     }
 }
 
-impl<D> Coherent<D::Key, D::Key> for Dijkstra<D>
+impl<D, Start, Goal> Coherent<Start, Goal> for Dijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Initializable<D::Key, D::State>
+    + Keyring<D::State>
+    + Initializable<Start, D::State>
+    + Initializable<Goal, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
-    D::InitialError: Into<D::Error>,
+    <D as Initializable<Start, D::State>>::InitialError: Into<D::Error>,
+    <D as Initializable<Goal, D::State>>::InitialError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
+    D::State: Clone,
     D::Cost: Clone + Ord,
     D::Key: Clone,
+    Goal: Clone,
 {
     type InitError = DijkstraSearchError<D::Error>;
 
     fn initialize(
         &self,
-        start: D::Key,
-        _: &D::Key,
+        start: Start,
+        goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
-        let tree = match self.cache.lock() {
-            Ok(mut r) => {
-                match r.trees.entry(start.clone()) {
-                    Entry::Occupied(entry) => entry.get().clone(),
-                    Entry::Vacant(entry) => {
-                        let mut vt = CachedTree::new(self.domain.new_closed_set());
-                        for initial_state in self.domain.initialize(start) {
-                            let state = initial_state.map_err(Self::domain_err)?;
+        let mut trees = Vec::new();
+        for state in self.domain.initialize(start) {
+            let state = state.map_err(Self::domain_err)?;
+            let key_ref = self.domain.key_for(&state);
+            let tree = match self.cache.lock() {
+                Ok(mut r) => {
+                    match r.trees.entry(key_ref.borrow().clone()) {
+                        Entry::Occupied(entry) => entry.get().clone(),
+                        Entry::Vacant(entry) => {
+                            let mut ct = CachedTree::new(self.domain.new_closed_set());
                             let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
                                 Some(c) => c,
                                 None => continue,
                             };
 
-                            vt.tree.push_node(Node {
+                            ct.tree.push_node(Node {
                                 cost,
-                                state,
-                                parent: None
+                                state: state.clone(),
+                                parent: None,
                             }).map_err(Self::algo_err)?;
-                        }
 
-                        entry.insert(Arc::new(RwLock::new(vt))).clone()
+                            entry.insert(Arc::new(RwLock::new(ct))).clone()
+                        }
                     }
                 }
-            }
-            Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
-        };
+                Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
+            };
 
-        Ok(Memory::new(tree))
+            trees.push(TreeMemory::new(tree));
+        }
+
+        let goal_keys: Result<Vec<_>, _> = self.domain.initialize(goal.clone())
+            .into_iter()
+            .map(|r|
+                r
+                .map(|s| self.domain.key_for(&s).borrow().clone())
+                .map_err(Self::domain_err)
+            )
+            .collect();
+
+        Ok(Memory::new(trees, goal_keys?))
     }
 }
 
-impl<D> Solvable<D::Key> for Dijkstra<D>
+impl<D, Goal> Solvable<Goal> for Dijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
@@ -146,87 +163,161 @@ where
     fn step(
         &self,
         memory: &mut Self::Memory,
-        goal: &D::Key,
+        _: &Goal,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
-        if let Some(solution) = &memory.solution {
-            return Ok(Status::Solved(solution.clone()));
+        if memory.exhausted {
+            if let Some((s, _)) = memory.best_solution {
+                let solution = memory.trees.get(s).map(|t| t.solution.clone()).flatten();
+                if let Some(solution) = solution {
+                    return Ok(Status::Solved(solution));
+                } else {
+                    return Err(Self::algo_err(DijkstraImplError::MissingSolutionReference(s)));
+                }
+            }
+
+            // If the search is exhausted then simply return that the problem
+            // is impossible.
+            return Ok(Status::Impossible);
         }
 
-        match memory.tree.read() {
-            Ok(cache) => {
-                let tree = &cache.tree;
-                let closed_set_len = tree.closed_set.closed_keys_len();
-                if Some(closed_set_len) != memory.last_known_closed_len {
-                    // The tree was grown by another search, so let's check if
-                    // we already found a solution.
-                    match tree.closed_set.status_for_key(goal) {
-                        ClosedStatus::Open => {
-                            // The goal was never reached, so continue searching
+        let mut exhausted = true;
+        for (tree_i, mt) in memory.trees.iter_mut().enumerate() {
+            let cost_bound = memory.best_solution.as_ref().map(|(_, c)| c.clone());
+
+            let mut tree_solution = match mt.tree.read() {
+                Ok(cache) => {
+                    let tree = &cache.tree;
+                    let closed_set_len = tree.closed_set.closed_keys_len();
+                    if Some(closed_set_len) != mt.last_known_closed_len {
+                        // The tree was grown by another search, so let's check
+                        // if we already found a solution.
+                        let mut best_solution: Option<Path<D::State, D::ActivityAction, D::Cost>> = None;
+                        for goal_key in &memory.goal_keys {
+                            match tree.closed_set.status_for_key(goal_key) {
+                                ClosedStatus::Open => {
+                                    // The goal was never reached
+                                }
+                                ClosedStatus::Closed(node_id) => {
+                                    let node = tree.arena.get_node(*node_id)
+                                        .map_err(Self::algo_err)?;
+
+                                    if let Some(best_solution) = &best_solution {
+                                        if best_solution.total_cost <= node.cost {
+                                            // The path that would be created
+                                            // for this node is not better than
+                                            // the solution we already have.
+                                            continue;
+                                        }
+                                    }
+
+                                    let path = tree.arena.retrace(*node_id)
+                                        .map_err(Self::algo_err)?;
+                                    best_solution = Some(path);
+                                }
+                            }
                         }
-                        ClosedStatus::Closed(node_id) => {
-                            // The goal was reached during a different search
-                            let path = tree.arena.retrace(*node_id)
+
+                        best_solution
+                    } else {
+                        // The tree has not grown since the last search, so
+                        // there is no reason to expect a solution to have
+                        // shown up since then.
+                        None
+                    }
+                }
+                Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
+            };
+
+            if tree_solution.is_none() {
+                // A solution does not already exist in the cached stree, so we
+                // will get write access to the tree and grow it.
+                let mut cache = mt.tree.write()
+                    .map_err(|_| Self::algo_err(DijkstraImplError::PoisonedMutex))?;
+                let tree = &mut cache.tree;
+
+                'grow: for _ in 0..memory.iterations_per_step {
+                    let top_id = match tree.queue.pop() {
+                        Some(top) => top.0.node_id,
+                        None => break,
+                    };
+
+                    let top = tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
+                    if let CloseResult::Rejected { prior, .. } = tree.closed_set.close(&top.state, top_id) {
+                        let prior_node = tree.arena.get_node(*prior).map_err(Self::algo_err)?;
+                        if prior_node.cost <= top.cost {
+                            // The state we are attempting to expand has already been
+                            // closed in the past by a lower cost node, so we will not
+                            // expand from this top node.
+                            continue;
+                        }
+                    }
+
+                    for next in self.domain.choices(top.state.clone()) {
+                        let (action, child_state) = next.map_err(Self::domain_err)?;
+                        let child_cost = match self.domain
+                            .cost(&top.state, &action, &child_state)
+                            .map_err(Self::domain_err)?
+                        {
+                            Some(c) => c,
+                            None => continue,
+                        } + top.cost.clone();
+
+                        tree.push_node(Node {
+                            state: child_state,
+                            cost: child_cost,
+                            parent: Some((top_id, action)),
+                        }).map_err(Self::algo_err)?;
+                    }
+
+                    let top_key_ref = self.domain.key_for(top.state());
+                    let top_key: &D::Key = top_key_ref.borrow();
+                    for goal_key in &memory.goal_keys {
+                        if *top_key == *goal_key {
+                            // We have found a solution.
+                            let path = tree.arena.retrace(top_id)
                                 .map_err(Self::algo_err)?;
-                            memory.last_known_closed_len = Some(closed_set_len);
-                            memory.solution = Some(path.clone());
-                            return Ok(Status::Solved(path));
+                            tree_solution = Some(path);
+                            break 'grow;
+                        }
+                    }
+
+                    if let Some(cost_bound) = &cost_bound {
+                        if *cost_bound < top.cost {
+                            // There is no point growing the tree further
+                            // because it cannot produce a solution better than
+                            // the current best.
+                            break 'grow;
                         }
                     }
                 }
-            }
-            Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
-        };
 
-        // A solution does not already exist in the cached tree, so we need to
-        // get write access to the tree and grow it.
-        let mut cache = memory.tree.write()
-            .map_err(|_| Self::algo_err(DijkstraImplError::PoisonedMutex))?;
-        let tree = &mut cache.tree;
-
-        for _ in 0..memory.iterations_per_step {
-            let top_id = match tree.queue.pop() {
-                Some(top) => top.0.node_id,
-                None => return Ok(Status::Impossible),
-            };
-
-            let top = tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
-            if let CloseResult::Rejected { prior, .. } = tree.closed_set.close(&top.state, top_id) {
-                let prior_node = tree.arena.get_node(*prior).map_err(Self::algo_err)?;
-                if prior_node.cost <= top.cost {
-                    // The state we are attempting to expand has already been
-                    // closed in the past by a lower cost node, so we will not
-                    // expand from this top node.
-                    continue;
+                mt.last_known_closed_len = Some(tree.closed_set.closed_keys_len());
+                if tree.queue.peek().filter(|t| {
+                    if let Some(cost_bound) = &cost_bound {
+                        t.0.evaluation < *cost_bound
+                    } else {
+                        true
+                    }
+                }).is_some() {
+                    exhausted = false;
                 }
             }
 
-            for next in self.domain.choices(top.state.clone()) {
-                let (action, child_state) = next.map_err(Self::domain_err)?;
-                let child_cost = match self.domain
-                    .cost(&top.state, &action, &child_state)
-                    .map_err(Self::domain_err)?
-                {
-                    Some(c) => c,
-                    None => continue,
-                } + top.cost.clone();
-
-                tree.push_node(Node {
-                    state: child_state,
-                    cost: child_cost,
-                    parent: Some((top_id, action)),
-                }).map_err(Self::algo_err)?;
+            if let Some(solution) = tree_solution {
+                if let Some((best, cost)) = &mut memory.best_solution {
+                    if solution.total_cost < *cost {
+                        *best = tree_i;
+                        *cost = solution.total_cost.clone();
+                    }
+                } else {
+                    memory.best_solution = Some((tree_i, solution.total_cost.clone()));
+                }
+                mt.solution = Some(solution);
             }
 
-            let top_key_ref = self.domain.key_for(top.state());
-            let top_key: &D::Key = top_key_ref.borrow();
-            if *top_key == *goal {
-                // We have found the solution
-                let solution = tree.arena.retrace(top_id).map_err(Self::algo_err)?;
-                return Ok(Status::Solved(solution));
-            }
+            memory.exhausted = exhausted;
         }
 
-        memory.last_known_closed_len = Some(tree.closed_set.closed_keys_len());
         return Ok(Status::Incomplete);
     }
 }
@@ -243,6 +334,8 @@ pub enum DijkstraSearchError<D> {
 pub enum DijkstraImplError {
     #[error("An error occurred with the tree:\n{0}")]
     Tree(TreeError),
+    #[error("Expected to find a solution in tree {0} but found None - please report this bug")]
+    MissingSolutionReference(usize),
     #[error("A mutex was poisoned")]
     PoisonedMutex,
 }
@@ -301,25 +394,67 @@ where
 pub struct Memory<D>
 where
     D: Domain
+    + Keyed
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
 {
-    /// Tracks how many closed items were in the set the last time the tree was
-    /// grown by this search. This lets us know if another search has grown the
-    /// tree in the interim.
-    last_known_closed_len: Option<usize>,
+    /// Trees that are being grown for this search.
+    // TODO(MXG): Consider using a SmallVec here to avoid heap allocation
+    trees: Vec<TreeMemory<D>>,
+    /// Valid keys
+    // TODO(MXG): Consider using a SmallVec here to avoid heap allocation
+    goal_keys: Vec<D::Key>,
     /// How many iterations to attempt per step of the algorithm. Having a
     /// higher value reduces the overhead of borrowing and releasing the RwLock
     /// but leaves less opportunity to interrupt the search.
     iterations_per_step: usize,
-    /// A reference to the cache entry that is being searched.
-    tree: SharedCachedTree<D>,
-    /// Tracks whether a solution has already been found.
-    solution: Option<Path<D::State, D::ActivityAction, D::Cost>>,
+    /// Tracks which found solution is the best.
+    best_solution: Option<(usize, D::Cost)>,
+    /// Tracks whether all possible solutions have been exhausted.
+    exhausted: bool,
 }
 
 impl<D> Memory<D>
+where
+    D: Domain
+    + Keyed
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
+{
+    fn new(
+        trees: Vec<TreeMemory<D>>,
+        goal_keys: Vec<D::Key>,
+    ) -> Self {
+        Self {
+            trees,
+            goal_keys,
+            iterations_per_step: 10,
+            best_solution: None,
+            exhausted: false,
+        }
+    }
+}
+
+pub struct TreeMemory<D>
+where
+    D: Domain
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
+{
+    /// A reference to the cache entry that is being searched.
+    tree: SharedCachedTree<D>,
+    /// Tracks how many closed items were in the set the last time the tree was
+    /// grown by this search. This lets us know if another search has grown the
+    /// tree in the interim.
+    last_known_closed_len: Option<usize>,
+    /// Tracks whether a solution was found for this tree.
+    solution: Option<Path<D::State, D::ActivityAction, D::Cost>>,
+}
+
+impl<D> TreeMemory<D>
 where
     D: Domain
     + Activity<D::State>
@@ -329,7 +464,6 @@ where
     fn new(tree: SharedCachedTree<D>) -> Self {
         Self {
             tree,
-            iterations_per_step: 10,
             last_known_closed_len: None,
             solution: None,
         }

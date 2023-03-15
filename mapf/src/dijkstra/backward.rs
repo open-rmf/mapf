@@ -18,8 +18,7 @@
 use crate::{
     domain::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
-        Keyring, ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult,
-        Backtrack,
+        Keyring, ClosedStatusForKey, Backtrack,
     },
     algorithm::{Algorithm, Coherent, Solvable, Status},
     dijkstra::{
@@ -67,7 +66,7 @@ where
 impl<D: Reversible> Coherent<ReverseKeyOf<D>, ReverseKeyOf<D>> for BackwardDijkstra<D>
 where
     D::Reverse: Domain
-    + Keyed
+    + Keyring<ReverseStateOf<D>>
     + Initializable<ReverseKeyOf<D>, ReverseStateOf<D>>
     + Activity<ReverseStateOf<D>>
     + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
