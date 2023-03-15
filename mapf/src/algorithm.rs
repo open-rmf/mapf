@@ -34,6 +34,23 @@ impl<S> Status<S> {
     pub fn solved(&self) -> bool {
         matches!(self, Status::Solved(_))
     }
+
+    /// If the status contains a solution, apply a function to that solution.
+    pub fn map<U, F: FnOnce(S) -> U>(self, op: F) -> Status<U> {
+        match self {
+            Status::Solved(solution) => Status::Solved(op(solution)),
+            Status::Incomplete => Status::Incomplete,
+            Status::Impossible => Status::Impossible,
+        }
+    }
+
+    pub fn and_then<U, E, F: FnOnce(S) -> Result<U, E>>(self, op: F) -> Result<Status<U>, E> {
+        match self {
+            Status::Solved(solution) => Ok(Status::Solved(op(solution)?)),
+            Status::Incomplete => Ok(Status::Incomplete),
+            Status::Impossible => Ok(Status::Incomplete),
+        }
+    }
 }
 
 impl<S> From<S> for Status<S> {

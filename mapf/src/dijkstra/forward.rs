@@ -62,6 +62,10 @@ where
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
 {
+    pub fn domain(&self) -> &D {
+        &self.domain
+    }
+
     fn domain_err(err: impl Into<D::Error>) -> DijkstraSearchError<D::Error> {
         DijkstraSearchError::Domain(err.into())
     }

@@ -197,7 +197,7 @@ impl Reversible for LineFollow {
     type Reverse = LineFollow;
     type ReversalError = NoError;
 
-    fn reverse(&self) -> Result<Self::Reverse, NoError> {
+    fn reversed(&self) -> Result<Self::Reverse, NoError> {
         Ok(Self {
             speed: self.speed,
             direction: -1.0 * self.direction,

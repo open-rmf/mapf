@@ -28,13 +28,17 @@ pub trait Reversible {
     type ReversalError;
 
     /// Get the reverse of this domain
-    fn reverse(&self) -> Result<Self::Reverse, Self::ReversalError>;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError>;
 }
 
-/// For a [`Reversible`] domain, the `Backtrack` trait can be used to recreate a
-/// forward path from reverse states and reverse actions. When making a
-/// [`Reversible`] domain it will usually be necessary to implement this trait
-/// as well.
+/// For a reverse domain created by [`Reversible`], the `Backtrack` trait can
+/// be used to construct a forward path from the reverse states and reverse
+/// actions. When making a [`Reversible`] domain it will usually be necessary to
+/// implement this trait for the [`Reversible::Reverse`] type.
+///
+/// `ReverseState` should be the state of the domain that implements this trait
+/// while `ReverseAction` should be the [`crate::domain::Activity::ActivityAction`]
+/// implemented by the domain that this trait implements.
 pub trait Backtrack<ReverseState, ReverseAction> {
     type ForwardState;
     type ForwardAction;
@@ -45,7 +49,7 @@ pub trait Backtrack<ReverseState, ReverseAction> {
     /// into a forward solution.
     fn flip_state(
         &self,
-        final_state: ReverseState
+        final_state: &ReverseState
     ) -> Result<Self::ForwardState, Self::BacktrackError>;
 
     /// Advance from a forward state using a reverse-action counter-part.

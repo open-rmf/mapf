@@ -38,7 +38,6 @@ where
     + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
     + Closable<ReverseStateOf<D>>,
 {
-    forward: D,
     backward: Dijkstra<D::Reverse>,
 }
 
@@ -98,24 +97,25 @@ where
     D: Domain
     + Reversible
     + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
+    + Weighted<D::State, D::ActivityAction>,
+    D::Reverse: Domain
+    + Keyring<ReverseStateOf<D>>
+    + Activity<ReverseStateOf<D>>
+    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>, Cost = D::Cost>
+    + Closable<ReverseStateOf<D>>
     + Backtrack<
         ReverseStateOf<D>,
         ReverseActionOf<D>,
         ForwardState = D::State,
         ForwardAction = D::ActivityAction,
     >,
-    D::Reverse: Domain
-    + Keyring<ReverseStateOf<D>>
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>, Cost = D::Cost>
-    + Closable<ReverseStateOf<D>>,
     ReverseStateOf<D>: Clone,
     ReverseActionOf<D>: Clone,
     ReverseCostOf<D>: Clone + Ord + Add<ReverseCostOf<D>, Output = ReverseCostOf<D>>,
     <D::Reverse as Closable<ReverseStateOf<D>>>::ClosedSet<usize>: ClosedStatusForKey<ReverseKeyOf<D>, usize>,
     <D::Reverse as Activity<ReverseStateOf<D>>>::ActivityError: Into<ReverseErrorOf<D>>,
     <D::Reverse as Weighted<ReverseStateOf<D>, ReverseActionOf<D>>>::WeightedError: Into<ReverseErrorOf<D>>,
+    <D::Reverse as Backtrack<ReverseStateOf<D>, ReverseActionOf<D>>>::BacktrackError: Into<ReverseErrorOf<D>>,
 {
     type Solution = Path<D::State, D::ActivityAction, D::Cost>;
     type StepError = DijkstraSearchError<ReverseErrorOf<D>>;
@@ -125,15 +125,13 @@ where
         memory: &mut Self::Memory,
         _: &ReverseKeyOf<D>,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
-        let result = match self.backward.step(&mut memory.backward, &memory.goal)? {
-            Status::Solved(path) => {
-                self.forward.flip_state(path.initial_state)
-            },
-            Status::Impossible => Status::Impossible,
-            Status::Incomplete => Status::Incomplete,
-        };
-
-        Ok(result)
+        self.backward.step(&mut memory.backward, &memory.goal)
+            .and_then(|r|
+                // If a solution is found, backtrack the path to make it run
+                // forward instead of being in reverse.
+                r.and_then(|path| path.backtrack(self.backward.domain()))
+                    .map_err(DijkstraSearchError::Domain)
+            )
     }
 }
 
