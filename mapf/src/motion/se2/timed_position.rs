@@ -21,8 +21,11 @@ use crate::{
         self, SpeedLimiter, timed, InterpError, Interpolation, Duration,
         r2::{self, MaybePositioned},
     },
-    domain::{Extrapolator, SelfKey, Connectable, Reversible},
-    error::ThisError,
+    domain::{
+        Extrapolator, IncrementalExtrapolator, SelfKey, Connectable, Reversible,
+        ExtrapolationProgress,
+    },
+    error::{ThisError, NoError},
 };
 use arrayvec::ArrayVec;
 use time_point::TimePoint;
@@ -149,6 +152,9 @@ pub struct DifferentialDriveLineFollow {
     /// What is the nominal rotaional speed that the agent will move with
     rotational_speed: f64,
 
+    /// Are we extrapolating forward (+1.0) or backward (-1.0) in time?
+    direction: f64,
+
     /// If the initial waypoint is within this translational threshold of the
     /// target, no translation will be performed when extrapolating.
     translational_threshold: f64,
@@ -174,6 +180,7 @@ impl DifferentialDriveLineFollow {
         return Ok(DifferentialDriveLineFollow {
             translational_speed,
             rotational_speed,
+            direction: 1.0,
             translational_threshold: motion::DEFAULT_TRANSLATIONAL_THRESHOLD,
             rotational_threshold: motion::DEFAULT_ROTATIONAL_THRESHOLD,
         });
@@ -252,7 +259,7 @@ impl DifferentialDriveLineFollow {
 
         let p0 = Point::from(from_waypoint.position.translation.vector);
         let p1 = to_target;
-        let delta_p = *p1 - p0;
+        let delta_p = self.direction * (*p1 - p0);
         let distance = delta_p.norm();
         if distance > self.translational_threshold {
             let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
@@ -260,8 +267,9 @@ impl DifferentialDriveLineFollow {
                 .angle()
                 .abs();
             if delta_yaw_abs > self.rotational_threshold {
-                current_time +=
-                    time_point::Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
+                current_time += time_point::Duration::from_secs_f64(
+                    self.direction * delta_yaw_abs / self.rotational_speed
+                );
                 output.push(Waypoint {
                     time: current_time,
                     position: Position::from_parts(
@@ -272,8 +280,9 @@ impl DifferentialDriveLineFollow {
             }
 
             current_yaw = approach_yaw;
-            current_time +=
-                time_point::Duration::from_secs_f64(distance / translational_speed);
+            current_time += time_point::Duration::from_secs_f64(
+                self.direction * distance / translational_speed
+            );
             output.push(Waypoint {
                 time: current_time,
                 position: Position::new(p1.coords, approach_yaw.angle()),
@@ -320,7 +329,9 @@ where
             if delta_yaw_abs > self.rotational_threshold {
                 // Rotate towards the target orientation if we're not already facing
                 // it.
-                arrival.time += Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
+                arrival.time += Duration::from_secs_f64(
+                    self.direction * delta_yaw_abs / self.rotational_speed
+                );
                 arrival.waypoints.push(Waypoint {
                     time: arrival.time,
                     position: Position::new(
@@ -336,10 +347,77 @@ where
     }
 }
 
+impl<Target, Guidance> IncrementalExtrapolator<Waypoint, Target, Guidance> for DifferentialDriveLineFollow
+where
+    Target: r2::Positioned + MaybeOriented,
+    Guidance: SpeedLimiter,
+{
+    type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
+    type IncrementalExtrapolationError = DifferentialDriveLineFollowError;
+
+    fn incremental_extrapolate(
+        &self,
+        from_state: &Waypoint,
+        to_target: &Target,
+        with_guidance: &Guidance,
+    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, Waypoint)>>, Self::IncrementalExtrapolationError> {
+        let target_point = to_target.point();
+        let mut arrival = self.move_towards_target(
+            from_state,
+            &target_point,
+            with_guidance,
+        )?;
+
+        let mut action = ArrayVec::new();
+        if let Some(next_increment) = arrival.waypoints.pop() {
+            action.push(next_increment);
+            if !arrival.waypoints.is_empty() {
+                return Ok(Some(ExtrapolationProgress::Incomplete((action, next_increment))));
+            }
+        }
+
+        if let Some(target_yaw) = to_target.maybe_oriented() {
+            let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
+            if delta_yaw_abs > self.rotational_threshold {
+                if let Some(next_increment) = action.first().map(|wp| *wp) {
+                    return Ok(Some(ExtrapolationProgress::Incomplete((action, next_increment))));
+                } else {
+                    // Rotate towards the target orientation if we're not
+                    // already facing it.
+                    arrival.time += Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
+                    let wp = Waypoint {
+                        time: arrival.time,
+                        position: Position::new(
+                            target_point.coords,
+                            target_yaw.angle(),
+                        ),
+                    };
+                    action.push(wp);
+                    return Ok(Some(ExtrapolationProgress::Arrived((action, wp))));
+                }
+            }
+        }
+
+        let wp = *action.first().unwrap_or(from_state);
+        Ok(Some(ExtrapolationProgress::Arrived((action, wp))))
+    }
+}
+
 #[derive(Debug, ThisError, Clone, Copy)]
 pub enum DifferentialDriveLineFollowError {
     #[error("provided with an invalid speed limit (must be >0.0): {0}")]
     InvalidSpeedLimit(f64),
+}
+
+impl Reversible for DifferentialDriveLineFollow {
+    type Reverse = Self;
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+        Ok(Self {
+            direction: -self.direction,
+            ..self.clone()
+        })
+    }
 }
 
 #[derive(Debug, Clone)]

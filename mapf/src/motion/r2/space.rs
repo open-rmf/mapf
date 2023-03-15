@@ -23,13 +23,21 @@ use crate::{
 };
 use std::{sync::Arc, borrow::Borrow};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct DiscreteSpaceTimeR2<Key>(std::marker::PhantomData<Key>);
 impl<Key> DiscreteSpaceTimeR2<Key> {
     pub fn new() -> Self {
         Self(Default::default())
     }
 }
+
+impl<Key> Clone for DiscreteSpaceTimeR2<Key> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<Key> Copy for DiscreteSpaceTimeR2<Key> {}
 
 impl<Key> Default for DiscreteSpaceTimeR2<Key> {
     fn default() -> Self {

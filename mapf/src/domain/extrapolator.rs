@@ -75,7 +75,7 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<(ExtrapolationProgress<Self::IncrementalExtrapolation>, State)>, Self::IncrementalExtrapolationError>;
+    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, State)>>, Self::IncrementalExtrapolationError>;
 }
 
 pub enum ExtrapolationProgress<E> {
@@ -105,7 +105,7 @@ impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance
         _: &State,
         _: &Target,
         _: &Guidance,
-    ) -> Result<Option<(ExtrapolationProgress<Self::IncrementalExtrapolation>, State)>, Self::IncrementalExtrapolationError> {
+    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, State)>>, Self::IncrementalExtrapolationError> {
         Ok(None)
     }
 }

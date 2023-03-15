@@ -17,7 +17,10 @@
 
 use crate::{
     Graph, graph::Edge,
-    domain::{Domain, Extrapolator, Activity, KeyedSpace, Keyed, PartialKeyed},
+    domain::{
+        Domain, Extrapolator, Activity, Reversible,
+        KeyedSpace, Keyed, PartialKeyed, Keyring,
+    },
     util::FlatResultMapTrait,
     error::StdError,
 };
@@ -124,6 +127,41 @@ where
     type PartialKey = S::PartialKey;
 }
 
+impl<S, G, E> Keyring<S::State> for GraphMotion<S, G, E>
+where
+    S: Domain + Keyring<S::State>,
+{
+    type KeyRef<'a> = S::KeyRef<'a>
+    where
+        Self: 'a,
+        S::State: 'a;
+
+    fn key_for<'a>(&'a self, state: &'a S::State) -> Self::KeyRef<'a>
+    where
+        Self: 'a,
+        S::State: 'a
+    {
+        self.space.key_for(state)
+    }
+}
+
+impl<S, G, E> Reversible for GraphMotion<S, G, E>
+where
+    S: Reversible,
+    G: Reversible,
+    E: Reversible,
+{
+    type Reverse = GraphMotion<S::Reverse, G::Reverse, E::Reverse>;
+    type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+        Ok(GraphMotion {
+            space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
+            graph: Arc::new(self.graph.reversed().map_err(GraphMotionReversalError::Graph)?),
+            extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
+        })
+    }
+}
+
 #[derive(ThisError, Debug)]
 pub enum GraphMotionError<K, E> {
     #[error("The graph is missing the requested vertex [{0:?}]")]
@@ -132,6 +170,16 @@ pub enum GraphMotionError<K, E> {
     Extrapolator(E),
     #[error("An action modifier experienced an error:\n{0}")]
     Modifier(anyhow::Error),
+}
+
+#[derive(ThisError, Debug)]
+pub enum GraphMotionReversalError<S, G, E> {
+    #[error("The space had a reversal error:\n{0}")]
+    Space(S),
+    #[error("The graph had a reversal error:\n{0}")]
+    Graph(G),
+    #[error("The extrapolator had a reversal error:\n{0}")]
+    Extrapolator(E),
 }
 
 #[cfg(test)]

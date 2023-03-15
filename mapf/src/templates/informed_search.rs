@@ -17,7 +17,7 @@
 
 use crate::{
     domain::{
-        Domain, Informed, Activity, Weighted, Keyed, PartialKeyed,
+        Domain, Informed, Activity, Weighted, Keyed, PartialKeyed, Keyring,
         Satisfiable, Closable, Initializable,
         Connectable, Chained, AsTimeInvariant, AsTimeVariant,
     },
@@ -394,6 +394,24 @@ impl<A: Keyed, W, H, X, I, S, C> Keyed for InformedSearch<A, W, H, X, I, S, C> {
 
 impl<A: PartialKeyed, W, H, X, I, S, C> PartialKeyed for InformedSearch<A, W, H, X, I, S, C> {
     type PartialKey = A::PartialKey;
+}
+
+impl<A, W, H, X, I, S, C> Keyring<A::State> for InformedSearch<A, W, H, X, I, S, C>
+where
+    A: Domain + Keyring<A::State>,
+{
+    type KeyRef<'a> = A::KeyRef<'a>
+    where
+        Self: 'a,
+        A::State: 'a;
+
+    fn key_for<'a>(&'a self, state: &'a A::State) -> Self::KeyRef<'a>
+    where
+        Self: 'a,
+        A::State: 'a
+    {
+        self.activity.key_for(state)
+    }
 }
 
 #[cfg(test)]

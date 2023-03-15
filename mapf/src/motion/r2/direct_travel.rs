@@ -24,7 +24,9 @@ use crate::{
             timed_position::{LineFollow, LineFollowError, Waypoint},
         },
     },
-    domain::{Informed, Weighted, Extrapolator, Key, Keyring, KeyedSpace, SelfKey},
+    domain::{
+        Informed, Weighted, Extrapolator, Key, Reversible, KeyedSpace, SelfKey
+    },
 };
 use arrayvec::ArrayVec;
 use thiserror::Error as ThisError;
@@ -79,6 +81,22 @@ where
             .map(|x| x.flatten())
         )
         .flatten()
+    }
+}
+
+// NOTE(MXG): With this implementation, we assume that the reverse graph's
+// vertices are in the same locations as the forward graph's vertices. We could
+// consider loosening this assumption in the future.
+impl<G: Graph, W: Reversible> Reversible for DirectTravelHeuristic<G, W> {
+    type Reverse = DirectTravelHeuristic<G, W::Reverse>;
+    type ReversalError = W::ReversalError;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+        Ok(DirectTravelHeuristic {
+            space: self.space,
+            graph: self.graph.clone(),
+            weight: self.weight.reversed()?,
+            extrapolator: self.extrapolator.reversed().unwrap(),
+        })
     }
 }
 

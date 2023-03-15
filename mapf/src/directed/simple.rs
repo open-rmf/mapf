@@ -15,8 +15,12 @@
  *
 */
 
-use crate::{Graph, graph::Edge};
-use std::{fmt::Debug, borrow::Borrow};
+use crate::{
+    graph::{Graph, Edge},
+    domain::Reversible,
+    error::NoError,
+};
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Default)]
 pub struct SimpleGraph<V, E> {
@@ -50,14 +54,19 @@ impl<V, E> SimpleGraph<V, E> {
             edges,
         }
     }
+}
 
-    // TODO(MXG): We could make an into_reverse(self) for cases where V and E
-    // cannot be cloned.
-    pub fn reverse(&self) -> Self
-    where
-        V: Clone,
-        E: Clone,
-    {
+// TODO(MXG): We could make an into_reverse(self) for cases where V and E
+// cannot be cloned.
+//
+// TODO(MXG): Every time the graph gets reversed, a whole new graph is created.
+// It would be more memory efficient to have a wrapper around graph types which
+// stores a forward Arc<Graph> and a Mutex<Option<Arc<Graph>>> for the reverse
+// and then lazily generates it, while also implementing the Graph trait.
+impl<V: Clone, E: Clone> Reversible for SimpleGraph<V, E> {
+    type Reverse = Self;
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
         let mut r_edges = Vec::new();
         r_edges.resize(self.edges.len(), Vec::new());
         for (r_v_to, edges) in self.edges.iter().enumerate() {
@@ -66,12 +75,11 @@ impl<V, E> SimpleGraph<V, E> {
             }
         }
 
-        Self {
+        Ok(Self {
             vertices: self.vertices.clone(),
             edges: r_edges,
-        }
+        })
     }
-
 }
 
 impl<E> Edge<usize, E> for (usize, usize, &E) {

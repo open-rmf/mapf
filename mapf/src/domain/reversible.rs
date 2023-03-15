@@ -15,6 +15,8 @@
  *
 */
 
+use crate::error::NoError;
+
 /// If a trait is reversible then you can obtain its Reverse whose choices and
 /// dynamics can be used to search this domain in reverse.
 ///
@@ -60,4 +62,12 @@ pub trait Backtrack<ReverseState, ReverseAction> {
         reverse_action: &ReverseAction,
         child_reverse_state: &ReverseState,
     ) -> Result<(Self::ForwardAction, Self::ForwardState), Self::BacktrackError>;
+}
+
+impl Reversible for () {
+    type Reverse = ();
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+        Ok(())
+    }
 }
