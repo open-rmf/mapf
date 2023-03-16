@@ -15,10 +15,7 @@
  *
 */
 
-use crate::{
-    domain::SelfKey,
-    error::NoError,
-};
+use crate::error::NoError;
 use std::borrow::Borrow;
 
 /// The `Satisfiable` trait allows search algorithms to recognize when a state

@@ -40,5 +40,3 @@ pub type LinearTrajectory = super::Trajectory<Waypoint>;
 
 // pub mod quickest_path;
 // pub use quickest_path::QuickestPath;
-
-// pub mod graph_search;

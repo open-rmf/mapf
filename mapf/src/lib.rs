@@ -18,48 +18,28 @@
 
 pub mod domain;
 
-pub mod search;
-pub mod halt;
-
 pub mod planner;
 pub use planner::Planner;
-
-pub mod expander;
-pub use expander::Expander;
 
 pub mod graph;
 pub use graph::Graph;
 
-pub mod heuristic;
-pub use heuristic::Heuristic;
-
-pub mod node;
-
 pub mod algorithm;
 
 pub mod templates;
-pub mod trace;
-pub mod tree;
 
-pub mod directed;
 pub mod motion;
 
-pub mod a_star;
-pub use a_star::{AStar, AStarConnect};
-
-pub mod dijkstra;
-pub use dijkstra::Dijkstra;
-
 pub mod error;
-pub mod occupancy;
 
 pub mod premade;
-
-pub mod cost;
-pub use cost::*;
 
 mod util;
 
 pub mod prelude {
     pub use super::domain::*;
+    pub use super::graph::*;
+    pub use super::algorithm::*;
+    pub use super::planner::*;
+    pub use super::premade::*;
 }

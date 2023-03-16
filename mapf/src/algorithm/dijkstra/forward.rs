@@ -20,8 +20,7 @@ use crate::{
         Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
         ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult,
     },
-    algorithm::{Algorithm, Coherent, Solvable, Status},
-    tree::*,
+    algorithm::{Algorithm, Coherent, Solvable, Status, tree::*},
     error::ThisError,
 };
 use std::{

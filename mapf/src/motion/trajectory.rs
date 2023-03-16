@@ -16,8 +16,8 @@
 */
 
 use super::{
-    timed::{TimeCmp, Timed},
-    waypoint, Duration, InterpError, Motion, TimePoint, Waypoint,
+    timed::TimeCmp,
+    Duration, InterpError, Motion, TimePoint, Waypoint,
 };
 use cached::{Cached, UnboundCache};
 use sorted_vec::{FindOrInsert, SortedSet};
@@ -380,7 +380,7 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
 }
 
 pub trait CostCalculator<W: Waypoint>: std::fmt::Debug {
-    type Cost: crate::node::Cost;
+    type Cost;
 
     fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
 }

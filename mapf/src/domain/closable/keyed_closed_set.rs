@@ -123,6 +123,7 @@ mod tests {
 
     struct TestState {
         index: usize,
+        #[allow(unused)]
         time: f64,
     }
 

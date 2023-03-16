@@ -30,14 +30,17 @@ pub(crate) fn triangular_for<Item>(
 
 pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
     value: Option<T>,
+    #[allow(unused)]
     f: F,
 }
 
 impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
+    #[allow(unused)]
     pub(crate) fn new(f: F) -> Self {
         Self { value: None, f }
     }
 
+    #[allow(unused)]
     pub(crate) fn consider(&mut self, other: &T) -> bool {
         if let Some(value) = &self.value {
             if std::cmp::Ordering::Less == (self.f)(other, value) {
@@ -52,6 +55,7 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
         return false;
     }
 
+    #[allow(unused)]
     pub(crate) fn consider_take(&mut self, other: T) -> bool {
         if let Some(value) = &self.value {
             if std::cmp::Ordering::Less == (self.f)(&other, value) {
@@ -66,10 +70,12 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
         return false;
     }
 
+    #[allow(unused)]
     pub(crate) fn result(self) -> Option<T> {
         self.value
     }
 
+    #[allow(unused)]
     pub(crate) fn has_value(&self) -> bool {
         self.value.is_some()
     }

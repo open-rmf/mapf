@@ -17,12 +17,14 @@
 
 use crate::{
     error::{Anyhow, ThisError},
-    algorithm::{Algorithm, Coherent, Solvable, Status, MinimumCostBound, Measure},
+    algorithm::{
+        Algorithm, Coherent, Solvable, Status, MinimumCostBound, Measure,
+        tree::*,
+    },
     domain::{
         Domain, Activity, Weighted, Initializable, Informed, Satisfiable,
         Closable, ClosedSet, CloseResult, Connectable,
     },
-    tree::*,
 };
 use std::ops::Add;
 

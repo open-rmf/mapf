@@ -15,6 +15,14 @@
  *
 */
 
+pub mod a_star;
+pub use a_star::{AStar, AStarConnect};
+
+pub mod dijkstra;
+pub use dijkstra::{Dijkstra, BackwardDijkstra};
+
+pub mod tree;
+
 #[derive(Debug, Clone)]
 pub enum Status<Solution> {
     Incomplete,

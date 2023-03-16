@@ -30,6 +30,7 @@ pub trait Domain {
 
 pub mod action_map;
 pub mod activity;
+pub mod cost;
 pub mod closable;
 pub mod connectable;
 pub mod define_trait;
@@ -46,6 +47,7 @@ pub mod weighted;
 
 pub use action_map::*;
 pub use activity::*;
+pub use cost::Cost;
 pub use closable::*;
 pub use connectable::*;
 pub use define_trait::*;

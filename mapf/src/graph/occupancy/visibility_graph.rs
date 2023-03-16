@@ -16,8 +16,10 @@
 */
 
 use crate::{
-    graph::{Edge, Graph},
-    occupancy::{Cell, Grid, Point, Visibility},
+    graph::{
+        Edge, Graph,
+        occupancy::{Cell, Grid, Point, Visibility},
+    },
     util::triangular_for,
 };
 use std::{

@@ -30,6 +30,7 @@ use std::{
     borrow::Borrow,
 };
 
+#[derive(Debug, Clone)]
 pub struct GraphMotion<S, G, E> {
     pub space: S,
     pub graph: Arc<G>,
@@ -186,7 +187,7 @@ pub enum GraphMotionReversalError<S, G, E> {
 mod tests {
     use super::*;
     use crate::{
-        directed::SimpleGraph,
+        graph::SimpleGraph,
         motion::r2::{
             Position, DiscreteSpaceTimeR2,
             timed_position::LineFollow,
@@ -195,7 +196,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_motion_activity_map() {
+    fn test_graph_motion_construction() {
         let graph = SimpleGraph::from_iters(
             [
                 Position::new(0.0, 0.0),
@@ -216,5 +217,6 @@ mod tests {
             graph,
             extrapolator: LineFollow::new(1.0),
         };
+        println!("{motion:?}");
     }
 }

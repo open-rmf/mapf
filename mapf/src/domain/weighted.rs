@@ -360,7 +360,7 @@ pub(crate) mod tests {
 
         fn initial_cost(
             &self,
-            for_state: &State,
+            _: &State,
         ) -> Result<Option<Self::Cost>, Self::WeightedError> {
             Ok(Some(0.0))
         }
@@ -385,7 +385,7 @@ pub(crate) mod tests {
 
         fn initial_cost(
             &self,
-            for_state: &State,
+            _: &State,
         ) -> Result<Option<Self::Cost>, Self::WeightedError> {
             Ok(Some(0.0))
         }

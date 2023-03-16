@@ -15,6 +15,11 @@
  *
 */
 
+pub mod occupancy;
+
+pub mod simple;
+pub use simple::SimpleGraph;
+
 use std::borrow::Borrow;
 
 pub trait Edge<Key, Attributes> {

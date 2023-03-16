@@ -32,11 +32,6 @@ pub use travel_time_cost::*;
 
 pub mod speed_limit;
 pub use speed_limit::*;
-
-// pub mod graph_search;
-
-pub mod hold;
-pub mod movable;
 pub mod reach;
 
 // pub mod collide;

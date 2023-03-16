@@ -24,7 +24,6 @@ use crate::{
 use arrayvec::ArrayVec;
 use time_point::{Duration, TimePoint};
 use thiserror::Error as ThisError;
-use std::borrow::Borrow;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -243,7 +242,7 @@ mod tests {
         let wp0 = Waypoint::new(t0, 1.0, -3.0);
         let movement = LineFollow::new(2.0).expect("Failed to make LineFollow");
         let p_target = Position::new(1.0, 3.0);
-        let (waypoints, end) = movement
+        let (waypoints, _) = movement
             .extrapolate(&wp0, &p_target, &())
             .expect("Failed to extrapolate")
             .expect("Missing extrapolation result");

@@ -20,8 +20,8 @@ use std::{cell::RefCell, sync::Arc};
 
 use crate::{
     algorithm::{Algorithm, Solvable, Status},
-    halt::Halt,
-    error::{StdError, Anyhow},
+    planner::Halt,
+    error::Anyhow,
 };
 
 /// Search manages the progress of a planning effort.

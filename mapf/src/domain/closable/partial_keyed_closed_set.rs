@@ -150,6 +150,7 @@ mod tests {
 
     struct TestState {
         index: Option<usize>,
+        #[allow(unused)]
         time: f64,
     }
 

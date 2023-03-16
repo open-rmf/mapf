@@ -91,8 +91,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AStarConnect, Planner,
-        directed::SimpleGraph,
+        algorithm::AStarConnect, Planner,
+        graph::SimpleGraph,
         motion::SpeedLimit,
     };
 
@@ -156,11 +156,8 @@ mod tests {
         assert!(solution.solved());
     }
 
-    use crate::{
-        occupancy::{
-            Visibility, SparseGrid, Cell,
-            graph::NeighborhoodGraph,
-        },
+    use crate::graph::occupancy::{
+        Visibility, SparseGrid, Cell, NeighborhoodGraph
     };
 
     #[test]

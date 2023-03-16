@@ -15,10 +15,14 @@
  *
 */
 
+pub mod search;
+pub use search::{Search, AbstractSearch};
+
+pub mod halt;
+pub use halt::Halt;
+
 use crate::{
     algorithm::{Coherent, Solvable},
-    search::{Search, AbstractSearch},
-    halt::Halt,
     error::Anyhow,
 };
 use anyhow;

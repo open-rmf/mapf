@@ -18,7 +18,6 @@
 use crate::{
     graph::Graph,
     motion::{
-        TimePoint,
         r2::{
             Position, DiscreteSpaceTimeR2, StateR2 as StateR2,
             timed_position::{LineFollow, LineFollowError, Waypoint},

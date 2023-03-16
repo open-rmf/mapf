@@ -18,10 +18,9 @@
 
 
 use crate::{
-    domain::Weighted,
-    motion::{Timed, Duration},
+    domain::{Weighted, Cost},
+    motion::Timed,
     error::NoError,
-    Cost,
 };
 
 pub struct TravelTimeCost(pub f64);

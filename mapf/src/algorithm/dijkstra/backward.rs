@@ -20,12 +20,14 @@ use crate::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
         Keyring, ClosedStatusForKey, Backtrack,
     },
-    algorithm::{Algorithm, Coherent, Solvable, Status},
-    dijkstra::{
-        Dijkstra,
-        forward::{Memory, DijkstraSearchError},
+    algorithm::{
+        Algorithm, Coherent, Solvable, Status,
+        tree::Path,
+        dijkstra::{
+            Dijkstra,
+            forward::{Memory, DijkstraSearchError},
+        },
     },
-    tree::Path,
 };
 use std::ops::Add;
 
