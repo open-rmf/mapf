@@ -22,11 +22,10 @@ use crate::{
         se2::*,
         r2::{DirectTravelHeuristic, Positioned, DiscreteSpaceTimeR2, StateR2},
     },
-    graph::Graph,
-    domain::{Key, KeyedCloser, Lifted, Lift, DefineTrait, StateInto},
+    graph::{Graph, SharedGraph},
+    domain::{Key, KeyedCloser, Lifted, Lift, DefineTrait, StateInto, Reversible},
     error::Anyhow,
 };
-use std::sync::Arc;
 
 const DEFAULT_RES: u32 = 360;
 
@@ -38,20 +37,20 @@ const DEFAULT_RES: u32 = 360;
 /// needs to be given to [`crate::a_star::AStarConnect`] instead of
 /// [`crate::a_star::AStar`], otherwise the planner will fail to reach the goal.
 pub type SearchSE2<G> = InformedSearch<
-    GraphMotion<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>, G, DifferentialDriveLineFollow>,
+    GraphMotion<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>, SharedGraph<G>, DifferentialDriveLineFollow>,
     TravelTimeCost,
     Lifted<
         DefineTrait<StateSE2<<G as Graph>::Key, DEFAULT_RES>, Anyhow>,
         StateInto<StateR2<<G as Graph>::Key>>,
-        DirectTravelHeuristic<G, TravelTimeCost>,
+        DirectTravelHeuristic<SharedGraph<G>, TravelTimeCost>,
     >,
     KeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
-    InitializeSE2<G>,
+    InitializeSE2<SharedGraph<G>>,
     SatisfySE2,
     MergeIntoGoal<DEFAULT_RES>,
 >;
 
-impl<G> SearchSE2<G>
+impl<G: Reversible> SearchSE2<G>
 where
     G: Graph,
     G::Key: Key + Clone,
@@ -59,7 +58,7 @@ where
     G::EdgeAttributes: SpeedLimiter,
 {
     pub fn new_se2(
-        graph: Arc<G>,
+        graph: SharedGraph<G>,
         drive: DifferentialDriveLineFollow,
     ) -> Self {
         InformedSearch::new(
@@ -95,6 +94,7 @@ mod tests {
         graph::SimpleGraph,
         motion::SpeedLimit,
     };
+    use std::sync::Arc;
 
     #[test]
     fn test_simple_se2() {
@@ -136,7 +136,7 @@ mod tests {
         let planner = Planner::new(
             AStarConnect(
                 InformedSearch::new_se2(
-                    Arc::new(graph),
+                    SharedGraph::new(graph),
                     DifferentialDriveLineFollow::new(2.0, 1.0).unwrap(),
                 )
             )
@@ -181,7 +181,7 @@ mod tests {
         let planner = Planner::new(
             AStarConnect(
                 InformedSearch::new_se2(
-                    Arc::new(graph),
+                    SharedGraph::new(graph),
                     DifferentialDriveLineFollow::new(2.0, 1.0).unwrap(),
                 )
             )

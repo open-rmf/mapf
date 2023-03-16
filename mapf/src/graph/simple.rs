@@ -54,15 +54,11 @@ impl<V, E> SimpleGraph<V, E> {
             edges,
         }
     }
+
+    // TODO(MXG): We could make an into_reverse(self) for cases where V and E
+    // cannot be cloned.
 }
 
-// TODO(MXG): We could make an into_reverse(self) for cases where V and E
-// cannot be cloned.
-//
-// TODO(MXG): Every time the graph gets reversed, a whole new graph is created.
-// It would be more memory efficient to have a wrapper around graph types which
-// stores a forward Arc<Graph> and a Mutex<Option<Arc<Graph>>> for the reverse
-// and then lazily generates it, while also implementing the Graph trait.
 impl<V: Clone, E: Clone> Reversible for SimpleGraph<V, E> {
     type Reverse = Self;
     type ReversalError = NoError;

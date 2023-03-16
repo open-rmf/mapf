@@ -25,15 +25,12 @@ use crate::{
     error::StdError,
 };
 use thiserror::Error as ThisError;
-use std::{
-    sync::Arc,
-    borrow::Borrow,
-};
+use std::borrow::Borrow;
 
 #[derive(Debug, Clone)]
 pub struct GraphMotion<S, G, E> {
     pub space: S,
-    pub graph: Arc<G>,
+    pub graph: G,
     pub extrapolator: E,
 }
 
@@ -157,7 +154,7 @@ where
     fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
         Ok(GraphMotion {
             space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
-            graph: Arc::new(self.graph.reversed().map_err(GraphMotionReversalError::Graph)?),
+            graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,
             extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
         })
     }

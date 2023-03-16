@@ -18,26 +18,25 @@
 use crate::{
     templates::{InformedSearch, GraphMotion},
     motion::{TravelTimeCost, SpeedLimiter, r2::*},
-    graph::Graph,
-    domain::{Key, KeyedCloser},
+    graph::{Graph, SharedGraph},
+    domain::{Key, KeyedCloser, Reversible},
 };
-use std::sync::Arc;
 
 /// A specialization of InformedSearch for searching through R2 (real^2) space,
 /// e.g. the x-y plane.
 pub type SearchR2<G> = InformedSearch<
-    GraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow>,
+    GraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, SharedGraph<G>, LineFollow>,
     TravelTimeCost,
-    DirectTravelHeuristic<G, TravelTimeCost>,
+    DirectTravelHeuristic<SharedGraph<G>, TravelTimeCost>,
     KeyedCloser<DiscreteSpaceTimeR2<<G as Graph>::Key>>,
-    InitializeR2<G>,
+    InitializeR2<SharedGraph<G>>,
     (),
     (),
 >;
 
 impl<G> SearchR2<G>
 where
-    G: Graph,
+    G: Graph + Reversible,
     G::Key: Key + Clone,
     G::Vertex: Positioned,
     G::EdgeAttributes: SpeedLimiter,
@@ -45,7 +44,7 @@ where
     /// Create an informed search to explore a graph for an agent that moves
     /// through R2.
     pub fn new_r2(
-        graph: Arc<G>,
+        graph: SharedGraph<G>,
         line_follow: LineFollow,
     ) -> Self {
         InformedSearch::new(
@@ -76,6 +75,7 @@ mod tests {
         motion::SpeedLimit,
         domain::AsTimeVariant,
     };
+    use std::sync::Arc;
 
     fn make_test_graph() -> SimpleGraph<Position, SpeedLimit> {
         /*
@@ -119,7 +119,7 @@ mod tests {
         let planner = Planner::new(
             AStar(
                 InformedSearch::new_r2(
-                    Arc::new(make_test_graph()),
+                    SharedGraph::new(make_test_graph()),
                     LineFollow::new(2.0).unwrap(),
                 )
             )
@@ -155,7 +155,7 @@ mod tests {
         let planner = Planner::new(
             AStar(
                 InformedSearch::new_r2(
-                    Arc::new(graph),
+                    SharedGraph::new(graph),
                     LineFollow::new(2.0).unwrap(),
                 )
             )
@@ -171,7 +171,7 @@ mod tests {
         let planner = Planner::new(
             AStar(
                 InformedSearch::new_r2(
-                    Arc::new(make_test_graph()),
+                    SharedGraph::new(make_test_graph()),
                     LineFollow::new(2.0).unwrap(),
                 )
                 .as_time_variant()

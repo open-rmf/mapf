@@ -16,11 +16,13 @@
 */
 
 use crate::{
+    domain::Reversible,
     graph::{
         Edge, Graph,
         occupancy::{Cell, Grid, Point, Visibility},
     },
     util::triangular_for,
+    error::NoError,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -206,6 +208,16 @@ impl<G: Grid> NeighborhoodGraph<G> {
     }
 }
 
+impl<G: Grid> Clone for NeighborhoodGraph<G> {
+    fn clone(&self) -> Self {
+        Self {
+            visibility: self.visibility.clone(),
+            visibility_of_interest: self.visibility_of_interest.clone(),
+            points_of_interest: self.points_of_interest.clone(),
+        }
+    }
+}
+
 /// From any unoccupied cell, expand towards both its adjacent cells and the
 /// visibility graph.
 impl<G: Grid> Graph for NeighborhoodGraph<G> {
@@ -306,6 +318,16 @@ impl Edge<Cell, ()> for (Cell, Cell) {
 
     fn attributes(&self) -> &() {
         &()
+    }
+}
+
+impl<G: Grid> Reversible for NeighborhoodGraph<G> {
+    type Reverse = Self;
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+        // Visibility graphs are always bidirectional, so the reverse is the
+        // same as the forward.
+        Ok(self.clone())
     }
 }
 

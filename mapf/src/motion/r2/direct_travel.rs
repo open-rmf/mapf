@@ -29,12 +29,12 @@ use crate::{
 };
 use arrayvec::ArrayVec;
 use thiserror::Error as ThisError;
-use std::{sync::Arc, borrow::Borrow};
+use std::borrow::Borrow;
 
 #[derive(Debug)]
 pub struct DirectTravelHeuristic<G: Graph, W> {
     pub space: DiscreteSpaceTimeR2<G::Key>,
-    pub graph: Arc<G>,
+    pub graph: G,
     pub weight: W,
     pub extrapolator: LineFollow,
 }
@@ -86,15 +86,23 @@ where
 // NOTE(MXG): With this implementation, we assume that the reverse graph's
 // vertices are in the same locations as the forward graph's vertices. We could
 // consider loosening this assumption in the future.
-impl<G: Graph, W: Reversible> Reversible for DirectTravelHeuristic<G, W> {
-    type Reverse = DirectTravelHeuristic<G, W::Reverse>;
-    type ReversalError = W::ReversalError;
+impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<G, W>
+where
+    G::Reverse: Graph,
+{
+    type Reverse = DirectTravelHeuristic<G::Reverse, W::Reverse>;
+    type ReversalError = DirectTravelReversalError<
+        G::ReversalError,
+        W::ReversalError,
+        <LineFollow as Reversible>::ReversalError,
+    >;
+
     fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
         Ok(DirectTravelHeuristic {
-            space: self.space,
-            graph: self.graph.clone(),
-            weight: self.weight.reversed()?,
-            extrapolator: self.extrapolator.reversed().unwrap(),
+            space: DiscreteSpaceTimeR2::new(),
+            graph: self.graph.reversed().map_err(DirectTravelReversalError::Graph)?,
+            weight: self.weight.reversed().map_err(DirectTravelReversalError::Weighted)?,
+            extrapolator: self.extrapolator.reversed().map_err(DirectTravelReversalError::Extrapolator)?,
         })
     }
 }
@@ -105,4 +113,14 @@ pub enum DirectTravelError<W> {
     Weighted(W),
     #[error("The extrapolator had an error:\n{0}")]
     Extrapolator(LineFollowError),
+}
+
+#[derive(ThisError, Debug, Clone)]
+pub enum DirectTravelReversalError<G, W, E> {
+    #[error("The graph had an error while reversing:\n{0}")]
+    Graph(G),
+    #[error("The cost calculator had an error while reversing:\n{0}")]
+    Weighted(W),
+    #[error("The extrapolator had an error while reversing:\n{0}")]
+    Extrapolator(E),
 }

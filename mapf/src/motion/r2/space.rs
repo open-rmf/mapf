@@ -21,7 +21,7 @@ use crate::{
     graph::Graph,
     error::ThisError,
 };
-use std::{sync::Arc, borrow::Borrow};
+use std::borrow::Borrow;
 
 #[derive(Debug)]
 pub struct DiscreteSpaceTimeR2<Key>(std::marker::PhantomData<Key>);
@@ -151,7 +151,7 @@ impl<K> From<K> for StartR2<K> {
     }
 }
 
-pub struct InitializeR2<G>(pub Arc<G>);
+pub struct InitializeR2<G>(pub G);
 
 impl<G, Start> Initializable<Start, StateR2<G::Key>> for InitializeR2<G>
 where
