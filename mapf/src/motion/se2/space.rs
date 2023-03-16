@@ -18,8 +18,9 @@
 use crate::{
     domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable, Satisfiable},
     motion::{Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, se2::*, r2::MaybePositioned},
-    graph::Graph,
+    graph::{Graph, Edge},
     error::{NoError, ThisError},
+    util::FlatResultMapTrait,
 };
 use std::borrow::Borrow;
 
@@ -167,6 +168,12 @@ impl<K> From<(TimePoint, K, f64)> for StartSE2<K> {
     }
 }
 
+/// Use this to initialize a SE(2) domain for most search algorithms.
+///
+/// When initializing a [`crate::algorithm::Dijkstra`] algorithm with a
+/// [`DifferentialDriveLineFollow`], it is better to use [`InitializeStarburstSE2`]
+/// because it will initialize states whose keys are sure to be visited and
+/// revisited in Dijkstra searches, making the caching behaviors more effective.
 pub struct InitializeSE2<G>(pub G);
 
 impl<G, Start, const R: u32> Initializable<Start, StateSE2<G::Key, R>> for InitializeSE2<G>
@@ -206,6 +213,78 @@ where
         ]
     }
 }
+
+/// Use this to initialize a SE(2) domain for [`crate::algorithm::Dijkstra`]
+/// search algorithms when using a [`DifferentialDriveLineFollow`].
+///
+/// For a given graph key, this will initialize multiple states where each
+/// state is oriented to face a direction that the robot can move towards. This
+/// makes the `Dijkstra` algorithm's caching techniques more effective because
+/// each of these states will have keys that will be revisited in future
+/// searches instead of having keys with arbitrary orientations.
+///
+/// The "starburst" name comes from the fact that if you draw the initial states
+/// as vectors coming out of the start vertex, it will resemble a starburst
+/// pattern.
+pub struct InitializeStarburstSE2<G>(pub G);
+
+impl<G, const R: u32> Initializable<G::Key, StateSE2<G::Key, R>> for InitializeStarburstSE2<G>
+where
+    G: Graph,
+    G::Key: Clone,
+    G::Vertex: Borrow<Point>,
+{
+    type InitialError = InitializeSE2Error<G::Key>;
+    type InitialStates<'a> = impl Iterator<Item = Result<StateSE2<G::Key, R>, Self::InitialError>> + 'a
+    where
+        Self: 'a,
+        G: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: G::Key,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        G::Key: 'a,
+        StateSE2<G::Key, R>: 'a
+    {
+        let from_start_clone = from_start.clone();
+        self.0.vertex(&from_start)
+            .ok_or_else(move || InitializeSE2Error::MissingVertex(from_start_clone))
+            .flat_result_map(move |from_p_ref| {
+                let from_p: Point = *from_p_ref.borrow().borrow();
+                let from_start = from_start.clone();
+                self.0.edges_from_vertex(&from_start)
+                    .into_iter()
+                    .map(move |edge| {
+                        let from_start = from_start.clone();
+                        self.0.vertex(edge.to_vertex())
+                            .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))
+                            .map(move |to_p_ref| {
+                                let to_p: Point = *to_p_ref.borrow().borrow();
+                                (to_p - from_p).try_normalize(1e-6)
+                                    .map(|v| v[1].atan2(v[0]))
+                                    .unwrap_or(0.0)
+                            })
+                            .map(move |angle|
+                                StateSE2::new(
+                                    from_start,
+                                    Waypoint::new(
+                                        TimePoint::zero(),
+                                        from_p.x,
+                                        from_p.y,
+                                        angle,
+                                    )
+                                )
+                            )
+                    })
+            })
+            .map(|r| r.flatten())
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SatisfySE2 {
@@ -288,4 +367,47 @@ impl<K> MaybePositioned for GoalSE2<K> {
 pub enum InitializeSE2Error<K> {
     #[error("The graph was missing the start vertex: {0:?}")]
     MissingVertex(K),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        graph::SimpleGraph,
+    };
+
+    #[test]
+    fn test_starburst_initialization() {
+        /*      5
+         *      |
+         *      |
+         * 0----1----2
+         *     / \
+         *   /     \
+         * 3         4
+         */
+
+        let graph = SimpleGraph::from_iters(
+            [
+                Point::new(-1.0, 0.0), // 0
+                Point::new(0.0, 0.0), // 1
+                Point::new(1.0, 0.0), // 2
+                Point::new(-1.0, -1.0), // 3
+                Point::new(1.0, -1.0), // 4
+                Point::new(0.0, 1.0), // 5
+            ],
+            [
+                (0, 1, ()), (1, 0, ()),
+                (2, 1, ()), (1, 2, ()),
+                (3, 1, ()), (1, 3, ()),
+                (4, 1, ()), (1, 4, ()),
+                (5, 1, ()), (1, 5, ()),
+            ]
+        );
+
+        let init = InitializeStarburstSE2(graph);
+        let states: Result<Vec<StateSE2<usize, 100>>, _> = init.initialize(1).collect();
+        let states = states.unwrap();
+        assert!(states.len() == 5);
+    }
 }
