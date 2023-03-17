@@ -16,15 +16,14 @@
 */
 
 use crate::{
-    Graph, graph::Edge,
+    graph::{Graph, Edge},
     domain::{
         Domain, Extrapolator, Activity, Reversible,
         KeyedSpace, Keyed, PartialKeyed, Keyring,
     },
     util::FlatResultMapTrait,
-    error::StdError,
+    error::{StdError, ThisError},
 };
-use thiserror::Error as ThisError;
 use std::borrow::Borrow;
 
 #[derive(Debug, Clone)]
@@ -34,6 +33,18 @@ pub struct GraphMotion<S, G, E> {
     pub extrapolator: E,
 }
 
+/// `GraphMotion` defines a domain and activity that efficiently moves over a
+/// spatial graph. This is generally used for single-shot motion planning
+/// problems.
+///
+/// The activity of `GraphMotion` is meant to be efficient, generating as few
+/// search states as possible while traversing the graph. This is usually
+/// desirable since it keeps the memory footprint down. However, searches that
+/// cache search results like Dijkstra would become ineffective because it won't
+/// be able to cache all the relevant states that the search passes through.
+///
+/// For search algorithms that benefit from more state coverage, use
+/// [`super::IncrementalGraphMotion`].
 impl<S, G, E> Domain for GraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
@@ -166,8 +177,6 @@ pub enum GraphMotionError<K, E> {
     MissingVertex(K),
     #[error("The extrapolator experienced an error:\n{0:?}")]
     Extrapolator(E),
-    #[error("An action modifier experienced an error:\n{0}")]
-    Modifier(anyhow::Error),
 }
 
 #[derive(ThisError, Debug)]

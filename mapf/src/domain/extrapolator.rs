@@ -75,12 +75,23 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, State)>>, Self::IncrementalExtrapolationError>;
+    ) -> Result<Option<(Self::IncrementalExtrapolation, State, ExtrapolationProgress)>, Self::IncrementalExtrapolationError>;
 }
 
-pub enum ExtrapolationProgress<E> {
-    Incomplete(E),
-    Arrived(E),
+#[derive(Debug, Clone, Copy)]
+pub enum ExtrapolationProgress {
+    Incomplete,
+    Arrived,
+}
+
+impl ExtrapolationProgress {
+    pub fn incomplete(&self) -> bool {
+        matches!(self, ExtrapolationProgress::Incomplete)
+    }
+
+    pub fn arrived(&self) -> bool {
+        matches!(self, ExtrapolationProgress::Arrived)
+    }
 }
 
 pub struct NoExtrapolation<E>(std::marker::PhantomData<E>);
@@ -105,7 +116,7 @@ impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance
         _: &State,
         _: &Target,
         _: &Guidance,
-    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, State)>>, Self::IncrementalExtrapolationError> {
+    ) -> Result<Option<(Self::IncrementalExtrapolation, State, ExtrapolationProgress)>, Self::IncrementalExtrapolationError> {
         Ok(None)
     }
 }

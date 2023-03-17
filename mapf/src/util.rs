@@ -126,3 +126,18 @@ impl<T, E> FlatResultMapTrait for Result<T, E> {
         }
     }
 }
+
+pub enum ForkIter<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L: Iterator, R: Iterator<Item=L::Item>> Iterator for ForkIter<L, R> {
+    type Item = L::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Left(left) => left.next(),
+            Self::Right(right) => right.next(),
+        }
+    }
+}

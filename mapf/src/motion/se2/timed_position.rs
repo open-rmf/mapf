@@ -360,7 +360,10 @@ where
         from_state: &Waypoint,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<ExtrapolationProgress<(Self::IncrementalExtrapolation, Waypoint)>>, Self::IncrementalExtrapolationError> {
+    ) -> Result<
+            Option<(Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress)>,
+            Self::IncrementalExtrapolationError
+    > {
         let target_point = to_target.point();
         let mut arrival = self.move_towards_target(
             from_state,
@@ -372,7 +375,7 @@ where
         if let Some(next_increment) = arrival.waypoints.pop() {
             action.push(next_increment);
             if !arrival.waypoints.is_empty() {
-                return Ok(Some(ExtrapolationProgress::Incomplete((action, next_increment))));
+                return Ok(Some((action, next_increment, ExtrapolationProgress::Incomplete)));
             }
         }
 
@@ -380,7 +383,7 @@ where
             let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
             if delta_yaw_abs > self.rotational_threshold {
                 if let Some(next_increment) = action.first().map(|wp| *wp) {
-                    return Ok(Some(ExtrapolationProgress::Incomplete((action, next_increment))));
+                    return Ok(Some((action, next_increment, ExtrapolationProgress::Incomplete)));
                 } else {
                     // Rotate towards the target orientation if we're not
                     // already facing it.
@@ -393,13 +396,13 @@ where
                         ),
                     };
                     action.push(wp);
-                    return Ok(Some(ExtrapolationProgress::Arrived((action, wp))));
+                    return Ok(Some((action, wp, ExtrapolationProgress::Arrived)));
                 }
             }
         }
 
         let wp = *action.first().unwrap_or(from_state);
-        Ok(Some(ExtrapolationProgress::Arrived((action, wp))))
+        Ok(Some((action, wp, ExtrapolationProgress::Arrived)))
     }
 }
 

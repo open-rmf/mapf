@@ -18,5 +18,8 @@
 pub mod graph_motion;
 pub use graph_motion::GraphMotion;
 
+pub mod incremental_graph_motion;
+pub use incremental_graph_motion::IncrementalGraphMotion;
+
 pub mod informed_search;
 pub use informed_search::InformedSearch;

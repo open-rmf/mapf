@@ -18,7 +18,7 @@
 use super::{Position, Velocity, Positioned};
 use crate::{
     motion::{self, SpeedLimiter, se2, timed, InterpError, Interpolation},
-    domain::{Extrapolator, Reversible},
+    domain::{Extrapolator, IncrementalExtrapolator, ExtrapolationProgress, Reversible},
     error::NoError,
 };
 use arrayvec::ArrayVec;
@@ -183,6 +183,27 @@ where
         with_guidance: &Guidance,
     ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, Self::ExtrapolationError> {
         self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit())
+    }
+}
+
+impl<Target, Guidance> IncrementalExtrapolator<Waypoint, Target, Guidance> for LineFollow
+where
+    Target: Positioned,
+    Guidance: SpeedLimiter,
+{
+    type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
+    type IncrementalExtrapolationError = LineFollowError;
+    fn incremental_extrapolate(
+        &self,
+        from_state: &Waypoint,
+        to_target: &Target,
+        with_guidance: &Guidance,
+    ) -> Result<
+            Option<(Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress)>,
+            Self::IncrementalExtrapolationError
+    > {
+        self.extrapolate(from_state, to_target, with_guidance)
+            .map(|r| r.map(|(action, state)| (action, state, ExtrapolationProgress::Arrived)))
     }
 }
 
