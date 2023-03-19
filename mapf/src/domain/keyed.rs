@@ -15,11 +15,14 @@
  *
 */
 
-use std::{cmp::Eq, hash::Hash, borrow::Borrow};
+use std::{cmp::Eq, hash::Hash, borrow::Borrow, fmt::Debug};
 
-/// The `Key` trait describes objects that can be used as Keys by Keyed domains
-pub trait Key: Hash + Eq + Send + Sync + 'static {}
-impl<T: Hash + Eq + Send + Sync + 'static> Key for T {}
+/// The `Key` trait describes objects that can be used as Keys by Keyed domains.
+///
+/// The `Debug` trait is required so that key information can be put into error
+/// messages.
+pub trait Key: Hash + Eq + Send + Sync + Debug + 'static {}
+impl<T: Hash + Eq + Send + Sync + Debug + 'static> Key for T {}
 
 /// `Keyed` is used to indicate an associated [`Key`] type for a struct.
 pub trait Keyed {

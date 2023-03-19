@@ -80,6 +80,16 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
     ) -> Self::State {
         StateR2 { key, waypoint }
     }
+
+    fn vertex_of<'a>(
+        &'a self,
+        key: &'a Self::Key,
+    ) -> &'a K
+    where
+        K: 'a
+    {
+        key
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

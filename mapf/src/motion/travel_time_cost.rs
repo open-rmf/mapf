@@ -18,12 +18,19 @@
 
 
 use crate::{
-    domain::{Weighted, Cost},
+    domain::{Weighted, Cost, Reversible},
     motion::Timed,
     error::NoError,
 };
 
+#[derive(Debug, Clone, Copy)]
 pub struct TravelTimeCost(pub f64);
+
+impl Default for TravelTimeCost {
+    fn default() -> Self {
+        TravelTimeCost(1.0)
+    }
+}
 
 impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
     type Cost = Cost<f64>;
@@ -35,7 +42,11 @@ impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
         _: &Action,
         to_state: &State
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
-        let duration = (*to_state.time() - *from_state.time()).as_secs_f64();
+        // Using the absolute value of the difference allows this same
+        // implementation to work both forwards and backwards in time. We are
+        // assuming that any case where time is decreasing in the child state,
+        // a reverse search is being performed.
+        let duration = (*to_state.time() - *from_state.time()).as_secs_f64().abs();
         Ok(Some(Cost(duration*self.0)))
     }
 
@@ -44,5 +55,12 @@ impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
         _: &State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         Ok(Some(Cost(0.0)))
+    }
+}
+
+impl Reversible for TravelTimeCost {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(*self)
     }
 }

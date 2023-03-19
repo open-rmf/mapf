@@ -61,17 +61,9 @@ impl<Start: Into<State>, State> Initializable<Start, State> for () {
 }
 
 /// This struct implements Initializable for any Start that implements Into<State>
-pub struct InitFrom<Start> {
-    _ignore: std::marker::PhantomData<Start>,
-}
+pub struct InitFrom;
 
-impl<Start> InitFrom<Start> {
-    pub fn new() -> Self {
-        Self { _ignore: Default::default() }
-    }
-}
-
-impl<State, Start: Into<State>> Initializable<Start, State> for InitFrom<Start> {
+impl<State, Start: Into<State>> Initializable<Start, State> for InitFrom {
     type InitialError = NoError;
     type InitialStates<'a> = Option<Result<State, NoError>>
     where
@@ -91,17 +83,9 @@ impl<State, Start: Into<State>> Initializable<Start, State> for InitFrom<Start> 
 }
 
 /// This struct implements Initializable for any Start that implements Into<Option<State>>
-pub struct InitFromMaybe<Start> {
-    _ignore: std::marker::PhantomData<Start>,
-}
+pub struct MaybeInitFrom;
 
-impl<State> InitFromMaybe<State> {
-    pub fn new() -> Self {
-        Self { _ignore: Default::default() }
-    }
-}
-
-impl<State, Start: Into<Option<State>>> Initializable<Start, State> for InitFromMaybe<Start> {
+impl<State, Start: Into<Option<State>>> Initializable<Start, State> for MaybeInitFrom {
     type InitialError = NoError;
     type InitialStates<'a> = Option<Result<State, NoError>>
     where
@@ -148,6 +132,36 @@ where
         State: 'a,
     {
         from_start.into_iter().flat_map(|start| self.0.initialize(start))
+    }
+}
+
+pub struct LiftInit<Init>(pub Init);
+
+impl<Start, State, Init> Initializable<Start, State> for LiftInit<Init>
+where
+    Init: Domain,
+    Init::State: Into<State>,
+    Init: Initializable<Start, State>,
+{
+    type InitialError = Init::InitialError;
+    type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        Start: 'a,
+        State: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: Start,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        Start: 'a,
+        State: 'a,
+    {
+        self.0.initialize(from_start).into_iter().map(|s| s.into())
     }
 }
 
@@ -207,7 +221,7 @@ mod tests {
     #[test]
     fn test_single_start() {
         let domain = DefineTrait::<TestState>::new()
-            .with(InitFrom::<usize>::new());
+            .with(InitFrom);
 
         let initial_state: Result<Vec<_>, _> = domain.initialize(5).into_iter().collect();
         let initial_state = initial_state.unwrap();
@@ -218,7 +232,7 @@ mod tests {
     #[test]
     fn test_multi_start() {
         let domain = DefineTrait::<TestState>::new()
-            .with(ManyInit(InitFrom::<Point>::new()));
+            .with(ManyInit(InitFrom));
 
         let initial_states: Result<Vec<_>, _> = domain.initialize(
             [Point::new(0.1, 0.2), Point::new(3.0, 4.0)]

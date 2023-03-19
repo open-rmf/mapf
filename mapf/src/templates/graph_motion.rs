@@ -160,9 +160,8 @@ where
     G: Reversible,
     E: Reversible,
 {
-    type Reverse = GraphMotion<S::Reverse, G::Reverse, E::Reverse>;
     type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(GraphMotion {
             space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
             graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,

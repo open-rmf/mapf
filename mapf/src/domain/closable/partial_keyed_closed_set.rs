@@ -15,7 +15,10 @@
  *
 */
 
-use crate::domain::{PartialKeyed, Keyed, Keyring};
+use crate::{
+    domain::{PartialKeyed, Keyed, Keyring, Reversible},
+    error::NoError,
+};
 use super::{
     Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
     AsTimeInvariant, AsTimeVariant, TimeVariantPartialKeyedCloser,
@@ -28,7 +31,15 @@ use std::{
 /// Factory for [`PartialKeyedClosedSet`]. Provide this to your domain, e.g.
 /// [`crate::templates::InformedSearch`], to implement the [`Closable`] trait
 /// for search spaces that are partially keyed.
+#[derive(Debug, Clone)]
 pub struct PartialKeyedCloser<Ring>(pub Ring);
+
+impl<Ring: Clone> Reversible for PartialKeyedCloser<Ring> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(self.clone())
+    }
+}
 
 impl<State, Ring> Closable<State> for PartialKeyedCloser<Ring>
 where
@@ -62,6 +73,7 @@ impl<Ring> AsTimeVariant for PartialKeyedCloser<Ring> {
 ///
 /// Note that keyless states will not be stored at all in the container of this
 /// set.
+#[derive(Debug, Clone)]
 pub struct PartialKeyedClosedSet<Ring: PartialKeyed, T> {
     keyring: Ring,
     container: HashMap<Ring::PartialKey, T>,

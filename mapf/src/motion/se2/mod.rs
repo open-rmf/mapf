@@ -38,5 +38,5 @@ pub use oriented::*;
 
 pub type LinearTrajectory = super::Trajectory<Waypoint>;
 
-// pub mod quickest_path;
-// pub use quickest_path::QuickestPath;
+pub mod quickest_path;
+pub use quickest_path::QuickestPathHeuristic;

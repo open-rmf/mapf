@@ -86,18 +86,14 @@ where
 // NOTE(MXG): With this implementation, we assume that the reverse graph's
 // vertices are in the same locations as the forward graph's vertices. We could
 // consider loosening this assumption in the future.
-impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<G, W>
-where
-    G::Reverse: Graph,
-{
-    type Reverse = DirectTravelHeuristic<G::Reverse, W::Reverse>;
+impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<G, W> {
     type ReversalError = DirectTravelReversalError<
         G::ReversalError,
         W::ReversalError,
         <LineFollow as Reversible>::ReversalError,
     >;
 
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(DirectTravelHeuristic {
             space: DiscreteSpaceTimeR2::new(),
             graph: self.graph.reversed().map_err(DirectTravelReversalError::Graph)?,

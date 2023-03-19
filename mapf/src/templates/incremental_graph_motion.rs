@@ -19,13 +19,17 @@ use crate::{
     graph::{Graph, Edge},
     domain::{
         Domain, IncrementalExtrapolator, Activity, Reversible,
-        KeyedSpace, Keyed, PartialKeyed, Keyring,
+        KeyedSpace, Keyed, PartialKeyed, Keyring, SelfKey, Backtrack,
     },
+    motion::Timed,
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
     util::{FlatResultMapTrait, ForkIter},
     error::StdError,
 };
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    fmt::Debug,
+};
 
 /// `IncrementalGraphMotion` defines a domain and activity that moves over a
 /// spatial graph as thoroughly as possible. This is generally used for motion
@@ -220,7 +224,7 @@ where
 
 impl<S, G, E> Keyring<IncrementalState<S::State, G>> for IncrementalGraphMotion<S, G, E>
 where
-    S: Domain + Keyring<S::State>,
+    S: KeyedSpace<G::Key>,
     G: Graph,
 {
     type KeyRef<'a> = S::KeyRef<'a>
@@ -243,21 +247,91 @@ where
     G: Reversible,
     E: Reversible,
 {
-    type Reverse = IncrementalGraphMotion<S::Reverse, G::Reverse, E::Reverse>;
     type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
+        dbg!();
+        let space = self.space.reversed().map_err(GraphMotionReversalError::Space)?;
+        dbg!();
+        let graph = self.graph.reversed().map_err(GraphMotionReversalError::Graph)?;
+        dbg!();
+        let extrapolator = self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?;
+        dbg!();
         Ok(IncrementalGraphMotion {
-            space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
-            graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,
-            extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
+            space,
+            graph,
+            extrapolator,
         })
     }
 }
 
-#[derive(Debug)]
+impl<S, G, E> Backtrack<IncrementalState<S::State, G>, E::IncrementalExtrapolation> for IncrementalGraphMotion<S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    G: Graph,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
+{
+    type BacktrackError = E::BacktrackError;
+    fn flip_state(
+        &self,
+        final_reverse_state: &IncrementalState<S::State, G>
+    ) -> Result<IncrementalState<S::State, G>, Self::BacktrackError> {
+        self.extrapolator.flip_state(self.space.waypoint(&final_reverse_state.base_state).borrow())
+            .map(|waypoint| {
+                let vertex = self.space.vertex_of(
+                    self.space.key_for(&final_reverse_state.base_state).borrow()
+                ).clone();
+                IncrementalState {
+                    target: final_reverse_state.target.clone(),
+                    base_state: self.space.make_keyed_state(vertex, waypoint)
+                }
+        })
+    }
+
+    fn backtrack(
+        &self,
+        parent_forward_state: &IncrementalState<S::State, G>,
+        parent_reverse_state: &IncrementalState<S::State, G>,
+        reverse_action: &E::IncrementalExtrapolation,
+        child_reverse_state: &IncrementalState<S::State, G>,
+    ) -> Result<(E::IncrementalExtrapolation, IncrementalState<S::State, G>), Self::BacktrackError> {
+        self.extrapolator.backtrack(
+            self.space.waypoint(&parent_forward_state.base_state).borrow(),
+            self.space.waypoint(&parent_reverse_state.base_state).borrow(),
+            reverse_action,
+            self.space.waypoint(&child_reverse_state.base_state).borrow(),
+        )
+        .map(|(action, waypoint)| {
+            let vertex = self.space.vertex_of(
+                self.space.key_for(&child_reverse_state.base_state).borrow()
+            ).clone();
+            let state = IncrementalState {
+                target: child_reverse_state.target.clone(),
+                base_state: self.space.make_keyed_state(vertex, waypoint)
+            };
+            (action, state)
+        })
+    }
+}
+
 pub struct IncrementalState<BaseState, G: Graph> {
     target: Option<(G::Key, G::EdgeAttributes)>,
     base_state: BaseState,
+}
+
+impl<BaseState, G: Graph> Debug for IncrementalState<BaseState, G>
+where
+    BaseState: Debug,
+    G::Key: Debug,
+    G::EdgeAttributes: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IncrementalState")
+            .field("target", &self.target)
+            .field("base_state", &self.base_state)
+            .finish()
+    }
 }
 
 impl<BaseState: Clone, G: Graph> Clone for IncrementalState<BaseState, G>
@@ -270,5 +344,86 @@ where
             target: self.target.clone(),
             base_state: self.base_state.clone(),
         }
+    }
+}
+
+impl<BaseState, G: Graph> From<BaseState> for IncrementalState<BaseState, G> {
+    fn from(base_state: BaseState) -> Self {
+        IncrementalState { target: None, base_state }
+    }
+}
+
+impl<BaseState, G: Graph> Borrow<BaseState> for IncrementalState<BaseState, G> {
+    fn borrow(&self) -> &BaseState {
+        &self.base_state
+    }
+}
+
+impl<BaseState: Keyed, G: Graph> Keyed for IncrementalState<BaseState, G> {
+    type Key = BaseState::Key;
+}
+
+impl<BaseState: SelfKey, G: Graph> SelfKey for IncrementalState<BaseState, G> {
+    type KeyRef<'a> = BaseState::KeyRef<'a> where BaseState: 'a, G: 'a;
+    fn key<'a>(&'a self) -> Self::KeyRef<'a> where Self: 'a {
+        self.base_state.key()
+    }
+}
+
+impl<BaseState: Timed, G: Graph> Timed for IncrementalState<BaseState, G> {
+    fn set_time(&mut self, new_time: time_point::TimePoint) {
+        self.base_state.set_time(new_time)
+    }
+
+    fn time(&self) -> &time_point::TimePoint {
+        self.base_state.time()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        graph::SimpleGraph,
+        domain::Initializable,
+        motion::se2::{Point, StarburstSE2, StateSE2},
+    };
+
+    #[test]
+    fn test_incremental_initialization() {
+        /*
+         *      5
+         *      |
+         *      |
+         * 0----1----2
+         *     / \
+         *   /     \
+         * 3         4
+         *
+         */
+
+        let graph = SimpleGraph::from_iters(
+            [
+                Point::new(-1.0, 0.0), // 0
+                Point::new(0.0, 0.0), // 1
+                Point::new(1.0, 0.0), // 2
+                Point::new(-1.0, -1.0), // 3
+                Point::new(1.0, -1.0), // 4
+                Point::new(0.0, 1.0), // 5
+            ],
+            [
+                (0, 1, ()), (1, 0, ()),
+                (2, 1, ()), (1, 2, ()),
+                (3, 1, ()), (1, 3, ()),
+                (4, 1, ()), (1, 4, ()),
+                (5, 1, ()), (1, 5, ()),
+            ]
+        );
+
+        const R: u32 = 100;
+        let init = StarburstSE2::for_start(graph);
+        let states: Result<Vec<IncrementalState<StateSE2<usize, R>, SimpleGraph<Point, ()>>>, _> = init.initialize(1).collect();
+        let states = states.unwrap();
+        assert!(states.len() == 5);
     }
 }

@@ -23,14 +23,11 @@ use crate::error::NoError;
 /// This is useful for bidirectional search algorithms. Domains that implement
 /// this trait will often have to implement [`Backtrack`] as well.
 pub trait Reversible {
-    /// The type of the reverse domain
-    type Reverse;
-
     /// What kind of error can happen if the domain has the wrong values in it.
     type ReversalError;
 
     /// Get the reverse of this domain
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError>;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized;
 }
 
 /// For a reverse domain created by [`Reversible`], the `Backtrack` trait can
@@ -41,9 +38,7 @@ pub trait Reversible {
 /// `ReverseState` should be the state of the domain that implements this trait
 /// while `ReverseAction` should be the [`crate::domain::Activity::ActivityAction`]
 /// implemented by the domain that this trait implements.
-pub trait Backtrack<ReverseState, ReverseAction> {
-    type ForwardState;
-    type ForwardAction;
+pub trait Backtrack<State, Action> {
     type BacktrackError;
 
     /// Change a final reverse state into its initial forward state
@@ -51,23 +46,22 @@ pub trait Backtrack<ReverseState, ReverseAction> {
     /// into a forward solution.
     fn flip_state(
         &self,
-        final_state: &ReverseState
-    ) -> Result<Self::ForwardState, Self::BacktrackError>;
+        final_reverse_state: &State
+    ) -> Result<State, Self::BacktrackError>;
 
     /// Advance from a forward state using a reverse-action counter-part.
     fn backtrack(
         &self,
-        parent_forward_state: &Self::ForwardState,
-        parent_reverse_state: &ReverseState,
-        reverse_action: &ReverseAction,
-        child_reverse_state: &ReverseState,
-    ) -> Result<(Self::ForwardAction, Self::ForwardState), Self::BacktrackError>;
+        parent_forward_state: &State,
+        parent_reverse_state: &State,
+        reverse_action: &Action,
+        child_reverse_state: &State,
+    ) -> Result<(Action, State), Self::BacktrackError>;
 }
 
 impl Reversible for () {
-    type Reverse = ();
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<(), Self::ReversalError> {
         Ok(())
     }
 }

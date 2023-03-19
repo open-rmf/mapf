@@ -23,7 +23,7 @@ use crate::{
     },
     domain::{
         Extrapolator, IncrementalExtrapolator, SelfKey, Connectable, Reversible,
-        ExtrapolationProgress,
+        ExtrapolationProgress, Backtrack,
     },
     error::{ThisError, NoError},
 };
@@ -406,6 +406,52 @@ where
     }
 }
 
+impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for DifferentialDriveLineFollow {
+    type BacktrackError = NoError;
+    fn flip_state(
+        &self,
+        final_reverse_state: &Waypoint
+    ) -> Result<Waypoint, Self::BacktrackError> {
+        let mut initial_forward_state = *final_reverse_state;
+        initial_forward_state.time = TimePoint::zero();
+        Ok(initial_forward_state)
+    }
+
+    fn backtrack(
+        &self,
+        parent_forward_state: &Waypoint,
+        parent_reverse_state: &Waypoint,
+        reverse_action: &ArrayVec<Waypoint, N>,
+        child_reverse_state: &Waypoint,
+    ) -> Result<(ArrayVec<Waypoint, N>, Waypoint), Self::BacktrackError> {
+        let dt = parent_forward_state.time - parent_reverse_state.time;
+
+        let mut child_forward_state = *child_reverse_state;
+        child_forward_state.time += dt;
+
+        let mut forward_action = reverse_action.clone();
+        // Check swap_endpoints now and save it because the length will change
+        // when we pop the last waypoint.
+        let swap_endpoints = !forward_action.is_empty();
+        if swap_endpoints {
+            // The last element should be the parent_reverse_state waypoint.
+            forward_action.pop();
+        }
+        forward_action.reverse();
+        for wp in &mut forward_action {
+            // Adjust the times of each waypoint
+            wp.time += dt;
+        }
+        if swap_endpoints {
+            // Add the waypoint of the child_forward_state, which is the
+            // endpoint of this action
+            forward_action.push(child_forward_state);
+        }
+
+        Ok((forward_action, child_forward_state))
+    }
+}
+
 #[derive(Debug, ThisError, Clone, Copy)]
 pub enum DifferentialDriveLineFollowError {
     #[error("provided with an invalid speed limit (must be >0.0): {0}")]
@@ -413,9 +459,8 @@ pub enum DifferentialDriveLineFollowError {
 }
 
 impl Reversible for DifferentialDriveLineFollow {
-    type Reverse = Self;
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(Self {
             direction: -self.direction,
             ..self.clone()

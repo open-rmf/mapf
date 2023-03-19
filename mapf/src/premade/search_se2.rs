@@ -59,13 +59,13 @@ where
 {
     pub fn new_se2(
         graph: SharedGraph<G>,
-        drive: DifferentialDriveLineFollow,
+        motion: DifferentialDriveLineFollow,
     ) -> Self {
         InformedSearch::new(
             GraphMotion {
                 space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
                 graph: graph.clone(),
-                extrapolator: drive,
+                extrapolator: motion,
             },
             TravelTimeCost(1.0),
             DefineTrait::<StateSE2<G::Key, DEFAULT_RES>>::new()
@@ -75,14 +75,14 @@ where
                     space: DiscreteSpaceTimeR2::<G::Key>::new(),
                     graph: graph.clone(),
                     weight: TravelTimeCost(1.0),
-                    extrapolator: drive.into(),
+                    extrapolator: motion.into(),
                 }
             ),
             KeyedCloser(DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new()),
         )
         .with_initializer(InitializeSE2(graph))
-        .with_satisfier(SatisfySE2::from(drive))
-        .with_connector(MergeIntoGoal(drive))
+        .with_satisfier(SatisfySE2::from(motion))
+        .with_connector(MergeIntoGoal(motion))
     }
 }
 

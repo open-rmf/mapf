@@ -43,6 +43,13 @@ impl<S> Status<S> {
         matches!(self, Status::Solved(_))
     }
 
+    pub fn solution(self) -> Option<S> {
+        match self {
+            Self::Solved(solution) => Some(solution),
+            _ => None,
+        }
+    }
+
     /// If the status contains a solution, apply a function to that solution.
     pub fn map<U, F: FnOnce(S) -> U>(self, op: F) -> Status<U> {
         match self {

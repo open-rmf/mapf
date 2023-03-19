@@ -15,7 +15,10 @@
  *
 */
 
-use crate::domain::{Keyed, Keyring};
+use crate::{
+    domain::{Keyed, Keyring, Reversible},
+    error::NoError,
+};
 use super::{
     Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
     AsTimeInvariant, AsTimeVariant, TimeVariantKeyedCloser,
@@ -27,7 +30,15 @@ use std::{
 
 /// [`KeyedCloser`] implements the [`Closable`] trait by providing a
 /// [`KeyedClosedSet`].
+#[derive(Debug, Clone)]
 pub struct KeyedCloser<Ring>(pub Ring);
+
+impl<Ring: Clone> Reversible for KeyedCloser<Ring> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(self.clone())
+    }
+}
 
 impl<State, Ring> Closable<State> for KeyedCloser<Ring>
 where
@@ -54,6 +65,7 @@ impl<Ring> AsTimeVariant for KeyedCloser<Ring> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct KeyedClosedSet<Ring: Keyed, T> {
     keyring: Ring,
     container: HashMap<Ring::Key, T>,

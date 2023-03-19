@@ -18,7 +18,7 @@
 use crate::{
     domain::{
         Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
-        ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult,
+        ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
     },
     algorithm::{Algorithm, Coherent, Solvable, Status, tree::*},
     error::ThisError,
@@ -61,6 +61,14 @@ where
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
 {
+    pub fn new(domain: D) -> Self {
+        dbg!();
+        Self {
+            domain,
+            cache: Mutex::new(Default::default()),
+        }
+    }
+
     pub fn domain(&self) -> &D {
         &self.domain
     }
@@ -79,12 +87,12 @@ where
     D: Domain
     + Keyring<D::State>
     + Initializable<Start, D::State>
-    + Initializable<Goal, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
-    <D as Initializable<Start, D::State>>::InitialError: Into<D::Error>,
-    <D as Initializable<Goal, D::State>>::InitialError: Into<D::Error>,
+    + Closable<D::State>
+    + ArrivalKeyring<D::Key, Goal>,
+    D::InitialError: Into<D::Error>,
+    D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::State: Clone,
     D::Cost: Clone + Ord,
@@ -98,9 +106,12 @@ where
         start: Start,
         goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
+        dbg!();
         let mut trees = Vec::new();
         for state in self.domain.initialize(start) {
+            dbg!();
             let state = state.map_err(Self::domain_err)?;
+            dbg!(self.domain().key_for(&state).borrow());
             let key_ref = self.domain.key_for(&state);
             let tree = match self.cache.lock() {
                 Ok(mut r) => {
@@ -129,13 +140,9 @@ where
             trees.push(TreeMemory::new(tree));
         }
 
-        let goal_keys: Result<Vec<_>, _> = self.domain.initialize(goal.clone())
+        let goal_keys: Result<Vec<_>, _> = self.domain.get_arrival_keys(goal)
             .into_iter()
-            .map(|r|
-                r
-                .map(|s| self.domain.key_for(&s).borrow().clone())
-                .map_err(Self::domain_err)
-            )
+            .map(|r| r.map_err(Self::domain_err))
             .collect();
 
         Ok(Memory::new(trees, goal_keys?))
@@ -151,7 +158,7 @@ where
     + Closable<D::State>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost> + std::fmt::Debug,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -164,7 +171,9 @@ where
         memory: &mut Self::Memory,
         _: &Goal,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
+        dbg!();
         if memory.exhausted {
+            dbg!();
             if let Some((s, _)) = memory.best_solution {
                 let solution = memory.trees.get(s).map(|t| t.solution.clone()).flatten();
                 if let Some(solution) = solution {
@@ -181,6 +190,7 @@ where
 
         let mut exhausted = true;
         for (tree_i, mt) in memory.trees.iter_mut().enumerate() {
+            dbg!();
             let cost_bound = memory.best_solution.as_ref().map(|(_, c)| c.clone());
 
             let mut tree_solution = match mt.tree.read() {
@@ -235,6 +245,7 @@ where
                 let tree = &mut cache.tree;
 
                 'grow: for _ in 0..memory.iterations_per_step {
+                    dbg!(tree.queue.len(), tree.closed_set.closed_keys_len());
                     let top_id = match tree.queue.pop() {
                         Some(top) => top.0.node_id,
                         None => break,
@@ -243,6 +254,7 @@ where
                     let top = tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
                     if let CloseResult::Rejected { prior, .. } = tree.closed_set.close(&top.state, top_id) {
                         let prior_node = tree.arena.get_node(*prior).map_err(Self::algo_err)?;
+                        dbg!(&prior_node.cost, &top.cost);
                         if prior_node.cost <= top.cost {
                             // The state we are attempting to expand has already been
                             // closed in the past by a lower cost node, so we will not
@@ -251,8 +263,10 @@ where
                         }
                     }
 
+                    println!(" ==== Expanding from {:?} ==== ", self.domain.key_for(&top.state).borrow());
                     for next in self.domain.choices(top.state.clone()) {
                         let (action, child_state) = next.map_err(Self::domain_err)?;
+                        dbg!(self.domain.key_for(&child_state).borrow());
                         let child_cost = match self.domain
                             .cost(&top.state, &action, &child_state)
                             .map_err(Self::domain_err)?
@@ -271,7 +285,9 @@ where
                     let top_key_ref = self.domain.key_for(top.state());
                     let top_key: &D::Key = top_key_ref.borrow();
                     for goal_key in &memory.goal_keys {
+                        dbg!((top_key, goal_key));
                         if *top_key == *goal_key {
+                            println!(" ========== SOLUTION ========== ");
                             // We have found a solution.
                             let path = tree.arena.retrace(top_id)
                                 .map_err(Self::algo_err)?;
@@ -345,6 +361,7 @@ impl From<TreeError> for DijkstraImplError {
     }
 }
 
+#[derive(Clone)]
 struct Cache<D>
 where
     D: Domain
@@ -354,6 +371,19 @@ where
     + Closable<D::State>
 {
     trees: HashMap<D::Key, SharedCachedTree<D>>,
+}
+
+impl<D> Default for Cache<D>
+where
+    D: Domain
+    + Keyed
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>
+{
+    fn default() -> Self {
+        Self { trees: Default::default() }
+    }
 }
 
 /// A RwLock is used to store the cached tree because the asymptotic behavior of

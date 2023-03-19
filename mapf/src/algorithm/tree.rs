@@ -61,6 +61,7 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
                 if prior.cost() <= node.cost() {
                     // The state is already closed with a lower-cost node, so
                     // we should not push this new node.
+                    println!("Skipping node");
                     return Ok(());
                 }
             } else {
@@ -70,6 +71,7 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
             }
         }
 
+        println!("Adding node");
         let node_id = self.arena.len();
         let evaluation = node.queue_evaluation();
         self.arena.push(node);
@@ -106,6 +108,7 @@ pub trait TreeNode {
     fn queue_evaluation(&self) -> Self::Cost;
 }
 
+#[derive(Debug)]
 pub struct TreeQueueTicket<Cost> {
     pub evaluation: Cost,
     pub node_id: usize,
@@ -180,8 +183,8 @@ pub struct Path<State, Action, Cost> {
 impl<S, A, C> Path<S, A, C> {
     pub fn backtrack<ReverseDomain>(
         self,
-        reverse_domain: &ReverseDomain
-    ) -> Result<Path<ReverseDomain::ForwardState, ReverseDomain::ForwardAction, C>, ReverseDomain::Error>
+        reverse_domain: &ReverseDomain,
+    ) -> Result<Path<S, A, C>, ReverseDomain::Error>
     where
         ReverseDomain: Domain + Backtrack<S, A>,
         ReverseDomain::BacktrackError: Into<ReverseDomain::Error>,

@@ -16,8 +16,9 @@
 */
 
 use crate::{
-    domain::{Keyed, Keyring},
+    domain::{Keyed, Keyring, Reversible},
     motion::Timed,
+    error::NoError,
 };
 use super::{
     Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
@@ -33,9 +34,17 @@ pub const DEFAULT_TIME_THRESH: i64 = 100_000_000;
 /// Factory for [`TimeVariantKeyedClosedSet`]. Provide this to your domain,
 /// e.g. [`crate::template::InformedSearch`], to implement the [`Closable`]
 /// trait for search spaces that are keyed and time variant.
+#[derive(Debug, Clone)]
 pub struct TimeVariantKeyedCloser<Ring> {
     pub ring: Ring,
     pub time_thresh: i64,
+}
+
+impl<Ring: Clone> Reversible for TimeVariantKeyedCloser<Ring> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(self.clone())
+    }
 }
 
 impl<Ring> TimeVariantKeyedCloser<Ring> {
@@ -79,6 +88,7 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TimeVariantKeyedClosedSet<Ring: Keyed, T> {
     keyring: Ring,
     container: HashMap<Ring::Key, HashMap<i64, T>>,

@@ -18,10 +18,11 @@
 use crate::{
     domain::{
         Domain, Informed, Activity, Weighted, Keyed, PartialKeyed, Keyring,
-        Satisfiable, Closable, Initializable,
-        Connectable, Chained, AsTimeInvariant, AsTimeVariant,
+        Satisfiable, Closable, Initializable, Reversible,
+        Connectable, Chained, AsTimeInvariant, AsTimeVariant, Backtrack,
+        ArrivalKeyring,
     },
-    error::Anyhow,
+    error::{Anyhow, ThisError},
 };
 
 /// `InformedSearch` template helps produce a domain for graph-based motion
@@ -66,7 +67,7 @@ pub struct InformedSearch<A, W, H, X, I, S, C> {
     pub connector: C,
 }
 
-impl<A: Domain, W, H, X> InformedSearch<A, W, H, X, (), (), ()> {
+impl<A, W, H, X> InformedSearch<A, W, H, X, (), (), ()> {
     /// Create a new InformedSearch domain with the minimum required
     /// components.
     pub fn new(
@@ -412,6 +413,122 @@ where
     {
         self.activity.key_for(state)
     }
+}
+
+impl<A, W, H, X, I, S, C, Goal> ArrivalKeyring<A::Key, Goal> for InformedSearch<A, W, H, X, I, S, C>
+where
+    A: Keyed,
+    S: ArrivalKeyring<A::Key, Goal>,
+{
+    type ArrivalKeyError = S::ArrivalKeyError;
+    type ArrivalKeys<'a> = S::ArrivalKeys<'a>
+    where
+        A: 'a,
+        W: 'a,
+        H: 'a,
+        X: 'a,
+        I: 'a,
+        S: 'a,
+        C: 'a,
+        Goal: 'a,
+        S::ArrivalKeyError: 'a,
+        A::Key: 'a;
+
+    fn get_arrival_keys<'a>(
+        &'a self,
+        goal: &'a Goal,
+    ) -> Self::ArrivalKeys<'a>
+    where
+        Self: 'a,
+        Self::ArrivalKeyError: 'a,
+        A::Key: 'a,
+        Goal: 'a
+    {
+        self.satisfier.get_arrival_keys(goal)
+    }
+}
+
+impl<A, W, H, X, I, S, C> Reversible for InformedSearch<A, W, H, X, I, S, C>
+where
+    A: Reversible,
+    W: Reversible,
+    H: Reversible,
+    C: Reversible,
+    X: Reversible,
+    I: Reversible,
+    S: Reversible,
+{
+    type ReversalError = InformedSearchReversalError<
+        A::ReversalError,
+        W::ReversalError,
+        H::ReversalError,
+        X::ReversalError,
+        I::ReversalError,
+        S::ReversalError,
+        C::ReversalError,
+    >;
+
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
+        dbg!();
+        let activity = self.activity.reversed().map_err(InformedSearchReversalError::Activity)?;
+        dbg!();
+        let weight = self.weight.reversed().map_err(InformedSearchReversalError::Weight)?;
+        dbg!();
+        let heuristic = self.heuristic.reversed().map_err(InformedSearchReversalError::Heuristic)?;
+        dbg!();
+        let connector = self.connector.reversed().map_err(InformedSearchReversalError::Connector)?;
+        dbg!();
+        Ok(InformedSearch {
+            activity,
+            weight,
+            heuristic,
+            connector,
+            closer: self.closer.reversed().map_err(InformedSearchReversalError::Closer)?,
+            initializer: self.initializer.reversed().map_err(InformedSearchReversalError::Initializer)?,
+            satisfier: self.satisfier.reversed().map_err(InformedSearchReversalError::Satisfier)?,
+        })
+    }
+}
+
+impl<A, W, H, X, I, S, C> Backtrack<A::State, A::ActivityAction> for InformedSearch<A, W, H, X, I, S, C>
+where
+    A: Domain + Activity<A::State> + Backtrack<A::State, A::ActivityAction>,
+{
+    type BacktrackError = A::BacktrackError;
+    fn flip_state(
+        &self,
+        final_reverse_state: &A::State
+    ) -> Result<A::State, Self::BacktrackError> {
+        self.activity.flip_state(final_reverse_state)
+    }
+
+    fn backtrack(
+        &self,
+        parent_forward_state: &A::State,
+        parent_reverse_state: &A::State,
+        reverse_action: &A::ActivityAction,
+        child_reverse_state: &A::State,
+    ) -> Result<(A::ActivityAction, A::State), Self::BacktrackError> {
+        self.activity.backtrack(parent_forward_state, parent_reverse_state, reverse_action, child_reverse_state)
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum InformedSearchReversalError<A, W, H, X, I, S, C> {
+    #[error("An error happened while reversing the activity:\n{0}")]
+    Activity(A),
+    #[error("An error happened while reversing the weight:\n{0}")]
+    Weight(W),
+    #[error("An error happened while reversing the heuristic:\n{0}")]
+    Heuristic(H),
+    #[error("An error happened while reversing the closer:\n{0}")]
+    Closer(X),
+    #[error("An error happened while reversing the initializer:\n{0}")]
+    Initializer(I),
+    #[error("An error happened while reversing the satisfier:\n{0}")]
+    Satisfier(S),
+    #[error("An error happened while reversing the connector:\n{0}")]
+    Connector(C),
 }
 
 #[cfg(test)]

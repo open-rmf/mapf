@@ -322,9 +322,8 @@ impl Edge<Cell, ()> for (Cell, Cell) {
 }
 
 impl<G: Grid> Reversible for NeighborhoodGraph<G> {
-    type Reverse = Self;
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
         // Visibility graphs are always bidirectional, so the reverse is the
         // same as the forward.
         Ok(self.clone())

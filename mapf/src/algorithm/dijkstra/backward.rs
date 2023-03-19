@@ -18,7 +18,7 @@
 use crate::{
     domain::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
-        Keyring, ClosedStatusForKey, Backtrack,
+        Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring,
     },
     algorithm::{
         Algorithm, Coherent, Solvable, Status,
@@ -33,62 +33,76 @@ use std::ops::Add;
 
 pub struct BackwardDijkstra<D: Reversible>
 where
-    D::Reverse: Domain
+    D: Domain
     + Keyed
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
-    + Closable<ReverseStateOf<D>>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
 {
-    backward: Dijkstra<D::Reverse>,
+    backward: Dijkstra<D>,
+}
+
+impl<D: Reversible> BackwardDijkstra<D>
+where
+    D: Domain
+    + Keyed
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
+{
+    pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
+        dbg!();
+        Ok(Self { backward: Dijkstra::new(domain.reversed()?) })
+    }
 }
 
 impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
-    D::Reverse: Domain
+    D: Domain
     + Keyed
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
-    + Closable<ReverseStateOf<D>>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
 }
 
 pub struct BackwardMemory<D: Reversible>
 where
-    D::Reverse: Domain
+    D: Domain
     + Keyed
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
-    + Closable<ReverseStateOf<D>>,
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>,
 {
-    backward: Memory<D::Reverse>,
+    backward: Memory<D>,
 }
 
-impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
+impl<D: Reversible, Endpoint> Coherent<Endpoint, Endpoint> for BackwardDijkstra<D>
 where
-    D::Reverse: Domain
-    + Keyring<ReverseStateOf<D>>
-    + Initializable<Start, ReverseStateOf<D>>
-    + Initializable<Goal, ReverseStateOf<D>>
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>>
-    + Closable<ReverseStateOf<D>>,
-    <D::Reverse as Initializable<Start, ReverseStateOf<D>>>::InitialError: Into<ReverseErrorOf<D>>,
-    <D::Reverse as Initializable<Goal, ReverseStateOf<D>>>::InitialError: Into<ReverseErrorOf<D>>,
-    <D::Reverse as Weighted<ReverseStateOf<D>, ReverseActionOf<D>>>::WeightedError: Into<ReverseErrorOf<D>>,
-    ReverseStateOf<D>: Clone,
-    ReverseCostOf<D>: Clone + Ord,
-    ReverseKeyOf<D>: Clone,
-    Start: Clone,
-    Goal: Clone,
+    D: Domain
+    + Keyring<D::State>
+    + Initializable<Endpoint, D::State>
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>
+    + ArrivalKeyring<D::Key, Endpoint>,
+    D::InitialError: Into<D::Error>,
+    D::ArrivalKeyError: Into<D::Error>,
+    D::WeightedError: Into<D::Error>,
+    D::State: Clone,
+    D::Cost: Clone + Ord,
+    D::Key: Clone,
+    Endpoint: Clone,
 {
-    type InitError = DijkstraSearchError<ReverseErrorOf<D>>;
+    type InitError = DijkstraSearchError<D::Error>;
 
     fn initialize(
         &self,
-        start: Start,
-        goal: &Goal,
+        start: Endpoint,
+        goal: &Endpoint,
     ) -> Result<Self::Memory, Self::InitError> {
+        dbg!();
         let memory = self.backward.initialize(goal.clone(), &start)?;
         Ok(BackwardMemory {
             backward: memory,
@@ -96,41 +110,37 @@ where
     }
 }
 
-impl<D> Solvable<ReverseKeyOf<D>> for BackwardDijkstra<D>
+impl<D, Goal> Solvable<Goal> for BackwardDijkstra<D>
 where
     D: Domain
     + Reversible
     + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>,
-    D::Reverse: Domain
-    + Keyring<ReverseStateOf<D>>
-    + Activity<ReverseStateOf<D>>
-    + Weighted<ReverseStateOf<D>, ReverseActionOf<D>, Cost = D::Cost>
-    + Closable<ReverseStateOf<D>>
+    + Weighted<D::State, D::ActivityAction>
+    + Keyring<D::State>
+    + Closable<D::State>
     + Backtrack<
-        ReverseStateOf<D>,
-        ReverseActionOf<D>,
-        ForwardState = D::State,
-        ForwardAction = D::ActivityAction,
+        D::State,
+        D::ActivityAction,
     >,
-    ReverseStateOf<D>: Clone,
-    ReverseActionOf<D>: Clone,
-    ReverseCostOf<D>: Clone + Ord + Add<ReverseCostOf<D>, Output = ReverseCostOf<D>>,
-    <D::Reverse as Closable<ReverseStateOf<D>>>::ClosedSet<usize>: ClosedStatusForKey<ReverseKeyOf<D>, usize>,
-    <D::Reverse as Activity<ReverseStateOf<D>>>::ActivityError: Into<ReverseErrorOf<D>>,
-    <D::Reverse as Weighted<ReverseStateOf<D>, ReverseActionOf<D>>>::WeightedError: Into<ReverseErrorOf<D>>,
-    <D::Reverse as Backtrack<ReverseStateOf<D>, ReverseActionOf<D>>>::BacktrackError: Into<ReverseErrorOf<D>>,
+    D::State: Clone,
+    D::ActivityAction: Clone,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost> + std::fmt::Debug,
+    D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
+    D::ActivityError: Into<D::Error>,
+    D::WeightedError: Into<D::Error>,
+    D::BacktrackError: Into<D::Error>,
 {
     type Solution = Path<D::State, D::ActivityAction, D::Cost>;
-    type StepError = DijkstraSearchError<ReverseErrorOf<D>>;
+    type StepError = DijkstraSearchError<D::Error>;
 
     fn step(
         &self,
         memory: &mut Self::Memory,
-        _: &ReverseKeyOf<D>,
+        _: &Goal,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
         // Note: Passing in the goal doesn't matter because the Dijkstra
         // algorithm memory saves the goal information anyway.
+        dbg!();
         self.backward.step(&mut memory.backward, &())
             .and_then(|r|
                 // If a solution is found, backtrack the path to make it run
@@ -140,9 +150,3 @@ where
             )
     }
 }
-
-type ReverseStateOf<D> = <<D as Reversible>::Reverse as Domain>::State;
-type ReverseActionOf<D> = <<D as Reversible>::Reverse as Activity<ReverseStateOf<D>>>::ActivityAction;
-type ReverseKeyOf<D> = <<D as Reversible>::Reverse as Keyed>::Key;
-type ReverseErrorOf<D> = <<D as Reversible>::Reverse as Domain>::Error;
-type ReverseCostOf<D> = <<D as Reversible>::Reverse as Weighted<ReverseStateOf<D>, ReverseActionOf<D>>>::Cost;

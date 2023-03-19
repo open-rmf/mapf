@@ -23,3 +23,6 @@ pub use incremental_graph_motion::IncrementalGraphMotion;
 
 pub mod informed_search;
 pub use informed_search::InformedSearch;
+
+pub mod uninformed_search;
+pub use uninformed_search::UninformedSearch;

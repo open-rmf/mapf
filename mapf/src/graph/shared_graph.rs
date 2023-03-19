@@ -30,12 +30,12 @@ use std::{
 /// advisable to pass around graphs within this wrapper to minimize the memory
 /// footprint of your planners.
 #[derive(Debug)]
-pub struct SharedGraph<G: Reversible> {
+pub struct SharedGraph<G> {
     graph: Arc<G>,
-    reverse: Arc<RwLock<Option<Arc<G::Reverse>>>>,
+    reverse: Arc<RwLock<Option<Arc<G>>>>,
 }
 
-impl<G: Reversible> Clone for SharedGraph<G> {
+impl<G> Clone for SharedGraph<G> {
     fn clone(&self) -> Self {
         Self {
             graph: self.graph.clone(),
@@ -44,7 +44,7 @@ impl<G: Reversible> Clone for SharedGraph<G> {
     }
 }
 
-impl<G: Reversible> SharedGraph<G> {
+impl<G> SharedGraph<G> {
     pub fn new(graph: G) -> Self {
         Self {
             graph: Arc::new(graph),
@@ -54,7 +54,7 @@ impl<G: Reversible> SharedGraph<G> {
 
     pub fn from_refs(
         graph: Arc<G>,
-        reverse: Arc<G::Reverse>,
+        reverse: Arc<G>,
     ) -> Self {
         Self {
             graph,
@@ -63,7 +63,7 @@ impl<G: Reversible> SharedGraph<G> {
     }
 }
 
-impl<G: Graph + Reversible> Graph for SharedGraph<G> {
+impl<G: Graph> Graph for SharedGraph<G> {
     type Vertex = G::Vertex;
     type Key = G::Key;
     type EdgeAttributes = G::EdgeAttributes;
@@ -95,25 +95,23 @@ impl<G: Graph + Reversible> Graph for SharedGraph<G> {
     }
 }
 
-impl<G: Reversible> Deref for SharedGraph<G> {
+impl<G> Deref for SharedGraph<G> {
     type Target = G;
     fn deref(&self) -> &Self::Target {
         &*self.graph
     }
 }
 
-impl<G: Reversible> Reversible for SharedGraph<G>
-where
-    G::Reverse: Reversible<Reverse = G>,
-{
-    type Reverse = SharedGraph<G::Reverse>;
+impl<G: Reversible> Reversible for SharedGraph<G> {
     type ReversalError = SharedGraphReversalError<G::ReversalError>;
-    fn reversed(&self) -> Result<Self::Reverse, Self::ReversalError> {
-        let guard = self.reverse.read()
-            .map_err(|_| SharedGraphReversalError::PoisonedMutex)?;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
+        {
+            let guard = self.reverse.read()
+                .map_err(|_| SharedGraphReversalError::PoisonedMutex)?;
 
-        if let Some(reverse) = &*guard {
-            return Ok(SharedGraph::from_refs(reverse.clone(), self.graph.clone()));
+            if let Some(reverse) = &*guard {
+                return Ok(SharedGraph::from_refs(reverse.clone(), self.graph.clone()));
+            }
         }
 
         // We don't already have a reverse of the graph, so we need to get

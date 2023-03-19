@@ -45,4 +45,11 @@ pub trait KeyedSpace<K>: Space + Keyed + Keyring<Self::State> {
         vertex: K,
         waypoint: Self::Waypoint,
     ) -> Self::State;
+
+    fn vertex_of<'a>(
+        &'a self,
+        key: &'a Self::Key,
+    ) -> &'a K
+    where
+        K: 'a;
 }

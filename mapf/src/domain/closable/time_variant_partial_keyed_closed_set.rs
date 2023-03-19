@@ -16,8 +16,9 @@
 */
 
 use crate::{
-    domain::{PartialKeyed, Keyed, Keyring},
+    domain::{PartialKeyed, Keyed, Keyring, Reversible},
     motion::Timed,
+    error::NoError,
 };
 use super::{
     Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
@@ -32,9 +33,17 @@ use std::{
 /// Factory for [`TimeVariantPartialKeyedClosedSet`]. Provide this to your domain,
 /// e.g. [`crate::templates::InformedSearch`], to implement the [`Closable`]
 /// trait for search spaces that are partially keyed and time variant.
+#[derive(Debug, Clone)]
 pub struct TimeVariantPartialKeyedCloser<Ring> {
     pub ring: Ring,
     pub time_thresh: i64,
+}
+
+impl<Ring: Clone> Reversible for TimeVariantPartialKeyedCloser<Ring> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(self.clone())
+    }
 }
 
 impl<Ring> TimeVariantPartialKeyedCloser<Ring> {
@@ -80,6 +89,7 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TimeVariantPartialKeyedClosedSet<Ring: PartialKeyed, T> {
     keyring: Ring,
     container: HashMap<Ring::PartialKey, HashMap<i64, T>>,

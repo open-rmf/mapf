@@ -16,21 +16,32 @@
 */
 
 use crate::{
-    domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable, Satisfiable},
-    motion::{Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, se2::*, r2::MaybePositioned},
+    domain::{
+        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
+        Satisfiable, ArrivalKeyring, Reversible
+    },
+    motion::{Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, se2::*, r2::{Positioned, MaybePositioned}},
     graph::{Graph, Edge},
     error::{NoError, ThisError},
     util::FlatResultMapTrait,
 };
 use std::borrow::Borrow;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct DiscreteSpaceTimeSE2<Key, const R: u32>(std::marker::PhantomData<Key>);
 impl<K, const R: u32> DiscreteSpaceTimeSE2<K, R> {
     pub fn new() -> Self {
         Self(Default::default())
     }
 }
+
+impl<K, const R: u32> Clone for DiscreteSpaceTimeSE2<K, R> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<K, const R: u32> Copy for DiscreteSpaceTimeSE2<K, R> {}
 
 impl<K, const R: u32> Default for DiscreteSpaceTimeSE2<K, R> {
     fn default() -> Self {
@@ -51,13 +62,17 @@ impl<K: Key + Clone, const R: u32> Keyed for DiscreteSpaceTimeSE2<K, R> {
     type Key = KeySE2<K, R>;
 }
 
-impl<K: Key + Clone, const R: u32> Keyring<StateSE2<K, R>> for DiscreteSpaceTimeSE2<K, R> {
-    type KeyRef<'a> = &'a Self::Key where K: 'a;
-    fn key_for<'a>(&'a self, state: &'a StateSE2<K, R>) -> &'a Self::Key
+impl<K: Key + Clone, State, const R: u32> Keyring<State> for DiscreteSpaceTimeSE2<K, R>
+where
+    State: Borrow<StateSE2<K, R>>,
+{
+    type KeyRef<'a> = &'a Self::Key where K: 'a, State: 'a;
+    fn key_for<'a>(&'a self, state: &'a State) -> &'a Self::Key
     where
         K: 'a,
+        State: 'a,
     {
-        &state.key
+        &state.borrow().key
     }
 }
 
@@ -68,6 +83,23 @@ impl<K: Key + Clone, const R: u32> KeyedSpace<K> for DiscreteSpaceTimeSE2<K, R> 
         waypoint: Self::Waypoint,
     ) -> Self::State {
         StateSE2::new(vertex, waypoint)
+    }
+
+    fn vertex_of<'a>(
+        &'a self,
+        key: &'a Self::Key,
+    ) -> &'a K
+    where
+        K: 'a
+    {
+        &key.vertex
+    }
+}
+
+impl<K, const R: u32> Reversible for DiscreteSpaceTimeSE2<K, R> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
+        Ok(self.clone())
     }
 }
 
@@ -83,10 +115,7 @@ impl<K, const R: u32> StateSE2<K, R> {
         waypoint: Waypoint,
     ) -> Self {
         Self {
-            key: KeySE2 {
-                vertex,
-                orientation: (waypoint.position.rotation.angle() * (R as f64)) as i32,
-            },
+            key: KeySE2::new(vertex, waypoint.position.rotation.angle()),
             waypoint,
         }
     }
@@ -129,6 +158,15 @@ pub struct KeySE2<K, const R: u32> {
     /// The key of the agent's orientation. This value should be in the range of
     /// +/- PI * R
     pub orientation: i32,
+}
+
+impl<K, const R: u32> KeySE2<K, R> {
+    pub fn new(vertex: K, angle: f64) -> Self {
+        Self {
+            vertex,
+            orientation: (angle * (R as f64)) as i32,
+        }
+    }
 }
 
 impl<K, const R: u32> Borrow<K> for KeySE2<K, R> {
@@ -174,13 +212,14 @@ impl<K> From<(TimePoint, K, f64)> for StartSE2<K> {
 /// [`DifferentialDriveLineFollow`], it is better to use [`InitializeStarburstSE2`]
 /// because it will initialize states whose keys are sure to be visited and
 /// revisited in Dijkstra searches, making the caching behaviors more effective.
+#[derive(Debug, Clone)]
 pub struct InitializeSE2<G>(pub G);
 
 impl<G, Start, const R: u32> Initializable<Start, StateSE2<G::Key, R>> for InitializeSE2<G>
 where
     G: Graph,
     G::Key: Clone,
-    G::Vertex: Borrow<Point>,
+    G::Vertex: Positioned,
     Start: Into<StartSE2<G::Key>>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
@@ -204,7 +243,7 @@ where
             self.0.vertex(&start.key)
             .ok_or_else(|| InitializeSE2Error::MissingVertex(start.key.clone()))
             .map(|v| {
-                let v: &Point = v.borrow().borrow();
+                let v = v.borrow().point();
                 StateSE2::new(
                     start.key,
                     Waypoint::new(start.time, v.x, v.y, start.orientation.angle()),
@@ -226,19 +265,69 @@ where
 /// The "starburst" name comes from the fact that if you draw the initial states
 /// as vectors coming out of the start vertex, it will resemble a starburst
 /// pattern.
-pub struct InitializeStarburstSE2<G>(pub G);
+#[derive(Debug, Clone)]
+pub struct StarburstSE2<G, const R: u32> {
+    pub graph: G,
+    pub direction: f32,
+}
 
-impl<G, const R: u32> Initializable<G::Key, StateSE2<G::Key, R>> for InitializeStarburstSE2<G>
+impl<G, const R: u32> StarburstSE2<G, R> {
+    pub fn for_start(graph: G) -> Self {
+        Self { graph, direction: 1.0 }
+    }
+
+    pub fn for_goal(graph: &G) -> Result<Self, G::ReversalError>
+    where
+        G: Reversible,
+    {
+        Ok(Self { graph: graph.reversed()?, direction: -1.0 })
+    }
+
+    fn starburst<'a>(&'a self, vertex: G::Key) -> impl Iterator<Item=Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
+    where
+        G: Graph,
+        G::Key: Clone,
+        G::Vertex: Positioned,
+    {
+        let from_start_clone = vertex.clone();
+        self.graph.vertex(&vertex)
+            .ok_or_else(move || InitializeSE2Error::MissingVertex(from_start_clone))
+            .flat_result_map(move |from_p_ref| {
+                let from_p: Point = from_p_ref.borrow().point();
+                let from_start = vertex.clone();
+                self.graph.edges_from_vertex(&from_start)
+                    .into_iter()
+                    .map(move |edge| {
+                        self.graph.vertex(edge.to_vertex())
+                            .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))
+                            .map(move |to_p_ref| {
+                                let to_p: Point = to_p_ref.borrow().point();
+                                (self.direction as f64 * (to_p - from_p)).try_normalize(1e-6)
+                                    .map(|v| v[1].atan2(v[0]))
+                                    .unwrap_or(0.0)
+                            })
+                            .map(move |angle|
+                                (from_p, angle)
+                            )
+                    })
+            })
+            .map(|r| r.flatten())
+    }
+}
+
+impl<G, const R: u32, State> Initializable<G::Key, State> for StarburstSE2<G, R>
 where
     G: Graph,
     G::Key: Clone,
-    G::Vertex: Borrow<Point>,
+    G::Vertex: Positioned,
+    StateSE2<G::Key, R>: Into<State>
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = impl Iterator<Item = Result<StateSE2<G::Key, R>, Self::InitialError>> + 'a
+    type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
-        G: 'a;
+        G: 'a,
+        State: 'a;
 
     fn initialize<'a>(
         &'a self,
@@ -250,41 +339,61 @@ where
         G::Key: 'a,
         StateSE2<G::Key, R>: 'a
     {
-        let from_start_clone = from_start.clone();
-        self.0.vertex(&from_start)
-            .ok_or_else(move || InitializeSE2Error::MissingVertex(from_start_clone))
-            .flat_result_map(move |from_p_ref| {
-                let from_p: Point = *from_p_ref.borrow().borrow();
-                let from_start = from_start.clone();
-                self.0.edges_from_vertex(&from_start)
-                    .into_iter()
-                    .map(move |edge| {
-                        let from_start = from_start.clone();
-                        self.0.vertex(edge.to_vertex())
-                            .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))
-                            .map(move |to_p_ref| {
-                                let to_p: Point = *to_p_ref.borrow().borrow();
-                                (to_p - from_p).try_normalize(1e-6)
-                                    .map(|v| v[1].atan2(v[0]))
-                                    .unwrap_or(0.0)
-                            })
-                            .map(move |angle|
-                                StateSE2::new(
-                                    from_start,
-                                    Waypoint::new(
-                                        TimePoint::zero(),
-                                        from_p.x,
-                                        from_p.y,
-                                        angle,
-                                    )
-                                )
-                            )
-                    })
-            })
-            .map(|r| r.flatten())
+        self
+        .starburst(from_start.clone())
+        .map(move |r| {
+            let from_start = from_start.clone();
+            r
+            .map(move |(p, angle)|
+                StateSE2::new(
+                    from_start.clone(),
+                    Waypoint::new(TimePoint::zero(), p.x, p.y, angle)
+                )
+            )
+        })
+        .map(|r| r.map(Into::into))
     }
 }
 
+impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key> for StarburstSE2<G, R>
+where
+    G::Key: Clone,
+    G::Vertex: Positioned,
+{
+    type ArrivalKeyError = InitializeSE2Error<G::Key>;
+    type ArrivalKeys<'a> = impl Iterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    where
+        Self: 'a,
+        G: 'a,
+        G::Key: 'a;
+
+    fn get_arrival_keys<'a>(
+        &'a self,
+        goal: &'a G::Key,
+    ) -> Self::ArrivalKeys<'a>
+    where
+        Self: 'a,
+        Self::ArrivalKeyError: 'a,
+    {
+        self
+        .starburst(goal.clone())
+        .map(|r| {
+            r.map(|(_, angle)|
+                KeySE2::new(goal.clone(), angle)
+            )
+        })
+    }
+}
+
+impl<G: Reversible, const R: u32> Reversible for StarburstSE2<G, R> {
+    type ReversalError = G::ReversalError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(Self {
+            graph: self.graph.reversed()?,
+            direction: -1.0 * self.direction,
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SatisfySE2 {
@@ -372,19 +481,19 @@ pub enum InitializeSE2Error<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        graph::SimpleGraph,
-    };
+    use crate::graph::SimpleGraph;
 
     #[test]
     fn test_starburst_initialization() {
-        /*      5
+        /*
+         *      5
          *      |
          *      |
          * 0----1----2
          *     / \
          *   /     \
          * 3         4
+         *
          */
 
         let graph = SimpleGraph::from_iters(
@@ -400,14 +509,20 @@ mod tests {
                 (0, 1, ()), (1, 0, ()),
                 (2, 1, ()), (1, 2, ()),
                 (3, 1, ()), (1, 3, ()),
-                (4, 1, ()), (1, 4, ()),
-                (5, 1, ()), (1, 5, ()),
+                (4, 1, ()), // (1, 4, ()),
+                (5, 1, ()), // (1, 5, ()),
             ]
         );
 
-        let init = InitializeStarburstSE2(graph);
+        let arrival = StarburstSE2::for_goal(&graph).unwrap();
+        let goal_keys: Result<Vec<KeySE2<usize, 100>>, _> = arrival.get_arrival_keys(&1).collect();
+        let goal_keys = goal_keys.unwrap();
+        assert_eq!(goal_keys.len(), 5);
+
+        let init = StarburstSE2::for_start(graph);
         let states: Result<Vec<StateSE2<usize, 100>>, _> = init.initialize(1).collect();
         let states = states.unwrap();
-        assert!(states.len() == 5);
+        assert_eq!(states.len(), 3);
+
     }
 }

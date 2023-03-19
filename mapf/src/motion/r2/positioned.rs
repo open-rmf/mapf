@@ -21,6 +21,11 @@ pub trait MaybePositioned {
     fn maybe_point(&self) -> Option<Point>;
 }
 
+/// A trait to get position information from an object.
+///
+/// We create this trait instead of using `Borrow<Point>` in order to support
+/// objects that want to generate a position instead of containing a position
+/// that it could return a reference to.
 pub trait Positioned: MaybePositioned {
     fn point(&self) -> Point {
         self.maybe_point().unwrap()
