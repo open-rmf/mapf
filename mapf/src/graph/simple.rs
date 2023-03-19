@@ -62,7 +62,6 @@ impl<V, E> SimpleGraph<V, E> {
 impl<V: Clone, E: Clone> Reversible for SimpleGraph<V, E> {
     type ReversalError = NoError;
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
-        dbg!();
         let mut r_edges = Vec::new();
         r_edges.resize(self.edges.len(), Vec::new());
         for (r_v_to, edges) in self.edges.iter().enumerate() {
@@ -71,7 +70,6 @@ impl<V: Clone, E: Clone> Reversible for SimpleGraph<V, E> {
             }
         }
 
-        dbg!();
         Ok(Self {
             vertices: self.vertices.clone(),
             edges: r_edges,

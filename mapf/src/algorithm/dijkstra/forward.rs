@@ -62,7 +62,6 @@ where
     + Closable<D::State>
 {
     pub fn new(domain: D) -> Self {
-        dbg!();
         Self {
             domain,
             cache: Mutex::new(Default::default()),
@@ -106,12 +105,9 @@ where
         start: Start,
         goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
-        dbg!();
         let mut trees = Vec::new();
         for state in self.domain.initialize(start) {
-            dbg!();
             let state = state.map_err(Self::domain_err)?;
-            dbg!(self.domain().key_for(&state).borrow());
             let key_ref = self.domain.key_for(&state);
             let tree = match self.cache.lock() {
                 Ok(mut r) => {
@@ -171,9 +167,7 @@ where
         memory: &mut Self::Memory,
         _: &Goal,
     ) -> Result<Status<Self::Solution>, Self::StepError> {
-        dbg!();
         if memory.exhausted {
-            dbg!();
             if let Some((s, _)) = memory.best_solution {
                 let solution = memory.trees.get(s).map(|t| t.solution.clone()).flatten();
                 if let Some(solution) = solution {
@@ -190,7 +184,6 @@ where
 
         let mut exhausted = true;
         for (tree_i, mt) in memory.trees.iter_mut().enumerate() {
-            dbg!();
             let cost_bound = memory.best_solution.as_ref().map(|(_, c)| c.clone());
 
             let mut tree_solution = match mt.tree.read() {
@@ -245,7 +238,6 @@ where
                 let tree = &mut cache.tree;
 
                 'grow: for _ in 0..memory.iterations_per_step {
-                    dbg!(tree.queue.len(), tree.closed_set.closed_keys_len());
                     let top_id = match tree.queue.pop() {
                         Some(top) => top.0.node_id,
                         None => break,
@@ -254,7 +246,6 @@ where
                     let top = tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
                     if let CloseResult::Rejected { prior, .. } = tree.closed_set.close(&top.state, top_id) {
                         let prior_node = tree.arena.get_node(*prior).map_err(Self::algo_err)?;
-                        dbg!(&prior_node.cost, &top.cost);
                         if prior_node.cost <= top.cost {
                             // The state we are attempting to expand has already been
                             // closed in the past by a lower cost node, so we will not
@@ -263,10 +254,8 @@ where
                         }
                     }
 
-                    println!(" ==== Expanding from {:?} ==== ", self.domain.key_for(&top.state).borrow());
                     for next in self.domain.choices(top.state.clone()) {
                         let (action, child_state) = next.map_err(Self::domain_err)?;
-                        dbg!(self.domain.key_for(&child_state).borrow());
                         let child_cost = match self.domain
                             .cost(&top.state, &action, &child_state)
                             .map_err(Self::domain_err)?
@@ -285,9 +274,7 @@ where
                     let top_key_ref = self.domain.key_for(top.state());
                     let top_key: &D::Key = top_key_ref.borrow();
                     for goal_key in &memory.goal_keys {
-                        dbg!((top_key, goal_key));
                         if *top_key == *goal_key {
-                            println!(" ========== SOLUTION ========== ");
                             // We have found a solution.
                             let path = tree.arena.retrace(top_id)
                                 .map_err(Self::algo_err)?;

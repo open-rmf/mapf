@@ -51,7 +51,6 @@ where
     + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
-        dbg!();
         Ok(Self { backward: Dijkstra::new(domain.reversed()?) })
     }
 }
@@ -102,7 +101,6 @@ where
         start: Endpoint,
         goal: &Endpoint,
     ) -> Result<Self::Memory, Self::InitError> {
-        dbg!();
         let memory = self.backward.initialize(goal.clone(), &start)?;
         Ok(BackwardMemory {
             backward: memory,
@@ -140,7 +138,6 @@ where
     ) -> Result<Status<Self::Solution>, Self::StepError> {
         // Note: Passing in the goal doesn't matter because the Dijkstra
         // algorithm memory saves the goal information anyway.
-        dbg!();
         self.backward.step(&mut memory.backward, &())
             .and_then(|r|
                 // If a solution is found, backtrack the path to make it run

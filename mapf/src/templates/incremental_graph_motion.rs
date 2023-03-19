@@ -249,17 +249,10 @@ where
 {
     type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
-        dbg!();
-        let space = self.space.reversed().map_err(GraphMotionReversalError::Space)?;
-        dbg!();
-        let graph = self.graph.reversed().map_err(GraphMotionReversalError::Graph)?;
-        dbg!();
-        let extrapolator = self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?;
-        dbg!();
         Ok(IncrementalGraphMotion {
-            space,
-            graph,
-            extrapolator,
+            space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
+            graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,
+            extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
         })
     }
 }

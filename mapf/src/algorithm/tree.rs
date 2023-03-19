@@ -61,7 +61,6 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
                 if prior.cost() <= node.cost() {
                     // The state is already closed with a lower-cost node, so
                     // we should not push this new node.
-                    println!("Skipping node");
                     return Ok(());
                 }
             } else {
@@ -71,7 +70,6 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
             }
         }
 
-        println!("Adding node");
         let node_id = self.arena.len();
         let evaluation = node.queue_evaluation();
         self.arena.push(node);

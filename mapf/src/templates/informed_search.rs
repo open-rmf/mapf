@@ -469,20 +469,11 @@ where
     >;
 
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
-        dbg!();
-        let activity = self.activity.reversed().map_err(InformedSearchReversalError::Activity)?;
-        dbg!();
-        let weight = self.weight.reversed().map_err(InformedSearchReversalError::Weight)?;
-        dbg!();
-        let heuristic = self.heuristic.reversed().map_err(InformedSearchReversalError::Heuristic)?;
-        dbg!();
-        let connector = self.connector.reversed().map_err(InformedSearchReversalError::Connector)?;
-        dbg!();
         Ok(InformedSearch {
-            activity,
-            weight,
-            heuristic,
-            connector,
+            activity: self.activity.reversed().map_err(InformedSearchReversalError::Activity)?,
+            weight: self.weight.reversed().map_err(InformedSearchReversalError::Weight)?,
+            heuristic: self.heuristic.reversed().map_err(InformedSearchReversalError::Heuristic)?,
+            connector: self.connector.reversed().map_err(InformedSearchReversalError::Connector)?,
             closer: self.closer.reversed().map_err(InformedSearchReversalError::Closer)?,
             initializer: self.initializer.reversed().map_err(InformedSearchReversalError::Initializer)?,
             satisfier: self.satisfier.reversed().map_err(InformedSearchReversalError::Satisfier)?,

@@ -134,12 +134,7 @@ where
             .plan(start.key.vertex.clone(), goal.key.vertex.clone())
             .map_err(|_| QuickestPathHeuristicError::PlannerError)?
             .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)
-            .map(|status| status.solution().map(
-                |s| {
-                    println!("{s:#?}");
-                    s.total_cost
-                })
-            )
+            .map(|status| status.solution().map(|s| s.total_cost))
     }
 }
 
@@ -195,20 +190,16 @@ mod tests {
             ]
         );
 
-        dbg!();
         let heuristic: QuickestPathHeuristic<_, _, 100> = QuickestPathHeuristic::new(
             SharedGraph::new(graph),
             TravelTimeCost(1.0),
             DifferentialDriveLineFollow::new(1.0, 1.0).unwrap(),
         ).unwrap();
-        dbg!();
 
         let start = StateSE2::new(0usize, Waypoint::new(TimePoint::zero(), 0.0, 0.0, 0.0));
         let goal = StateSE2::new(8usize, Waypoint::new(TimePoint::zero(), 3.0, -2.0, 0.0));
 
-        dbg!();
         let estimate = heuristic.estimate_remaining_cost(&start, &goal).unwrap().unwrap();
-        println!("{estimate:?}");
 
         let expected_estimate = 5.0 + 2_f64.sqrt() + 135_f64.to_radians() * 2.0 + 90_f64.to_radians() * 2.0;
         assert_relative_eq!(estimate.0, expected_estimate, max_relative = 0.0001);
