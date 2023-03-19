@@ -77,29 +77,30 @@ where
     backward: Memory<D>,
 }
 
-impl<D: Reversible, Endpoint> Coherent<Endpoint, Endpoint> for BackwardDijkstra<D>
+impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
-    + Initializable<Endpoint, D::State>
+    + Initializable<Goal, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
-    + ArrivalKeyring<D::Key, Endpoint>,
+    + ArrivalKeyring<D::Key, Start>,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::State: Clone,
     D::Cost: Clone + Ord,
     D::Key: Clone,
-    Endpoint: Clone,
+    Start: Clone,
+    Goal: Clone,
 {
     type InitError = DijkstraSearchError<D::Error>;
 
     fn initialize(
         &self,
-        start: Endpoint,
-        goal: &Endpoint,
+        start: Start,
+        goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
         let memory = self.backward.initialize(goal.clone(), &start)?;
         Ok(BackwardMemory {
