@@ -20,7 +20,7 @@ use crate::{
     motion::{
         r2::{
             Position, DiscreteSpaceTimeR2, StateR2 as StateR2,
-            timed_position::{LineFollow, LineFollowError, Waypoint},
+            LineFollow, LineFollowError, Waypoint,
         },
     },
     domain::{

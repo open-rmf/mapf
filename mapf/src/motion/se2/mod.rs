@@ -40,3 +40,6 @@ pub type LinearTrajectory = super::Trajectory<Waypoint>;
 
 pub mod quickest_path;
 pub use quickest_path::QuickestPathHeuristic;
+
+pub mod differential_drive_line_follow;
+pub use differential_drive_line_follow::*;

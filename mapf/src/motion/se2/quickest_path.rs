@@ -21,11 +21,7 @@ use crate::{
         SpeedLimiter,
         se2::{
             DiscreteSpaceTimeSE2, StarburstSE2, StateSE2,
-            MaybeOriented,
-            timed_position::{
-                DifferentialDriveLineFollow,
-                Waypoint,
-            },
+            MaybeOriented, DifferentialDriveLineFollow, Waypoint,
         },
         r2::Positioned,
     },

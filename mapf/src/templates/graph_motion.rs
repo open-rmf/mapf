@@ -193,10 +193,7 @@ mod tests {
     use super::*;
     use crate::{
         graph::SimpleGraph,
-        motion::r2::{
-            Position, DiscreteSpaceTimeR2,
-            timed_position::LineFollow,
-        },
+        motion::r2::{Position, DiscreteSpaceTimeR2, LineFollow},
     };
     use std::sync::Arc;
 
