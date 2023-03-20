@@ -26,7 +26,7 @@ use crate::{
     error::Anyhow,
 };
 use anyhow;
-use std::{cell::RefCell, sync::Arc};
+use std::cell::RefCell;
 
 /// The Planner class spawns Search instances to find plans using its provided
 /// algorithm.
@@ -38,9 +38,10 @@ use std::{cell::RefCell, sync::Arc};
 /// The Planner can also be given default halting behavior which will be passed
 /// along to the Search when `plan(start, goal)` is used. The Halting generic
 /// must implement the [`Halt`] trait for `Algo`.
+#[derive(Debug, Clone)]
 pub struct Planner<Algo, Halting = ()> {
     /// The object which determines the search pattern
-    algorithm: Arc<Algo>,
+    algorithm: Algo,
 
     /// The factory for generating progress objects
     default_halting: Halting,
@@ -50,7 +51,7 @@ impl<Algo> Planner<Algo, ()> {
     /// Construct a new planner that has no halting behavior.
     pub fn new(algorithm: Algo) -> Self {
         Self {
-            algorithm: Arc::new(algorithm),
+            algorithm,
             default_halting: (),
         }
     }
@@ -59,7 +60,7 @@ impl<Algo> Planner<Algo, ()> {
 impl<Algo, Halting> Planner<Algo, Halting> {
     pub fn new_haltable(algorithm: Algo, halting: Halting) -> Self {
         Self {
-            algorithm: Arc::new(algorithm),
+            algorithm,
             default_halting: halting,
         }
     }
@@ -71,14 +72,30 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         }
     }
 
+    /// Consume this Planner, modify its Algorithm, and return a new planner
+    /// with the modified algorithm.
+    ///
+    /// To fork off a new Planner while preserving the previous Planner, use
+    /// `.clone()` before `.map(~)`. Note that requires the Algorithm to be
+    /// clonable.
+    pub fn map<NewAlgo, F: FnOnce(Algo) -> NewAlgo>(self, f: F) -> Planner<NewAlgo, Halting> {
+        Planner {
+            algorithm: f(self.algorithm),
+            default_halting: self.default_halting,
+        }
+    }
+
     /// Begin planning from the start conditions to the goal conditions.
+    ///
+    /// This requires the Algorithm to be clonable. To produce a single search
+    /// for an Algorithm that cannot be cloned, use [`Planner::into_search`].
     pub fn plan<Start, Goal>(
         &self,
         start: Start,
         goal: Goal,
     ) -> Result<Search<Algo, Goal, Halting>, Algo::InitError>
     where
-        Algo: Coherent<Start, Goal>,
+        Algo: Coherent<Start, Goal> + Clone,
         Halting: Halt<Algo::Memory> + Clone,
     {
         self.plan_with_halting(start, goal, self.default_halting.clone())
@@ -91,7 +108,7 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         halt: WithHalt,
     ) -> Result<Search<Algo, Goal, WithHalt>, Algo::InitError>
     where
-        Algo: Coherent<Start, Goal>,
+        Algo: Coherent<Start, Goal> + Clone,
     {
         let memory = self.algorithm.initialize(start, &goal)?;
 
@@ -105,7 +122,7 @@ impl<Algo, Halting> Planner<Algo, Halting> {
 
     pub fn into_abstract<S, G>(self) -> AbstractPlanner<S, G, Algo::Solution>
     where
-        Algo: Coherent<S, G> + Solvable<G> + 'static,
+        Algo: Coherent<S, G> + Solvable<G> + Clone + 'static,
         Algo::InitError: Into<Anyhow> + 'static,
         Algo::StepError: Into<Anyhow> + 'static,
         Halting: Halt<Algo::Memory> + 'static,
@@ -115,6 +132,29 @@ impl<Algo, Halting> Planner<Algo, Halting> {
             implementation: Box::new(RefCell::new(self)),
         }
     }
+
+    /// Convert the planner into a single [`Search`] instance. This can be used
+    /// for Algorithms that don't implement the [`Clone`] trait.
+    ///
+    /// To produce multiple searches, use [`Planner::plan`] instead.
+    pub fn into_search<Start, Goal>(
+        self,
+        start: Start,
+        goal: Goal,
+    ) -> Result<Search<Algo, Goal, Halting>, Algo::InitError>
+    where
+        Algo: Coherent<Start, Goal>,
+        Halting: Halt<Algo::Memory>,
+    {
+        let memory = self.algorithm.initialize(start, &goal)?;
+
+        Ok(Search::new(
+            memory,
+            self.algorithm,
+            goal,
+            self.default_halting,
+        ))
+    }
 }
 
 pub trait PlannerInterface<S, G, Solution> {
@@ -123,7 +163,7 @@ pub trait PlannerInterface<S, G, Solution> {
 
 impl<A, H, S, G> PlannerInterface<S, G, A::Solution> for Planner<A, H>
 where
-    A: Solvable<G> + Coherent<S, G> + 'static,
+    A: Solvable<G> + Coherent<S, G> + Clone + 'static,
     A::InitError: Into<Anyhow>,
     A::StepError: Into<Anyhow>,
     H: Halt<A::Memory> + 'static,
@@ -154,6 +194,7 @@ mod tests {
         algorithm::{Algorithm, Status, MinimumCostBound},
         error::NoError,
     };
+    use std::sync::Arc;
 
     struct CountingNode {
         value: u64,
@@ -193,7 +234,7 @@ mod tests {
         }
     }
 
-    #[derive(Default, Debug)]
+    #[derive(Default, Debug, Clone)]
     struct CountingAlgorithm;
     impl Algorithm for CountingAlgorithm {
         type Memory = TestAlgorithmMemory;

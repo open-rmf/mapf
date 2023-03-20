@@ -117,12 +117,12 @@ mod tests {
     #[test]
     fn test_simple_r2() {
         let planner = Planner::new(
-            AStar(
+            Arc::new(AStar(
                 InformedSearch::new_r2(
                     SharedGraph::new(make_test_graph()),
                     LineFollow::new(2.0).unwrap(),
                 )
-            )
+            ))
         );
 
         let solution = planner.plan(0usize, 8usize).unwrap().solve().unwrap();

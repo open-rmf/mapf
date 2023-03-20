@@ -81,6 +81,7 @@ impl<State> LiftState<State> for NoStateSubspace<State> {
 
 /// StateInto implements state subspace traits for state subspaces that can
 /// be mapped using Into
+#[derive(Debug)]
 pub struct StateInto<ProjectedState> {
     _ignore: std::marker::PhantomData<ProjectedState>,
 }
@@ -104,11 +105,22 @@ impl<State, ProjectedState: Into<State>> LiftState<State> for StateInto<Projecte
         Ok(Some(projection.into()))
     }
 }
+impl<ProjectedState> Clone for StateInto<ProjectedState> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
 
 /// StateMaybeInto implements state subspace traits for state subspaces that can
 /// be mapped using Into
+#[derive(Debug)]
 pub struct StateMaybeInto<ProjectedState> {
     _ignore: std::marker::PhantomData<ProjectedState>,
+}
+impl<ProjectedState> StateMaybeInto<ProjectedState> {
+    pub fn new() -> Self {
+        Self { _ignore: Default::default() }
+    }
 }
 impl<ProjectedState> StateSubspace for StateMaybeInto<ProjectedState> {
     type ProjectedState = ProjectedState;
@@ -129,5 +141,10 @@ where
     type LiftError = NoError;
     fn lift(&self, _: &State, projection: Self::ProjectedState) -> Result<Option<State>, NoError> {
         Ok(projection.into())
+    }
+}
+impl<ProjectedState> Clone for StateMaybeInto<ProjectedState> {
+    fn clone(&self) -> Self {
+        Self::new()
     }
 }

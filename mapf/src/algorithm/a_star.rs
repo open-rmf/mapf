@@ -38,13 +38,14 @@ use std::ops::Add;
 ///
 /// The following templates implement these traits:
 /// * [`InformedSearch`]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct AStar<D>(pub D);
 
 /// The AStarConnect algorithm is a variation on AStar that can attempt to find
 /// a connection directly to the goal each time a node is expanded. In addition
 /// to required traits of [`AStar`], the domain must also implement:
 /// * [`Connectable`] as `Connectable<D::State, Goal>`
+#[derive(Debug, Clone)]
 pub struct AStarConnect<D>(pub D);
 
 pub struct Memory<Closed, State, Action, Cost>(

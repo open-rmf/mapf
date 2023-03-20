@@ -15,7 +15,7 @@
  *
 */
 
-/// A trait for properties that can specify speed limits.
+/// A trait for properties that can specify speed limits.]
 pub trait SpeedLimiter {
     fn speed_limit(&self) -> Option<f64>;
 }

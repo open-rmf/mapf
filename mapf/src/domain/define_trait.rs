@@ -45,8 +45,20 @@ impl<State, Error> Domain for DefineTrait<State, Error> {
     type Error = Error;
 }
 
+impl<State, Error> Clone for DefineTrait<State, Error> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<State, Error> Default for DefineTrait<State, Error> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 /// Incorporates a property into a domain. Use `.with(~)` on a domain to create
 /// this struct.
+#[derive(Debug, Clone)]
 pub struct Incorporated<Base, Prop> {
     pub base: Base,
     pub prop: Prop,
@@ -80,6 +92,7 @@ impl<D: Domain> Incorporate for D {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Chained<Base, Prop> {
     pub base: Base,
     pub prop: Prop,
@@ -106,6 +119,7 @@ impl<D: Domain> Chain for D {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Mapped<Base, Prop> {
     pub base: Base,
     pub prop: Prop,
@@ -133,6 +147,7 @@ impl<D: Domain> Map for D {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Lifted<Base, Lifter, Prop> {
     pub base: Base,
     pub lifter: Lifter,

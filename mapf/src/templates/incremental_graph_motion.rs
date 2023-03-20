@@ -42,6 +42,7 @@ use std::{
 /// necessary for some algorithms, like the Dijkstra algorithms.
 ///
 /// For a more efficient activity representation, use [`super::GraphMotion`].
+#[derive(Debug, Clone)]
 pub struct IncrementalGraphMotion<S, G, E> {
     pub space: S,
     pub graph: G,

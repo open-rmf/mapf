@@ -161,6 +161,7 @@ impl<K> From<K> for StartR2<K> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct InitializeR2<G>(pub G);
 
 impl<G, Start> Initializable<Start, StateR2<G::Key>> for InitializeR2<G>

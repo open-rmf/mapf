@@ -16,7 +16,7 @@
 */
 
 use anyhow;
-use std::{cell::RefCell, sync::Arc};
+use std::cell::RefCell;
 
 use crate::{
     algorithm::{Algorithm, Solvable, Status},
@@ -30,7 +30,7 @@ pub struct Search<Algo: Algorithm, Goal, Halting> {
     memory: Algo::Memory,
 
     /// The object which determines the search pattern
-    algorithm: Arc<Algo>,
+    algorithm: Algo,
 
     /// The goal that the search is trying to reach
     goal: Goal,
@@ -42,7 +42,7 @@ pub struct Search<Algo: Algorithm, Goal, Halting> {
 impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
     pub fn new(
         memory: Algo::Memory,
-        algorithm: Arc<Algo>,
+        algorithm: Algo,
         goal: Goal,
         halting: Halting,
     ) -> Self {

@@ -42,6 +42,7 @@ use arrayvec::ArrayVec;
 use std::{
     borrow::Borrow,
     ops::Add,
+    sync::Arc,
 };
 
 type QuickestPathSearch<G, W, const R: u32> =
@@ -58,7 +59,7 @@ type QuickestPathSearch<G, W, const R: u32> =
         (),
     >;
 
-type QuickestPathPlanner<G, W, const R: u32> = Planner<BackwardDijkstra<QuickestPathSearch<G, W, R>>>;
+type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W, R>>>>;
 
 pub struct QuickestPathHeuristic<G, W, const R: u32>
 where
@@ -90,19 +91,24 @@ where
     ) -> Result<Self, <QuickestPathSearch<G, W, R> as Reversible>::ReversalError> {
         Ok(Self {
             planner: Planner::new(
-                BackwardDijkstra::new(
-                    &UninformedSearch::new_uninformed(
-                        IncrementalGraphMotion {
-                            space: DiscreteSpaceTimeSE2::new(),
-                            graph: graph.clone(),
-                            extrapolator: motion,
-                        },
-                        weight,
-                        KeyedCloser(DiscreteSpaceTimeSE2::new()),
-                    )
-                    .with_initializer(StarburstSE2::for_start(graph.clone()))
-                    .with_satisfier(StarburstSE2::for_goal(&graph).map_err(InformedSearchReversalError::Satisfier)?)
-                )?
+                Arc::new(
+                    BackwardDijkstra::new(
+                        &UninformedSearch::new_uninformed(
+                            IncrementalGraphMotion {
+                                space: DiscreteSpaceTimeSE2::new(),
+                                graph: graph.clone(),
+                                extrapolator: motion,
+                            },
+                            weight,
+                            KeyedCloser(DiscreteSpaceTimeSE2::new()),
+                        )
+                        .with_initializer(StarburstSE2::for_start(graph.clone()))
+                        .with_satisfier(
+                            StarburstSE2::for_goal(&graph)
+                            .map_err(InformedSearchReversalError::Satisfier)?
+                        )
+                    )?
+                )
             )
         })
     }

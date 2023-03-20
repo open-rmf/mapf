@@ -113,6 +113,38 @@ pub trait Solvable<Goal>: Algorithm + Sized {
     ) -> Result<Status<Self::Solution>, Self::StepError>;
 }
 
+// Implement the Algorithm traits for Arc<Algo> so that planners can always
+// have a way to cheaply copy the algorith/domain.
+use std::sync::Arc;
+
+impl<Algo: Algorithm> Algorithm for Arc<Algo> {
+    type Memory = Algo::Memory;
+}
+
+impl<Start, Goal, Algo: Coherent<Start, Goal>> Coherent<Start, Goal> for Arc<Algo> {
+    type InitError = Algo::InitError;
+
+    fn initialize(
+        &self,
+        start: Start,
+        goal: &Goal,
+    ) -> Result<Self::Memory, Self::InitError> {
+        self.as_ref().initialize(start, goal)
+    }
+}
+
+impl<Goal, Algo: Solvable<Goal>> Solvable<Goal> for Arc<Algo> {
+    type Solution = Algo::Solution;
+    type StepError = Algo::StepError;
+    fn step(
+        &self,
+        memory: &mut Self::Memory,
+        goal: &Goal,
+    ) -> Result<Status<Self::Solution>, Self::StepError> {
+        self.as_ref().step(memory, goal)
+    }
+}
+
 /// The `Measure` trait can be implemented by `Algorithm::Memory` types to
 /// provide an indication of how large their current level of effort or memory
 /// footprint is. This may be used to halt search efforts that have grown

@@ -31,7 +31,7 @@ use arrayvec::ArrayVec;
 use thiserror::Error as ThisError;
 use std::borrow::Borrow;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirectTravelHeuristic<G: Graph, W> {
     pub space: DiscreteSpaceTimeR2<G::Key>,
     pub graph: G,

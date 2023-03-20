@@ -30,6 +30,7 @@ use crate::{
 ///
 /// Fill in this domain with the relevant components and then it can be passed
 /// into AStar, AStarConnect, or any other algorithm whose traits it satisfies.
+#[derive(Debug, Clone)]
 pub struct InformedSearch<A, W, H, X, I, S, C> {
     /// Describe what kind of activity is being searched. This field must
     /// implement [`Activity`] and [`Domain`].
@@ -127,6 +128,22 @@ impl<A, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
             closer: self.closer,
             initializer: self.initializer,
             satisfier: self.satisfier,
+        }
+    }
+}
+
+impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
+    /// Consume this informed search, modify its activity, and return a new
+    /// informed search with the modified activity.
+    pub fn map_activity<A2, F: FnOnce(A) -> A2>(self, f: F) -> InformedSearch<A2, W, H, X, I, S, C> {
+        InformedSearch {
+            activity: f(self.activity),
+            weight: self.weight,
+            heuristic: self.heuristic,
+            closer: self.closer,
+            initializer: self.initializer,
+            satisfier: self.satisfier,
+            connector: self.connector,
         }
     }
 }
