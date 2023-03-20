@@ -134,7 +134,9 @@ where
             .plan(start.key.vertex.clone(), goal.key.vertex.clone())
             .map_err(|_| QuickestPathHeuristicError::PlannerError)?
             .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)
-            .map(|status| status.solution().map(|s| s.total_cost))
+            .map(|status| status.solution().map(|s| {
+                s.total_cost
+            }))
     }
 }
 

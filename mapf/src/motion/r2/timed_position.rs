@@ -18,7 +18,10 @@
 use super::{Position, Velocity, Positioned};
 use crate::{
     motion::{self, SpeedLimiter, se2, timed, InterpError, Interpolation},
-    domain::{Extrapolator, IncrementalExtrapolator, ExtrapolationProgress, Reversible, Backtrack},
+    domain::{
+        Extrapolator, IncrementalExtrapolator, ExtrapolationProgress,
+        Reversible, Backtrack, flip_endpoint_times, backtrack_times,
+    },
     error::NoError,
 };
 use arrayvec::ArrayVec;
@@ -209,13 +212,12 @@ where
 
 impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for LineFollow {
     type BacktrackError = NoError;
-    fn flip_state(
+    fn flip_endpoints(
         &self,
-        final_reverse_state: &Waypoint
-    ) -> Result<Waypoint, Self::BacktrackError> {
-        let mut initial_forward_state = *final_reverse_state;
-        initial_forward_state.time = TimePoint::zero();
-        Ok(initial_forward_state)
+        initial_reverse_state: &Waypoint,
+        final_reverse_state: &Waypoint,
+    ) -> Result<(Waypoint, Waypoint), Self::BacktrackError> {
+        flip_endpoint_times(initial_reverse_state, final_reverse_state)
     }
 
     fn backtrack(
@@ -225,31 +227,12 @@ impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for LineFollow {
         reverse_action: &ArrayVec<Waypoint, N>,
         child_reverse_state: &Waypoint,
     ) -> Result<(ArrayVec<Waypoint, N>, Waypoint), Self::BacktrackError> {
-        let dt = parent_forward_state.time - parent_reverse_state.time;
-
-        let mut child_forward_state = *child_reverse_state;
-        child_forward_state.time += dt;
-
-        let mut forward_action = reverse_action.clone();
-        // Check swap_endpoints now and save it because the length will change
-        // when we pop the last waypoint.
-        let swap_endpoints = !forward_action.is_empty();
-        if swap_endpoints {
-            // The last element should be the parent_reverse_state waypoint.
-            forward_action.pop();
-        }
-        forward_action.reverse();
-        for wp in &mut forward_action {
-            // Adjust the times of each waypoint
-            wp.time += dt;
-        }
-        if swap_endpoints {
-            // Add the waypoint of the child_forward_state, which is the
-            // endpoint of this action
-            forward_action.push(child_forward_state);
-        }
-
-        Ok((forward_action, child_forward_state))
+        backtrack_times(
+            parent_forward_state,
+            parent_reverse_state,
+            reverse_action,
+            child_reverse_state
+        )
     }
 }
 

@@ -187,7 +187,10 @@ impl<S, A, C> Path<S, A, C> {
         ReverseDomain: Domain + Backtrack<S, A>,
         ReverseDomain::BacktrackError: Into<ReverseDomain::Error>,
     {
-        let mut parent_forward_state = reverse_domain.flip_state(&self.initial_state).map_err(Into::into)?;
+        let (_, mut parent_forward_state) = reverse_domain.flip_endpoints(
+            &self.initial_state,
+            self.sequence.last().map(|s| &s.1).unwrap_or(&self.initial_state),
+        ).map_err(Into::into)?;
         let mut parent_reverse_state = self.initial_state;
 
         let mut sequence = Vec::new();

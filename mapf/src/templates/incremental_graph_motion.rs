@@ -48,6 +48,28 @@ pub struct IncrementalGraphMotion<S, G, E> {
     pub extrapolator: E,
 }
 
+impl<S, G, E> IncrementalGraphMotion<S, G, E> {
+    fn update_state_waypoint(
+        &self,
+        waypoint: S::Waypoint,
+        original_state: &IncrementalState<S::State, G>,
+    ) -> IncrementalState<S::State, G>
+    where
+        S: KeyedSpace<G::Key>,
+        G: Graph,
+        G::Key: Clone,
+        G::EdgeAttributes: Clone,
+    {
+        let vertex = self.space.vertex_of(
+            self.space.key_for(&original_state.base_state).borrow()
+        ).clone();
+        IncrementalState {
+            target: original_state.target.clone(),
+            base_state: self.space.make_keyed_state(vertex, waypoint)
+        }
+    }
+}
+
 impl<S, G, E> Domain for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
@@ -266,19 +288,22 @@ where
     E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
 {
     type BacktrackError = E::BacktrackError;
-    fn flip_state(
+    fn flip_endpoints(
         &self,
-        final_reverse_state: &IncrementalState<S::State, G>
-    ) -> Result<IncrementalState<S::State, G>, Self::BacktrackError> {
-        self.extrapolator.flip_state(self.space.waypoint(&final_reverse_state.base_state).borrow())
-            .map(|waypoint| {
-                let vertex = self.space.vertex_of(
-                    self.space.key_for(&final_reverse_state.base_state).borrow()
-                ).clone();
-                IncrementalState {
-                    target: final_reverse_state.target.clone(),
-                    base_state: self.space.make_keyed_state(vertex, waypoint)
-                }
+        initial_reverse_state: &IncrementalState<S::State, G>,
+        final_reverse_state: &IncrementalState<S::State, G>,
+    ) -> Result<(IncrementalState<S::State, G>, IncrementalState<S::State, G>), Self::BacktrackError> {
+        self
+        .extrapolator
+        .flip_endpoints(
+            self.space.waypoint(&initial_reverse_state.base_state).borrow(),
+            self.space.waypoint(&final_reverse_state.base_state).borrow(),
+        )
+        .map(|(initial_forward_waypoint, final_forward_waypoint)| {
+            (
+                self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
+                self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+            )
         })
     }
 
@@ -296,13 +321,7 @@ where
             self.space.waypoint(&child_reverse_state.base_state).borrow(),
         )
         .map(|(action, waypoint)| {
-            let vertex = self.space.vertex_of(
-                self.space.key_for(&child_reverse_state.base_state).borrow()
-            ).clone();
-            let state = IncrementalState {
-                target: child_reverse_state.target.clone(),
-                base_state: self.space.make_keyed_state(vertex, waypoint)
-            };
+            let state = self.update_state_waypoint(waypoint, child_reverse_state);
             (action, state)
         })
     }

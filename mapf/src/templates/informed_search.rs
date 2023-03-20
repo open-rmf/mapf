@@ -486,11 +486,12 @@ where
     A: Domain + Activity<A::State> + Backtrack<A::State, A::ActivityAction>,
 {
     type BacktrackError = A::BacktrackError;
-    fn flip_state(
+    fn flip_endpoints(
         &self,
-        final_reverse_state: &A::State
-    ) -> Result<A::State, Self::BacktrackError> {
-        self.activity.flip_state(final_reverse_state)
+        initial_reverse_state: &A::State,
+        final_reverse_state: &A::State,
+    ) -> Result<(A::State, A::State), Self::BacktrackError> {
+        self.activity.flip_endpoints(initial_reverse_state, final_reverse_state)
     }
 
     fn backtrack(
