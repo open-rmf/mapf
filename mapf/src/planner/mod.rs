@@ -65,6 +65,8 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         }
     }
 
+    /// Consume this Planner and create a new Planner with a different default
+    /// Halting value.
     pub fn with_halting<NewHalting>(self, halting: NewHalting) -> Planner<Algo, NewHalting> {
         Planner {
             algorithm: self.algorithm,
@@ -87,8 +89,9 @@ impl<Algo, Halting> Planner<Algo, Halting> {
 
     /// Begin planning from the start conditions to the goal conditions.
     ///
-    /// This requires the Algorithm to be clonable. To produce a single search
-    /// for an Algorithm that cannot be cloned, use [`Planner::into_search`].
+    /// This requires the Algorithm and Halting to be clonable. To produce a
+    /// single search using an Algorithm that cannot be cloned, use
+    /// [`Planner::into_search`].
     pub fn plan<Start, Goal>(
         &self,
         start: Start,
@@ -101,6 +104,11 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         self.plan_with_halting(start, goal, self.default_halting.clone())
     }
 
+    /// Begin planning from the start conditions to the goal conditions using
+    /// a custom halting behavior.
+    ///
+    /// This requires the Algorithm to be clonable. To produce a single search
+    /// using an Algorithm that cannot be cloned, use [`Planner::into_search`].
     pub fn plan_with_halting<Start, Goal, WithHalt: Halt<Algo::Memory>>(
         &self,
         start: Start,
@@ -118,19 +126,6 @@ impl<Algo, Halting> Planner<Algo, Halting> {
             goal,
             halt,
         ))
-    }
-
-    pub fn into_abstract<S, G>(self) -> AbstractPlanner<S, G, Algo::Solution>
-    where
-        Algo: Coherent<S, G> + Solvable<G> + Clone + 'static,
-        Algo::InitError: Into<Anyhow> + 'static,
-        Algo::StepError: Into<Anyhow> + 'static,
-        Halting: Halt<Algo::Memory> + 'static,
-        G: 'static,
-    {
-        AbstractPlanner {
-            implementation: Box::new(RefCell::new(self)),
-        }
     }
 
     /// Convert the planner into a single [`Search`] instance. This can be used
@@ -154,6 +149,23 @@ impl<Algo, Halting> Planner<Algo, Halting> {
             goal,
             self.default_halting,
         ))
+    }
+
+    /// Convert this Planner into an abstract one which hides the underlying
+    /// algorithm. This can be useful for mixing this planner into a container
+    /// with other planners that support the same input/output but use
+    /// different algorithms.
+    pub fn into_abstract<S, G>(self) -> AbstractPlanner<S, G, Algo::Solution>
+    where
+        Algo: Coherent<S, G> + Solvable<G> + Clone + 'static,
+        Algo::InitError: Into<Anyhow> + 'static,
+        Algo::StepError: Into<Anyhow> + 'static,
+        Halting: Halt<Algo::Memory> + 'static,
+        G: 'static,
+    {
+        AbstractPlanner {
+            implementation: Box::new(RefCell::new(self)),
+        }
     }
 }
 
