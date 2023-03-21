@@ -96,13 +96,22 @@ where
 {
     type Extrapolation = ArrayVec<Waypoint, 1>;
     type ExtrapolationError = LineFollowError;
-    fn extrapolate(
-        &self,
+    type ExtrapolationIter<'a> = Option<Result<(ArrayVec<Waypoint, 1>, Waypoint), LineFollowError>>
+    where
+        Target: 'a,
+        Guidance: 'a;
+
+    fn extrapolate<'a>(
+        &'a self,
         from_state: &Waypoint,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, Self::ExtrapolationError> {
-        self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit())
+    ) -> Self::ExtrapolationIter<'a>
+    where
+        Target: 'a,
+        Guidance: 'a,
+    {
+        self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit()).transpose()
     }
 }
 
@@ -113,15 +122,21 @@ where
 {
     type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
     type IncrementalExtrapolationError = LineFollowError;
-    fn incremental_extrapolate(
-        &self,
+    type IncrementalExtrapolationIter<'a> = Option<Result<(ArrayVec<Waypoint, 1>, Waypoint, ExtrapolationProgress), LineFollowError>>
+    where
+        Target: 'a,
+        Guidance: 'a;
+
+    fn incremental_extrapolate<'a>(
+        &'a self,
         from_state: &Waypoint,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<
-            Option<(Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress)>,
-            Self::IncrementalExtrapolationError
-    > {
+    ) -> Self::IncrementalExtrapolationIter<'a>
+    where
+        Target: 'a,
+        Guidance: 'a,
+    {
         self.extrapolate(from_state, to_target, with_guidance)
             .map(|r| r.map(|(action, state)| (action, state, ExtrapolationProgress::Arrived)))
     }

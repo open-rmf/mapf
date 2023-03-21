@@ -46,6 +46,7 @@ pub trait Activity<State> {
         State: 'a;
 
     /// What choices can be made related to this activity from the provided state
+    // TODO(@mxgrey): Investigate whether `from_state` can have a `&State` type
     fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
     where
         Self: 'a,

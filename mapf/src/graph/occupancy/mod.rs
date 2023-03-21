@@ -291,7 +291,7 @@ impl<G: Grid> Visibility<G> {
     }
 
     /// Change the values for a set of cells.
-    // TODO(MXG): Have this return more detailed information about what changed
+    // TODO(@mxgrey): Have this return more detailed information about what changed
     // instead of only returning a boolean.
     pub fn change_cells(&mut self, changes: &HashMap<Cell, bool>) -> bool {
         let (confirmed_changes, corner_changes) = self.grid.change_cells(changes);
@@ -543,7 +543,7 @@ impl<G: Grid> Visibility<G> {
             // whether a visibility point is occupied.
             for (point_cell, (point_blocked_by, _)) in &mut *points {
                 if *changed_cell_occupied {
-                    // TODO(MXG): Consider using a bounding volume heiarchy
+                    // TODO(@mxgrey): Consider using a bounding volume heiarchy
                     // instead of iterating through every point.
                     if point_blocked_by.is_none() {
                         let dist = *changed_cell - *point_cell;
@@ -555,7 +555,7 @@ impl<G: Grid> Visibility<G> {
                         }
                     }
                 } else {
-                    // TODO(MXG): Consider using a hashmap of blockers -> points
+                    // TODO(@mxgrey): Consider using a hashmap of blockers -> points
                     // instead of iterating through every point.
                     if let Some(blocking_cell) = point_blocked_by {
                         if blocking_cell == changed_cell {

@@ -16,9 +16,7 @@
 */
 
 use super::{Position, Velocity};
-use crate::{
-    motion::{self, timed, InterpError, Interpolation, TimePoint},
-};
+use crate::motion::{self, timed, InterpError, Interpolation, TimePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {

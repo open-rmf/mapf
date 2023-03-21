@@ -228,7 +228,7 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
             }
 
             if message.is_some() {
-                // TODO(MXG): This implementation only allows us to generate
+                // TODO(@mxgrey): This implementation only allows us to generate
                 // one message per update. It would be better if the
                 // canvas::Program::update pub trait function could return a
                 // command instead of just an Option<Message>
@@ -294,7 +294,7 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
             }
 
             if let Some(message) = message {
-                // TODO(MXG): This implementation only allows us to generate
+                // TODO(@mxgrey): This implementation only allows us to generate
                 // one message per update. It would be better if the
                 // canvas::Program::update pub trait function could return a
                 // command instead of just an Option<Message>

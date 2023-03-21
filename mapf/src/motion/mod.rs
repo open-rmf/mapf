@@ -34,6 +34,9 @@ pub mod speed_limit;
 pub use speed_limit::*;
 pub mod reach;
 
+pub mod conflict;
+pub use conflict::*;
+
 // pub mod collide;
 
 pub use time_point::{Duration, TimePoint};
@@ -44,7 +47,7 @@ pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
 /// The default rotational threshold is 1-degree.
 pub const DEFAULT_ROTATIONAL_THRESHOLD: f64 = 1.0f64 * std::f64::consts::PI / 180.0;
 
-// TODO(MXG): Should each implementation of Interpolation be allowed to specify
+// TODO(@mxgrey): Should each implementation of Interpolation be allowed to specify
 // its own error types?
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InterpError {

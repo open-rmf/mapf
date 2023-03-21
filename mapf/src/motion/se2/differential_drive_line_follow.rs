@@ -194,19 +194,30 @@ where
 {
     type Extrapolation = ArrayVec<Waypoint, 3>;
     type ExtrapolationError = DifferentialDriveLineFollowError;
+    type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, Waypoint), Self::ExtrapolationError>>
+    where
+        Target: 'a,
+        Guidance: 'a;
 
-    fn extrapolate(
-        &self,
+    fn extrapolate<'a>(
+        &'a self,
         from_state: &Waypoint,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<(ArrayVec<Waypoint, 3>, Waypoint)>, Self::ExtrapolationError> {
+    ) -> Self::ExtrapolationIter<'a>
+    where
+        Target: 'a,
+        Guidance: 'a,
+    {
         let target_point = to_target.point();
-        let mut arrival = self.move_towards_target(
+        let mut arrival = match self.move_towards_target(
             from_state,
             &target_point,
             with_guidance,
-        )?;
+        ) {
+            Ok(arrival) => arrival,
+            Err(err) => return Some(Err(err)),
+        };
 
         if let Some(target_yaw) = to_target.maybe_oriented() {
             let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
@@ -227,7 +238,7 @@ where
         }
 
         let wp = *arrival.waypoints.last().unwrap_or(from_state);
-        return Ok(Some((arrival.waypoints, wp)));
+        return Some(Ok((arrival.waypoints, wp)));
     }
 }
 
@@ -238,28 +249,39 @@ where
 {
     type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
     type IncrementalExtrapolationError = DifferentialDriveLineFollowError;
+    type IncrementalExtrapolationIter<'a> = Option<Result<
+        (Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress),
+        Self::IncrementalExtrapolationError
+    >>
+    where
+        Target: 'a,
+        Guidance: 'a;
 
-    fn incremental_extrapolate(
-        &self,
+    fn incremental_extrapolate<'a>(
+        &'a self,
         from_state: &Waypoint,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<
-            Option<(Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress)>,
-            Self::IncrementalExtrapolationError
-    > {
+    ) -> Self::IncrementalExtrapolationIter<'a>
+    where
+        Target: 'a,
+        Guidance: 'a,
+    {
         let target_point = to_target.point();
-        let mut arrival = self.move_towards_target(
+        let mut arrival = match self.move_towards_target(
             from_state,
             &target_point,
             with_guidance,
-        )?;
+        ) {
+            Ok(arrival) => arrival,
+            Err(err) => return Some(Err(err)),
+        };
 
         let mut action = ArrayVec::new();
         if let Some(next_increment) = arrival.waypoints.first() {
             action.push(*next_increment);
             if arrival.waypoints.len() > 1 {
-                return Ok(Some((action, *next_increment, ExtrapolationProgress::Incomplete)));
+                return Some(Ok((action, *next_increment, ExtrapolationProgress::Incomplete)));
             }
         }
 
@@ -267,7 +289,7 @@ where
             let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
             if delta_yaw_abs > self.rotational_threshold {
                 if let Some(next_increment) = action.first().map(|wp| *wp) {
-                    return Ok(Some((action, next_increment, ExtrapolationProgress::Incomplete)));
+                    return Some(Ok((action, next_increment, ExtrapolationProgress::Incomplete)));
                 } else {
                     // Rotate towards the target orientation if we're not
                     // already facing it.
@@ -280,13 +302,13 @@ where
                         ),
                     };
                     action.push(wp);
-                    return Ok(Some((action, wp, ExtrapolationProgress::Arrived)));
+                    return Some(Ok((action, wp, ExtrapolationProgress::Arrived)));
                 }
             }
         }
 
         let wp = *action.first().unwrap_or(from_state);
-        Ok(Some((action, wp, ExtrapolationProgress::Arrived)))
+        Some(Ok((action, wp, ExtrapolationProgress::Arrived)))
     }
 }
 
@@ -378,7 +400,6 @@ where
         );
 
         self.0.extrapolate(&from_state.waypoint, &target_pos, &())
-        .transpose()
         .map(|r|
             r.map(|(action, wp)|
                 (action, StateSE2::new(from_state.key.vertex, wp))

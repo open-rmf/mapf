@@ -91,7 +91,7 @@ impl motion::Motion<Position, Velocity> for Motion {
     fn compute_velocity(&self, time: &TimePoint) -> Result<Velocity, InterpError> {
         self.in_time_range(time)?;
 
-        // TODO(MXG): Since velocity is taken to be constant across the whole
+        // TODO(@mxgrey): Since velocity is taken to be constant across the whole
         // range, this could be precomputed once and saved inside the Motion object.
         let t_range = (self.final_wp.time - self.initial_wp.time).as_secs_f64();
         let p0 = &self.initial_wp.position.translation.vector;

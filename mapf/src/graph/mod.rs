@@ -31,7 +31,7 @@ pub trait Edge<Key, Attributes> {
     fn attributes(&self) -> &Attributes;
 }
 
-// TODO(MXG): Consider if it there is a way to assign a lifetime bound to Vertex
+// TODO(@mxgrey): Consider if it there is a way to assign a lifetime bound to Vertex
 // and Edge so that vertex() and edges_from_vertex() could choose between
 // returning a concrete value or a reference. For some types of Graph it would
 // be more efficient to return a reference type, but for other types of Graph it

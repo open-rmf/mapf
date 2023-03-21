@@ -55,7 +55,7 @@ impl<V, E> SimpleGraph<V, E> {
         }
     }
 
-    // TODO(MXG): We could make an into_reverse(self) for cases where V and E
+    // TODO(@mxgrey): We could make an into_reverse(self) for cases where V and E
     // cannot be cloned.
 }
 

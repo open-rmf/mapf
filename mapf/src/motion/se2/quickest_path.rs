@@ -142,7 +142,7 @@ where
     }
 }
 
-// TODO(MXG): Put actual error information inside of here.
+// TODO(@mxgrey): Put actual error information inside of here.
 #[derive(Debug, ThisError)]
 pub enum QuickestPathHeuristicError {
     #[error("An error occurred in the planner")]

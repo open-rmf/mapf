@@ -128,13 +128,13 @@ where
                         let to_key = to_key.clone();
                         let with_guidance = with_guidance.clone();
                         extrapolation
-                        .map_err(GraphMotionError::Extrapolator)
-                        .flat_result_map(move |r| {
+                        .into_iter()
+                        .map(move |r| {
                             let from_state = from_state.clone();
                             let to_key = to_key.clone();
                             let with_guidance = with_guidance.clone();
                             r
-                            .into_iter()
+                            .map_err(GraphMotionError::Extrapolator)
                             .map(move |(action, waypoint, progress)| {
                                 let to_key = to_key.clone();
                                 let with_guidance = with_guidance.clone();
@@ -168,6 +168,8 @@ where
             )
         }
 
+        // TODO(@mxgrey): Consider ways to reduce code duplication between the
+        // left and right forks.
         ForkIter::Right(
             self
             .graph
@@ -192,13 +194,13 @@ where
                     let to_key = to_key.clone();
                     let with_guidance = with_guidance.clone();
                     extrapolation
-                    .map_err(GraphMotionError::Extrapolator)
-                    .flat_result_map(move |r| {
+                    .into_iter()
+                    .map(move |r| {
                         let from_state = from_state.clone();
                         let to_key = to_key.clone();
                         let with_guidance = with_guidance.clone();
                         r
-                        .into_iter()
+                        .map_err(GraphMotionError::Extrapolator)
                         .map(move |(action, waypoint, progress)| {
                             if progress.incomplete() {
                                 let key = self.space.key_for(

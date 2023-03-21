@@ -29,9 +29,28 @@ pub trait Extrapolator<State, Target, Guidance> {
     /// What kind of error can happen during extrapolation
     type ExtrapolationError;
 
+    /// Iterator for all the extrapolations provided by this extrapolator. Each
+    /// extrapolation in the iterator is an alternative way to move the agent
+    /// from the start state to the target. Each alternative extrapolation
+    /// should be considered independently of each other.
+    ///
+    /// If the target cannot be reached this will return an empty iterator. If more
+    /// than one extrapolation is provided, the meaning of the ordering is
+    /// implementation-defined (if the ordering has any meaning at all).
+    type ExtrapolationIter<'a>: IntoIterator<Item=Result<(Self::Extrapolation, State), Self::ExtrapolationError>> + 'a
+    where
+        Self: 'a,
+        Self::Extrapolation: 'a,
+        Self::ExtrapolationError: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
+
     /// Extrapolate an action from a state to a target with the provided guidance.
-    /// Return the action that has been extrapolated as well as the final state
-    /// once the target is reached. If the target cannot be reached, return None.
+    /// For each alternative action that the agent can use to reach the target,
+    /// return the action that has been extrapolated as well as the final state
+    /// once the target is reached. If the target cannot be reached, return an
+    /// empty iterator.
     ///
     /// * `from_state` - The initial state to extrapolate from.
     /// * `to_target` - The target to extrapolate towards. This can be a different
@@ -39,12 +58,19 @@ pub trait Extrapolator<State, Target, Guidance> {
     /// the `Target` could be a position in R2.
     /// * `with_guidance` - Parameters to describe how the extrapolation should
     /// be performed. This can include constraints like speed limits.
-    fn extrapolate(
-        &self,
+    fn extrapolate<'a>(
+        &'a self,
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<(Self::Extrapolation, State)>, Self::ExtrapolationError>;
+    ) -> Self::ExtrapolationIter<'a>
+    where
+        Self: 'a,
+        Self::Extrapolation: 'a,
+        Self::ExtrapolationError: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
 }
 
 /// Incrementally extrapolate an action from a state to a target with the
@@ -63,19 +89,59 @@ pub trait Extrapolator<State, Target, Guidance> {
 /// search nodes. Single-use algorithms like A* do not benefit from covering
 /// more states in its search, and should therefore prefer [`Extrapolator`].
 pub trait IncrementalExtrapolator<State, Target, Guidance> {
-    /// What kind of action is
+    /// What kind of action is produced during extrapolation
     type IncrementalExtrapolation;
 
     /// What kind of error can happen during extrapolation
     type IncrementalExtrapolationError;
 
-    /// Move towards a target from a given state.
-    fn incremental_extrapolate(
-        &self,
+    /// Iterator for all the extrapolations provided by this extrapolator. Each
+    /// extrapolation in the iterator is an alternative way to move the agent
+    /// from the start state to the target. Each alternative extrapolation
+    /// should be considered independently of each other.
+    ///
+    /// If the target cannot be reached this will return an empty iterator. If more
+    /// than one extrapolation is provided, the meaning of the ordering is
+    /// implementation-defined (if the ordering has any meaning at all).
+    type IncrementalExtrapolationIter<'a>:
+        IntoIterator<
+            Item=Result<
+                (Self::IncrementalExtrapolation, State, ExtrapolationProgress),
+                Self::IncrementalExtrapolationError>
+        > + 'a
+    where
+        Self: 'a,
+        Self::IncrementalExtrapolation: 'a,
+        Self::IncrementalExtrapolationError: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
+
+    /// Extrapolate an action from a state towards a target with the provided
+    /// guidance. For each alternative action that the agent can use to move
+    /// towards the target, return the action that has been extrapolated as well
+    /// as the state of the agent at the end of the action. If there is no way
+    /// to progress towards the target, return an empty iterator.
+    ///
+    /// * `from_state` - The initial state to extrapolate from.
+    /// * `to_target` - The target to extrapolate towards. This can be a different
+    /// type than the `State`. For example, if `State` is a position in SE2, then
+    /// the `Target` could be a position in R2.
+    /// * `with_guidance` - Parameters to describe how the extrapolation should
+    /// be performed. This can include constraints like speed limits.
+    fn incremental_extrapolate<'a>(
+        &'a self,
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
-    ) -> Result<Option<(Self::IncrementalExtrapolation, State, ExtrapolationProgress)>, Self::IncrementalExtrapolationError>;
+    ) -> Self::IncrementalExtrapolationIter<'a>
+    where
+        Self: 'a,
+        Self::IncrementalExtrapolation: 'a,
+        Self::IncrementalExtrapolationError: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -98,25 +164,51 @@ pub struct NoExtrapolation<E>(std::marker::PhantomData<E>);
 impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExtrapolation<E> {
     type Extrapolation = E;
     type ExtrapolationError = NoError;
-    fn extrapolate(
-        &self,
+    type ExtrapolationIter<'a> = [Result<(E, State), NoError>; 0]
+    where
+        E: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
+
+    fn extrapolate<'a>(
+        &'a self,
         _: &State,
         _: &Target,
         _: &Guidance,
-    ) -> Result<Option<(Self::Extrapolation, State)>, Self::ExtrapolationError> {
-        Ok(None)
+    ) -> [Result<(E, State), NoError>; 0]
+    where
+        E: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a,
+    {
+        []
     }
 }
 
 impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance> for NoExtrapolation<E> {
     type IncrementalExtrapolation = E;
     type IncrementalExtrapolationError = NoError;
-    fn incremental_extrapolate(
-        &self,
+    type IncrementalExtrapolationIter<'a> = [Result<(E, State, ExtrapolationProgress), NoError>; 0]
+    where
+        E: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a;
+
+    fn incremental_extrapolate<'a>(
+        &'a self,
         _: &State,
         _: &Target,
         _: &Guidance,
-    ) -> Result<Option<(Self::IncrementalExtrapolation, State, ExtrapolationProgress)>, Self::IncrementalExtrapolationError> {
-        Ok(None)
+    ) -> [Result<(E, State, ExtrapolationProgress), NoError>; 0]
+    where
+        E: 'a,
+        State: 'a,
+        Target: 'a,
+        Guidance: 'a,
+    {
+        []
     }
 }

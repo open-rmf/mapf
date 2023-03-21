@@ -182,7 +182,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Get the waypoint at the requested index if it is available, otherwise
     /// get None.
     pub fn get(&self, index: usize) -> Option<&W> {
-        // TODO(MXG): Investigate how SliceIndex can be used here. The TimeCmp
+        // TODO(@mxgrey): Investigate how SliceIndex can be used here. The TimeCmp
         // wrapper complicates this.
         return self.waypoints.get(index).map(|x| &x.0);
     }

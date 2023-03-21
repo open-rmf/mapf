@@ -104,12 +104,13 @@ where
                 );
 
                 extrapolation
-                .map_err(GraphMotionError::Extrapolator)
-                .flat_result_map(move |r| {
+                .into_iter()
+                .map(move |r| {
                     let to_vertex = to_vertex.clone();
                     r
-                    .into_iter()
+                    .map_err(GraphMotionError::Extrapolator)
                     .map(move |(action, waypoint)| {
+                        let to_vertex = to_vertex.clone();
                         let state = self.space.make_keyed_state(
                             to_vertex.clone(), waypoint
                         );

@@ -416,10 +416,10 @@ where
     + Closable<D::State>,
 {
     /// Trees that are being grown for this search.
-    // TODO(MXG): Consider using a SmallVec here to avoid heap allocation
+    // TODO(@mxgrey): Consider using a SmallVec here to avoid heap allocation
     trees: Vec<TreeMemory<D>>,
     /// Valid keys
-    // TODO(MXG): Consider using a SmallVec here to avoid heap allocation
+    // TODO(@mxgrey): Consider using a SmallVec here to avoid heap allocation
     goal_keys: Vec<D::Key>,
     /// How many iterations to attempt per step of the algorithm. Having a
     /// higher value reduces the overhead of borrowing and releasing the RwLock

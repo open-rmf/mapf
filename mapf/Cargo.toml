@@ -25,6 +25,7 @@ anyhow = "*"
 thiserror = "*"
 paste = "0.1"
 float-ord = "*"
+smallvec = "1.10"
 
 [dev-dependencies]
 approx = "*"

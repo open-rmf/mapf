@@ -66,9 +66,10 @@ where
         self
         .extrapolator
         .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
+        .transpose()
         .map_err(DirectTravelError::Extrapolator)
-        .map(|r|
-            r
+        .map(|action|
+            action
             .map(|(action, child_wp)| {
                 let child_state = self.space.make_keyed_state(
                     to_goal.key().borrow().clone(), child_wp
