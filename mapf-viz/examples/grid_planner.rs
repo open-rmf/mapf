@@ -126,7 +126,7 @@ fn draw_agent(
                 frame.rotate(angle as f32);
                 let r = 0.8 * agent_radius;
                 let angle_to_point = |angle: f32| {
-                    iced::Point::new(r * angle.cos(), r * angle.sin())
+                    iced::Point::new(r * f32::cos(angle), r * f32::sin(angle))
                 };
 
                 let points: [iced::Point; 3] = [

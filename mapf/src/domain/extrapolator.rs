@@ -21,6 +21,7 @@ use crate::error::NoError;
 ///
 /// See also:
 /// * [`IncrementalExtrapolator`]
+/// * [`crate::domain::ConflictAvoider`]
 /// * [`crate::domain::Connectable`]
 pub trait Extrapolator<State, Target, Guidance> {
     /// What kind of action is produced during extrapolation
@@ -34,8 +35,8 @@ pub trait Extrapolator<State, Target, Guidance> {
     /// from the start state to the target. Each alternative extrapolation
     /// should be considered independently of each other.
     ///
-    /// If the target cannot be reached this will return an empty iterator. If more
-    /// than one extrapolation is provided, the meaning of the ordering is
+    /// If the target cannot be reached this will return an empty iterator. If
+    /// more than one extrapolation is provided, the meaning of the ordering is
     /// implementation-defined (if the ordering has any meaning at all).
     type ExtrapolationIter<'a>: IntoIterator<Item=Result<(Self::Extrapolation, State), Self::ExtrapolationError>> + 'a
     where
@@ -88,6 +89,11 @@ pub trait Extrapolator<State, Target, Guidance> {
 /// search cache by breaking down rotations and translations into separate
 /// search nodes. Single-use algorithms like A* do not benefit from covering
 /// more states in its search, and should therefore prefer [`Extrapolator`].
+///
+/// See also:
+/// * [`Extrapolator`]
+/// * [`crate::domain::ConflictAvoider`]
+/// * [`crate::domain::Connectable`]
 pub trait IncrementalExtrapolator<State, Target, Guidance> {
     /// What kind of action is produced during extrapolation
     type IncrementalExtrapolation;

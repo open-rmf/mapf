@@ -25,7 +25,7 @@ pub mod waypoint;
 pub use waypoint::Waypoint;
 
 pub mod trajectory;
-pub use trajectory::Trajectory;
+pub use trajectory::{Trajectory, FindWaypoint};
 
 pub mod travel_time_cost;
 pub use travel_time_cost::*;
@@ -36,8 +36,6 @@ pub mod reach;
 
 pub mod conflict;
 pub use conflict::*;
-
-// pub mod collide;
 
 pub use time_point::{Duration, TimePoint};
 

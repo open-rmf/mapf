@@ -146,7 +146,7 @@ impl DifferentialDriveLineFollow {
         let delta_p = self.direction * (*p1 - p0);
         let distance = delta_p.norm();
         if distance > self.translational_threshold {
-            let approach_yaw = nalgebra::UnitComplex::from_angle(delta_p[1].atan2(delta_p[0]));
+            let approach_yaw = nalgebra::UnitComplex::from_angle(f64::atan2(delta_p[1], delta_p[0]));
             let delta_yaw_abs = (approach_yaw / from_waypoint.position.rotation)
                 .angle()
                 .abs();

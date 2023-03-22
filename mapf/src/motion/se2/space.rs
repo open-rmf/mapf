@@ -303,7 +303,7 @@ impl<G, const R: u32> StarburstSE2<G, R> {
                             .map(move |to_p_ref| {
                                 let to_p: Point = to_p_ref.borrow().point();
                                 (self.direction as f64 * (to_p - from_p)).try_normalize(1e-6)
-                                    .map(|v| v[1].atan2(v[0]))
+                                    .map(|v| f64::atan2(v[1], v[0]))
                                     .unwrap_or(0.0)
                             })
                             .map(move |angle|

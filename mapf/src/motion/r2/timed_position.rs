@@ -16,12 +16,24 @@
 */
 
 use super::{Position, Velocity};
-use crate::motion::{self, timed, InterpError, Interpolation, TimePoint};
+use crate::motion::{
+    self, timed, InterpError, Interpolation, TimePoint,
+    se2::Waypoint as WaypointSE2,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
     pub time: TimePoint,
     pub position: Position,
+}
+
+impl Waypoint {
+    pub fn new(time: TimePoint, x: f64, y: f64) -> Self {
+        return Waypoint {
+            time,
+            position: Position::new(x, y),
+        };
+    }
 }
 
 impl timed::Timed for Waypoint {
@@ -34,12 +46,13 @@ impl timed::Timed for Waypoint {
     }
 }
 
-impl Waypoint {
-    pub fn new(time: TimePoint, x: f64, y: f64) -> Self {
-        return Waypoint {
-            time,
-            position: Position::new(x, y),
-        };
+impl From<WaypointSE2> for Waypoint {
+    fn from(value: WaypointSE2) -> Self {
+        Self::new(
+            value.time,
+            value.position.translation.x,
+            value.position.translation.y,
+        )
     }
 }
 

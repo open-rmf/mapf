@@ -25,11 +25,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Find {
+pub enum FindWaypoint {
     /// The requested time is exactly on the waypoint at this index
     Exact(usize),
 
-    /// The requested time is approaching the waypoint of this index
+    /// The requested time is approaching the waypoint of this index. This is
+    /// always greater than 0. If the time point was less than the initial time
+    /// of the trajectory then BeforeStart will be returned instead.
     Approaching(usize),
 
     /// The requested time is before the start of the trajectory
@@ -64,9 +66,11 @@ pub enum MutateError {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Trajectory<W: Waypoint> {
     waypoints: SortedSet<TimeCmp<W>>,
+    indefinite_initial_time: bool,
+    indefinite_finish_time: bool,
 }
 
-impl<'a, W: Waypoint> Trajectory<W> {
+impl<W: Waypoint> Trajectory<W> {
     /// Create a new trajectory, starting with the given endpoints. If the
     /// endpoints have the same time value then this will return an Err.
     pub fn new(start: W, finish: W) -> Result<Self, ()> {
@@ -76,11 +80,31 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
         let mut result = Self {
             waypoints: SortedSet::new(),
+            indefinite_initial_time: false,
+            indefinite_finish_time: false,
         };
 
         result.waypoints.push(TimeCmp(start));
         result.waypoints.push(TimeCmp(finish));
         return Result::Ok(result);
+    }
+
+    pub fn with_indefinite_initial_time(mut self, value: bool) -> Self {
+        self.indefinite_initial_time = value;
+        self
+    }
+
+    pub fn has_indefinite_initial_time(&self) -> bool {
+        self.indefinite_initial_time
+    }
+
+    pub fn with_indefinite_finish_time(mut self, value: bool) -> Self {
+        self.indefinite_finish_time = value;
+        self
+    }
+
+    pub fn has_indefinite_finish_time(&self) -> bool {
+        self.indefinite_finish_time
     }
 
     /// Create a new trajectory that holds at a waypoint until a certain time.
@@ -102,6 +126,8 @@ impl<'a, W: Waypoint> Trajectory<W> {
     pub fn from_iter<I: std::iter::IntoIterator<Item = W>>(iter: I) -> Result<Self, ()> {
         let mut result = Self {
             waypoints: SortedSet::new(),
+            indefinite_initial_time: false,
+            indefinite_finish_time: false,
         };
         for element in iter {
             result.waypoints.push(TimeCmp(element));
@@ -148,19 +174,19 @@ impl<'a, W: Waypoint> Trajectory<W> {
     }
 
     /// Find the segment of the trajectory that matches this point in time.
-    pub fn find(&self, time: &TimePoint) -> Find {
+    pub fn find(&self, time: &TimePoint) -> FindWaypoint {
         match self
             .waypoints
             .binary_search_by(|x| x.partial_cmp(time).unwrap())
         {
-            Result::Ok(index) => return Find::Exact(index),
+            Result::Ok(index) => return FindWaypoint::Exact(index),
             Result::Err(index) => {
                 if index == 0 {
-                    return Find::BeforeStart;
+                    return FindWaypoint::BeforeStart;
                 } else if index == self.waypoints.len() {
-                    return Find::AfterFinish;
+                    return FindWaypoint::AfterFinish;
                 } else {
-                    return Find::Approaching(index);
+                    return FindWaypoint::Approaching(index);
                 }
             }
         }
@@ -187,9 +213,17 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return self.waypoints.get(index).map(|x| &x.0);
     }
 
-    /// Get the time duration of the trajectory.
-    pub fn duration(&self) -> Duration {
-        return self.finish_time() - self.initial_time();
+    /// Get the time duration of the trajectory. If the start or finish are
+    pub fn duration(&self) -> Option<Duration> {
+        if let (Some(initial), Some(finish)) = (self.initial_time(), self.finish_time()) {
+            Some(finish - initial)
+        } else {
+            None
+        }
+    }
+
+    pub fn movement_duration(&self) -> Duration {
+        *self.finish().time() - *self.initial().time()
     }
 
     /// Trajectories always have at least two values, so we can always get the
@@ -203,13 +237,21 @@ impl<'a, W: Waypoint> Trajectory<W> {
     }
 
     /// Get the time that the trajectory starts.
-    pub fn initial_time(&self) -> TimePoint {
-        *self.initial().time()
+    pub fn initial_time(&self) -> Option<TimePoint> {
+        if self.indefinite_initial_time {
+            None
+        } else {
+            Some(*self.initial().time())
+        }
     }
 
     /// Get the time that the trajectory finishes.
-    pub fn finish_time(&self) -> TimePoint {
-        *self.finish().time()
+    pub fn finish_time(&self) -> Option<TimePoint> {
+        if self.indefinite_finish_time {
+            None
+        } else {
+            Some(*self.finish().time())
+        }
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -264,11 +306,6 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return Result::Ok(());
     }
 
-    /// Unsafe access to a waypoint in the trajectory
-    pub unsafe fn get_unchecked(&self, index: usize) -> &W {
-        &self.waypoints.get_unchecked(index).0
-    }
-
     /// Get the number of Waypoint elements in the trajectory.
     pub fn len(&self) -> usize {
         return self.waypoints.len();
@@ -289,7 +326,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     }
 
     /// Get a motion for this trajectory
-    pub fn motion(&'a self) -> TrajectoryMotion<'a, W> {
+    pub fn motion<'a>(&'a self) -> TrajectoryMotion<'a, W> {
         return TrajectoryMotion {
             trajectory: self,
             motion_cache: RefCell::new(UnboundCache::new()),
@@ -305,6 +342,24 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// implementations and without any unsafe blocks.
     pub fn iter(&self) -> std::slice::Iter<'_, TimeCmp<W>> {
         self.waypoints.iter()
+    }
+
+    /// Iterate through this trajectory, starting at the requested time.
+    ///
+    /// If the requested time is in between two waypoints, the iterator will
+    /// begin with the waypoint that comes immediately before the requested
+    /// time.
+    ///
+    /// If the requested time is before the time of the trajectory's initial
+    /// waypoint and the trajectory has an indefinite initial time, then the
+    /// iterator will begin with a waypoint that is a clone of the initial
+    /// waypoint but with the input `time` as its time value.
+    ///
+    /// If the trajectory has a definite initial time which comes after the
+    /// requested time, then the iterator will begin with the first waypoint
+    /// in the trajectory.
+    pub fn iter_from<'a>(&'a self, time: TimePoint) -> TrajectoryIterFrom<'a, W> {
+        TrajectoryIterFrom::new(self, time)
     }
 }
 
@@ -335,17 +390,19 @@ pub struct TrajectoryMotion<'a, W: Waypoint> {
 impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
         match self.trajectory.find(time) {
-            Find::Exact(index) => {
+            FindWaypoint::Exact(index) => {
                 if index == 0 {
                     return Ok(self.get_motion_segment(index + 1));
                 } else {
                     return Ok(self.get_motion_segment(index));
                 }
             }
-            Find::Approaching(index) => {
+            FindWaypoint::Approaching(index) => {
                 return Ok(self.get_motion_segment(index));
             }
-            Find::BeforeStart | Find::AfterFinish => {
+            FindWaypoint::BeforeStart | FindWaypoint::AfterFinish => {
+                // TODO(@mxgrey): Handle this differently for trajectories with
+                // indefinite initial/final times.
                 return Err(InterpError::OutOfBounds);
             }
         }
@@ -379,18 +436,108 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
     }
 }
 
-pub trait CostCalculator<W: Waypoint>: std::fmt::Debug {
-    type Cost;
-
-    fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
+pub struct TrajectoryIterFrom<'a, W: Waypoint> {
+    trajectory: &'a Trajectory<W>,
+    next_element: TrajectoryIterFromNext,
 }
 
-#[derive(Debug)]
-pub struct DurationCostCalculator;
-impl<W: Waypoint> CostCalculator<W> for DurationCostCalculator {
-    type Cost = i64;
-    fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost {
-        trajectory.duration().nanos
+impl<'a, W: Waypoint> TrajectoryIterFrom<'a, W> {
+
+    pub fn pairs(self) -> TrajectoryIterFromPairs<'a, W> {
+        TrajectoryIterFromPairs {
+            trajectory: self.trajectory,
+            next_element: self.next_element,
+        }
+    }
+
+    fn new(
+        trajectory: &'a Trajectory<W>,
+        time_point: TimePoint,
+    ) -> Self {
+        let next_element = match trajectory.find(&time_point) {
+            FindWaypoint::BeforeStart => {
+                if trajectory.indefinite_initial_time {
+                    TrajectoryIterFromNext::PreInitial(time_point)
+                } else {
+                    TrajectoryIterFromNext::Index(0)
+                }
+            }
+            FindWaypoint::Exact(index) => TrajectoryIterFromNext::Index(index),
+            FindWaypoint::Approaching(index) => TrajectoryIterFromNext::Index(index - 1),
+            FindWaypoint::AfterFinish => TrajectoryIterFromNext::Depleted,
+        };
+
+        Self { trajectory, next_element }
+    }
+}
+
+enum TrajectoryIterFromNext {
+    PreInitial(TimePoint),
+    Index(usize),
+    Depleted,
+}
+
+impl<'a, W: Waypoint> Iterator for TrajectoryIterFrom<'a, W> {
+    type Item = W;
+
+    fn next(&mut self) -> Option<W> {
+        match self.next_element {
+            TrajectoryIterFromNext::PreInitial(t) => {
+                let mut wp = self.trajectory.initial().clone();
+                wp.set_time(t);
+                self.next_element = TrajectoryIterFromNext::Index(0);
+                Some(wp)
+            }
+            TrajectoryIterFromNext::Index(index) => {
+                let wp = self.trajectory.get(index).map(|wp| wp.clone());
+                self.next_element = if wp.is_some() {
+                    TrajectoryIterFromNext::Index(index + 1)
+                } else {
+                    TrajectoryIterFromNext::Depleted
+                };
+
+                wp
+            }
+            TrajectoryIterFromNext::Depleted => None,
+        }
+    }
+}
+
+// TODO(@mxgrey): Consider how to make this more general so that it can work on
+// N-sized windows. E.g. could we implement `std::ops::Index` for
+// `std::slice::SliceIndex` so we can just use the builtin `.windows()`
+// function?
+pub struct TrajectoryIterFromPairs<'a, W: Waypoint> {
+    trajectory: &'a Trajectory<W>,
+    next_element: TrajectoryIterFromNext,
+}
+
+impl<'a, W: Waypoint> Iterator for TrajectoryIterFromPairs<'a, W> {
+    type Item = (W, W);
+
+    fn next(&mut self) -> Option<(W, W)> {
+        match self.next_element {
+            TrajectoryIterFromNext::PreInitial(t) => {
+                let wp = self.trajectory.initial().clone();
+                let mut pre_wp = wp.clone();
+                pre_wp.set_time(t);
+                self.next_element = TrajectoryIterFromNext::Index(0);
+                Some((pre_wp, wp))
+            }
+            TrajectoryIterFromNext::Index(index) => {
+                if let (Some(wp0), Some(wp1)) = (
+                    self.trajectory.get(index),
+                    self.trajectory.get(index + 1),
+                ) {
+                    self.next_element = TrajectoryIterFromNext::Index(index + 1);
+                    Some((wp0.clone(), wp1.clone()))
+                } else {
+                    self.next_element = TrajectoryIterFromNext::Depleted;
+                    None
+                }
+            }
+            TrajectoryIterFromNext::Depleted => None,
+        }
     }
 }
 

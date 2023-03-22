@@ -16,7 +16,7 @@
 */
 
 use super::{Position, Vector, Velocity};
-use crate::motion::{self, timed, InterpError, Interpolation, TimePoint, r2};
+use crate::motion::{self, timed, InterpError, Interpolation, TimePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waypoint {
@@ -46,15 +46,6 @@ impl Waypoint {
 impl motion::Waypoint for Waypoint {
     type Position = Position;
     type Velocity = Velocity;
-}
-
-impl From<Waypoint> for r2::timed_position::Waypoint {
-    fn from(se2_wp: Waypoint) -> Self {
-        r2::timed_position::Waypoint {
-            time: se2_wp.time,
-            position: se2_wp.position.translation.vector.into(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

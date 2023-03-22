@@ -15,6 +15,9 @@
  *
 */
 
+pub mod conflict_avoidance;
+pub use conflict_avoidance::ConflictAvoidance;
+
 pub mod graph_motion;
 pub use graph_motion::GraphMotion;
 
