@@ -480,7 +480,7 @@ where
             continue;
         }
 
-        for [wp0_b, wp1_b] in obs_traj.iter_from(line_a.0.time).pairs() {
+        for [wp0_b, wp1_b] in obs_traj.iter_range(line_a.0.time, line_a.1.time).pairs() {
             if line_a.1.time < *wp0_b.time() {
                 // The trajectories are no longer overlapping in time so there
                 // is no longer a risk.
