@@ -222,7 +222,7 @@ impl<W: Waypoint> Trajectory<W> {
         }
     }
 
-    pub fn movement_duration(&self) -> Duration {
+    pub fn motion_duration(&self) -> Duration {
         *self.finish().time() - *self.initial().time()
     }
 
@@ -241,8 +241,12 @@ impl<W: Waypoint> Trajectory<W> {
         if self.indefinite_initial_time {
             None
         } else {
-            Some(*self.initial().time())
+            Some(self.initial_motion_time())
         }
+    }
+
+    pub fn initial_motion_time(&self) -> TimePoint {
+        *self.initial().time()
     }
 
     /// Get the time that the trajectory finishes.
@@ -250,8 +254,12 @@ impl<W: Waypoint> Trajectory<W> {
         if self.indefinite_finish_time {
             None
         } else {
-            Some(*self.finish().time())
+            Some(self.finish_motion_time())
         }
+    }
+
+    pub fn finish_motion_time(&self) -> TimePoint {
+        *self.finish().time()
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -340,8 +348,8 @@ impl<W: Waypoint> Trajectory<W> {
     /// convenient because you will need to dereference it, but it allows us to
     /// provide all the functionality of a slice without any custom
     /// implementations and without any unsafe blocks.
-    pub fn iter(&self) -> std::slice::Iter<'_, TimeCmp<W>> {
-        self.waypoints.iter()
+    pub fn iter(&self) -> TrajectoryIterFrom<'_, W> {
+        TrajectoryIterFrom::new(self, self.initial_motion_time())
     }
 
     /// Iterate through this trajectory, starting at the requested time.
@@ -358,7 +366,7 @@ impl<W: Waypoint> Trajectory<W> {
     /// If the trajectory has a definite initial time which comes after the
     /// requested time, then the iterator will begin with the first waypoint
     /// in the trajectory.
-    pub fn iter_from<'a>(&'a self, time: TimePoint) -> TrajectoryIterFrom<'a, W> {
+    pub fn iter_from(&self, time: TimePoint) -> TrajectoryIterFrom<'_, W> {
         TrajectoryIterFrom::new(self, time)
     }
 }
@@ -513,16 +521,16 @@ pub struct TrajectoryIterFromPairs<'a, W: Waypoint> {
 }
 
 impl<'a, W: Waypoint> Iterator for TrajectoryIterFromPairs<'a, W> {
-    type Item = (W, W);
+    type Item = [W; 2];
 
-    fn next(&mut self) -> Option<(W, W)> {
+    fn next(&mut self) -> Option<[W; 2]> {
         match self.next_element {
             TrajectoryIterFromNext::PreInitial(t) => {
                 let wp = self.trajectory.initial().clone();
                 let mut pre_wp = wp.clone();
                 pre_wp.set_time(t);
                 self.next_element = TrajectoryIterFromNext::Index(0);
-                Some((pre_wp, wp))
+                Some([pre_wp, wp])
             }
             TrajectoryIterFromNext::Index(index) => {
                 if let (Some(wp0), Some(wp1)) = (
@@ -530,7 +538,7 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIterFromPairs<'a, W> {
                     self.trajectory.get(index + 1),
                 ) {
                     self.next_element = TrajectoryIterFromNext::Index(index + 1);
-                    Some((wp0.clone(), wp1.clone()))
+                    Some([wp0.clone(), wp1.clone()])
                 } else {
                     self.next_element = TrajectoryIterFromNext::Depleted;
                     None
