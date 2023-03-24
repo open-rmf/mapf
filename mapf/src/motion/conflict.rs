@@ -22,6 +22,7 @@ use crate::{
     },
 };
 use smallvec::SmallVec;
+use std::cmp::Ordering;
 
 type Vector2 = nalgebra::Vector2<f64>;
 
@@ -80,7 +81,7 @@ pub fn compute_safe_linear_paths<W>(
     from_point: WaypointR2,
     to_point: WaypointR2,
     in_environment: &DynamicEnvironment<W>,
-) -> SmallVec<[SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>; 1]>
+) -> SmallVec<[SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>; 3]>
 where
     W: Into<WaypointR2> + Waypoint,
 {
@@ -90,7 +91,7 @@ where
     if delta_t < 1e-8 {
         // This very small time interval suggests that the agent is not moving
         // significantly. Just check if the proposed path is safe or not.
-        if is_safe_segment(profile, (&from_point, &to_point), &bb, in_environment) {
+        if is_safe_segment(profile, (&from_point, &to_point), Some(bb), in_environment) {
             return SmallVec::from_iter([
                 SmallVec::from_iter([
                     SafeAction::Move(to_point)
@@ -103,10 +104,10 @@ where
         }
     }
 
-    let wait_dependencies = compute_wait_dependencies(
+    let wait_hints = compute_wait_hints(
         profile,
         (&from_point, &to_point),
-        &BoundingBox::for_line(profile, &from_point, &to_point),
+        &bb,
         in_environment
     );
 
@@ -114,10 +115,11 @@ where
         .into_iter()
         .filter_map(|arrival_time|
             compute_safe_arrival_path(
+                profile,
                 from_point,
                 to_point,
                 arrival_time,
-                &wait_dependencies,
+                &wait_hints,
                 in_environment,
             )
         ).collect()
@@ -210,21 +212,163 @@ where
 
 #[inline]
 fn compute_safe_arrival_path<W>(
+    profile: &Profile,
     from_point: WaypointR2,
     to_point: WaypointR2,
     arrival_time: TimePoint,
-    wait_dependencies: &SmallVec<[WaitDependency; 16]>,
+    wait_hints: &SmallVec<[WaitHint; 16]>,
     in_environment: &DynamicEnvironment<W>,
 ) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>>
 where
     W: Into<WaypointR2> + Waypoint,
 {
-    let speed = (to_point.position - from_point.position).norm()
-        / (to_point.time - from_point.time).as_secs_f64();
+    let dx = to_point.position - from_point.position;
+    let dist = dx.norm();
+    assert!(dist >= 1e-8);
+    let u = dx / dist;
+    let dt = (to_point.time - from_point.time).as_secs_f64();
+    let speed = dist / dt;
 
+    let can_arrive_safely = |from_p: WaypointR2| -> bool {
+        let t_arrival = (to_point.position - from_p.position).norm() / speed;
+        let arrival_wp = WaypointR2::new(
+            from_p.time + Duration::from_secs_f64(t_arrival),
+            to_point.position.x,
+            to_point.position.y,
+        );
 
+        if !is_safe_segment(profile, (&from_p, &arrival_wp), None, in_environment) {
+            return false;
+        }
+
+        if arrival_wp.time < arrival_time {
+            let final_wp = arrival_wp.with_time(arrival_time);
+            return is_safe_segment(profile, (&arrival_wp, &final_wp), None, in_environment);
+        }
+
+        true
+    };
+
+    let make_hint_arrival = |previous_wp: WaypointR2, hint_wp_end: WaypointR2| -> WaypointR2 {
+        let hint_p = hint_wp_end.position;
+        let dt_hint_arrival = (hint_p - previous_wp.position).norm() / speed;
+        let t_hint_arrival = previous_wp.time + Duration::from_secs_f64(dt_hint_arrival);
+        hint_wp_end.with_time(t_hint_arrival)
+    };
+
+    // First test if we can just go straight to the goal
+    if can_arrive_safely(from_point) {
+        // We can just go straight from the start point to the goal point and
+        // safely wait at the goal until the arrival time, so let's just do
+        // that.
+        return Some(SmallVec::from_iter([SafeAction::Move(to_point)]));
+    }
+
+    if wait_hints.is_empty() {
+        // It will be impossible to find any path if the direct path is not
+        // valid and no hints exist. The presence of obstacles combined with the
+        // absence of hints implies that the obstacles are permanent and there
+        // will never be a way around them.
+        return None;
+    }
+
+    let mut ranked_hints: SmallVec<[RankedHint; 16]> = SmallVec::new();
+    for hint in wait_hints {
+        let reach = (hint.at_point - from_point.position).dot(&u);
+        let wait_t = (hint.until - from_point.time).as_secs_f64();
+        ranked_hints.push(RankedHint {
+            contour: Duration::from_secs_f64(wait_t - speed / reach),
+            reach,
+            hint: *hint,
+        });
+    }
+
+    ranked_hints.sort_by(|a, b| {
+        match a.contour.cmp(&b.contour) {
+            Ordering::Equal => {
+                if a.reach <= b.reach {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+            other => other,
+        }
+    });
+
+    let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
+    search.push((0, None));
+    while let Some((consider, next)) = search.pop() {
+        let consider_next = if let Some(next) = next {
+            next + 1
+        } else {
+            // Test if we can safely reach the point being considered from the
+            // previous point.
+            let previous_wp = match search.last() {
+                Some((previous_index, _)) => {
+                    ranked_hints.get(*previous_index).unwrap().hint.into()
+                }
+                None => from_point,
+            };
+
+            let hint_wp_end: WaypointR2 = ranked_hints.get(consider).unwrap().hint.into();
+            let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
+            let safe_hint_arrival = is_safe_segment(
+                profile, (&previous_wp, &hint_wp_start), None, in_environment
+            ) && is_safe_segment(
+                profile, (&hint_wp_start, &hint_wp_end), None, in_environment
+            );
+
+            if !safe_hint_arrival {
+                // We cannot safely arrive at this hint from the previous
+                // waypoint. We will prune this part of the search.
+                continue;
+            }
+
+            if can_arrive_safely(hint_wp_end) {
+                // We can safely arrive at the goal from this hint waypoint, so
+                // we no longer need to search for a path.
+
+                // Put the final waypoint back into the search vector to
+                // simplify the construction of the path.
+                search.push((consider, None));
+
+                let mut path: SmallVec<[SafeAction<_, _>; 3]> = SmallVec::new();
+                let mut previous = from_point;
+                for (hint_id, _) in &search {
+                    let hint = ranked_hints.get(*hint_id).unwrap().hint;
+                    let hint_wp_end = hint.into();
+                    let hint_wp_start = make_hint_arrival(previous, hint_wp_end);
+                    path.push(SafeAction::Move(hint_wp_start));
+                    path.push(SafeAction::Wait(WaitForObstacle {
+                        for_obstacle: hint.for_obstacle,
+                        time_estimate: hint.until,
+                    }));
+
+                    previous = hint_wp_end;
+                }
+
+                return Some(path);
+            }
+
+            consider + 1
+        };
+
+        if consider_next < ranked_hints.len() {
+            search.push((consider, Some(consider_next)));
+            search.push((consider_next, None));
+        } else if consider < ranked_hints.len() {
+            search.push((consider+1, None));
+        }
+    }
 
     None
+}
+
+struct RankedHint {
+    contour: Duration,
+    reach: f64,
+    hint: WaitHint,
 }
 
 #[inline]
@@ -462,12 +606,17 @@ where
 fn is_safe_segment<W>(
     profile: &Profile,
     line_a: (&WaypointR2, &WaypointR2),
-    bb: &BoundingBox,
+    bb: Option<BoundingBox>,
     in_environment: &DynamicEnvironment<W>,
 ) -> bool
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    let bb = match bb {
+        Some(bb) => bb,
+        None => BoundingBox::for_line(profile, line_a.0, line_a.1),
+    };
+
     for obs in &in_environment.obstacles {
         let min_distance_squared = profile.min_distance_squared(&obs.profile);
 
@@ -525,18 +674,18 @@ where
 }
 
 #[inline]
-fn compute_wait_dependencies<W>(
+fn compute_wait_hints<W>(
     profile: &Profile,
     (wp0, wp1): (&WaypointR2, &WaypointR2),
     bb: &BoundingBox,
     in_environment: &DynamicEnvironment<W>,
-) -> SmallVec<[WaitDependency; 16]>
+) -> SmallVec<[WaitHint; 16]>
 where
     W: Into<WaypointR2> + Waypoint,
 {
     let q = wp0.position;
     let r = wp1.position;
-    let s = match (r -q).try_normalize(1e-8) {
+    let u = match (r -q).try_normalize(1e-8) {
         Some(s) => s,
         // The agent is hardly moving so don't bother looking for where it needs
         // to wait.
@@ -544,7 +693,7 @@ where
     };
     let agent_speed = (wp1.position - wp0.position).norm() / (wp1.time - wp0.time).as_secs_f64();
 
-    let mut wait_dependencies = SmallVec::new();
+    let mut wait_hints = SmallVec::new();
     for (for_obstacle, obs) in in_environment.obstacles.iter().enumerate() {
         if !bb.overlap(obs.bounding_box) {
             continue;
@@ -571,8 +720,8 @@ where
             let dt = (obs_wp1.time - obs_wp0.time).as_secs_f64();
             let v = (pf - p0)/dt;
 
-            let alpha = v - v.dot(&s) * s;
-            let beta = p0 - (p0 - q).dot(&s) * s - q;
+            let alpha = v - v.dot(&u) * u;
+            let beta = p0 - (p0 - q).dot(&u) * u - q;
             let a = alpha.dot(&alpha);
             let b = 2.0 * alpha.dot(&beta);
             let c = beta.dot(&beta) - min_distance_squared;
@@ -599,8 +748,8 @@ where
 
             let t_end = (-b + f64::sqrt(radicand)) / (2.0 * a);
             let until = obs_wp0.time + Duration::from_secs_f64(t_end);
-            let wait_at = q + (p0 + v*t_begin - q).dot(&s) * s;
-            if (wait_at - q).dot(&s) < 0.0 || (r - wait_at).dot(&s) < 0.0 {
+            let wait_at = q + (p0 + v*t_begin - q).dot(&u) * u;
+            if (wait_at - q).dot(&u) < 0.0 || (r - wait_at).dot(&u) < 0.0 {
                 // The waiting point is beyond the range of the relevant line
                 // segment so we can ignore it.
                 continue;
@@ -614,24 +763,26 @@ where
                 continue;
             }
 
-            wait_dependencies.push(
-                WaitDependency { wait_at, until, for_obstacle }
+            wait_hints.push(
+                WaitHint { at_point: wait_at, until, for_obstacle }
             );
         }
     }
 
-    wait_dependencies
+    wait_hints
 }
 
-struct WaitDependency {
-    wait_at: Point,
+#[derive(Clone, Copy)]
+struct WaitHint {
+    at_point: Point,
     until: TimePoint,
     for_obstacle: usize,
 }
 
-struct Blocked {
-    from_time: TimePoint,
-    at_point: Vector2,
+impl From<WaitHint> for WaypointR2 {
+    fn from(value: WaitHint) -> Self {
+        WaypointR2::new(value.until, value.at_point.x, value.at_point.y)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -661,17 +812,17 @@ impl BoundingBox {
         return true;
     }
 
-    fn for_line(profile: &Profile, wp0: &WaypointR2, wp1: &WaypointR2) -> Self {
+    fn for_point(p: Point) -> Self {
         Self {
-            min: Vector2::new(
-                f64::min(wp0.position.x, wp1.position.x) - profile.footprint_radius,
-                f64::min(wp0.position.y, wp1.position.y) - profile.footprint_radius,
-            ),
-            max: Vector2::new(
-                f64::max(wp0.position.x, wp1.position.x) + profile.footprint_radius,
-                f64::max(wp0.position.y, wp1.position.y) + profile.footprint_radius,
-            )
+            min: p.coords,
+            max: p.coords,
         }
+    }
+
+    fn for_line(profile: &Profile, wp0: &WaypointR2, wp1: &WaypointR2) -> Self {
+        Self::for_point(wp0.position)
+        .incorporating(wp1.position)
+        .inflated_by(profile.footprint_radius)
     }
 
     fn for_trajectory<W>(profile: &Profile, trajectory: &Trajectory<W>) -> Option<Self>
@@ -681,17 +832,17 @@ impl BoundingBox {
         trajectory
         .iter()
         .fold(None, |b: Option<Self>, p| {
-            let p = p.clone().into().position.coords;
+            let p = p.clone().into().position;
             if let Some(b) = b {
                 Some(b.incorporating(p))
             } else {
-                Some(Self { min: p, max: p })
+                Some(Self::for_point(p))
             }
         })
         .map(|b| b.inflated_by(profile.footprint_radius))
     }
 
-    fn incorporating(self, p: Vector2) -> Self {
+    fn incorporating(self, p: Point) -> Self {
         Self {
             min: Vector2::new(
                 f64::min(self.min.x, p.x),
