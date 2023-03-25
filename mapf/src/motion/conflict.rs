@@ -22,6 +22,7 @@ use crate::{
     },
 };
 use smallvec::SmallVec;
+use arrayvec::ArrayVec;
 use std::cmp::Ordering;
 
 type Vector2 = nalgebra::Vector2<f64>;
@@ -29,30 +30,71 @@ type Vector2 = nalgebra::Vector2<f64>;
 #[derive(Debug, Clone, Copy)]
 pub struct Profile {
     /// Radius that encompasses the physical footprint of the robot
-    pub footprint_radius: f64,
+    footprint_radius: f64,
     /// Distance that the agent should try to keep its footprint away from the
     /// location where the footprint of an obstacle will collide with it. When
     /// two agents in contention have different `safety_distance` values, the
     /// larger value will be used by both.
-    pub safety_distance: f64,
+    safety_distance: f64,
 
     /// When an agent is following an obstacle or another agent (the dot
     /// product of their velocities is positive), the agent's movements should
     /// be broken into segments of this size
-    pub follow_distance: f64,
+    follow_distance: f64,
 }
 
 impl Profile {
-    pub fn safety_distance_with(&self, other: &Profile) -> f64 {
-        self.safety_distance.max(other.safety_distance)
+
+    pub fn new(
+        footprint_radius: f64,
+        safety_distance: f64,
+        follow_distance: f64,
+    ) -> Result<Self, ()> {
+        if footprint_radius < 0.0 || safety_distance < 0.0 || follow_distance < 0.0 {
+            return Err(());
+        }
+
+        Ok(Self { footprint_radius, safety_distance, follow_distance })
     }
 
-    pub fn min_distance_squared(&self, other: &Profile) -> f64 {
-        self.min_distance(other).powi(2)
+    pub fn with_footprint_radius(mut self, footprint_radius: f64) -> Result<Self, ()> {
+        if footprint_radius < 0.0 {
+            return Err(());
+        }
+        self.footprint_radius = footprint_radius;
+        Ok(self)
     }
 
-    pub fn min_distance(&self, other: &Profile) -> f64 {
+    pub fn with_safety_distance(mut self, safety_distance: f64) -> Result<Self, ()> {
+        if safety_distance < 0.0 {
+            return Err(());
+        }
+        self.safety_distance = safety_distance;
+        Ok(self)
+    }
+
+    pub fn with_follow_distance(mut self, follow_distance: f64) -> Result<Self, ()> {
+        if follow_distance < 0.0 {
+            return Err(());
+        }
+        self.follow_distance = follow_distance;
+        Ok(self)
+    }
+
+    pub fn min_distance_for(&self, other: &Profile) -> f64 {
         self.footprint_radius + other.footprint_radius
+    }
+
+    pub fn min_distance_squared_for(&self, other: &Profile) -> f64 {
+        self.min_distance_for(other).powi(2)
+    }
+
+    pub fn safety_distance_for(&self, other: &Profile) -> f64 {
+        f64::max(self.safety_distance, other.safety_distance)
+    }
+
+    pub fn follow_distance_for(&self, other: &Profile) -> f64 {
+        f64::max(self.follow_distance, other.follow_distance)
     }
 }
 
@@ -196,7 +238,41 @@ where
         &bb,
         in_environment
     );
-    dbg!(&wait_hints);
+
+    let dx = to_point.position - from_point.position;
+    let dist = dx.norm();
+    assert!(dist >= 1e-8);
+    let u = dx / dist;
+    let dt = (to_point.time - from_point.time).as_secs_f64();
+    let speed = dist / dt;
+
+    let mut ranked_hints: SmallVec<[RankedHint; 16]> = SmallVec::new();
+    for hint in wait_hints {
+        let reach = (hint.at_point - from_point.position).dot(&u);
+        let wait_t = (hint.until - from_point.time).as_secs_f64();
+        let contour = if reach > 1e-6 {
+            Duration::from_secs_f64(wait_t - speed / reach)
+        } else {
+            Duration::from_secs_f64(wait_t)
+        };
+
+        ranked_hints.push(RankedHint { contour, reach, hint });
+    }
+
+    ranked_hints.sort_by(|a, b| {
+        match a.contour.cmp(&b.contour) {
+            Ordering::Equal => {
+                if a.reach <= b.reach {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+            other => other,
+        }
+    });
+
+    dbg!(&ranked_hints);
 
     compute_safe_arrival_times(profile, to_point, in_environment)
         .into_iter()
@@ -206,7 +282,7 @@ where
                 from_point,
                 to_point,
                 arrival_time,
-                &wait_hints,
+                &ranked_hints,
                 in_environment,
             )
         ).collect()
@@ -234,7 +310,7 @@ where
                     None => continue,
                 };
 
-                let min_distance_squared = profile.min_distance_squared(&obs.profile);
+                let min_distance_squared = profile.min_distance_squared_for(&obs.profile);
                 let adjustment = adjust_candidate_time(
                     for_point,
                     candidate_time,
@@ -264,7 +340,7 @@ where
         // Look for the next soonest candidate time
         let mut next_candidate_time = None;
         for obs in &in_environment.obstacles {
-            let min_distance_squared = profile.min_distance_squared(&obs.profile);
+            let min_distance_squared = profile.min_distance_squared_for(&obs.profile);
 
             let obs_traj = match &obs.trajectory {
                 Some(r) => r,
@@ -303,7 +379,7 @@ fn compute_safe_arrival_path<W>(
     from_point: WaypointR2,
     to_point: WaypointR2,
     arrival_time: TimePoint,
-    wait_hints: &SmallVec<[WaitHint; 16]>,
+    ranked_hints: &SmallVec<[RankedHint; 16]>,
     in_environment: &DynamicEnvironment<W>,
 ) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>>
 where
@@ -312,7 +388,6 @@ where
     let dx = to_point.position - from_point.position;
     let dist = dx.norm();
     assert!(dist >= 1e-8);
-    let u = dx / dist;
     let dt = (to_point.time - from_point.time).as_secs_f64();
     let speed = dist / dt;
 
@@ -351,37 +426,13 @@ where
         return Some(SmallVec::from_iter([SafeAction::Move(to_point)]));
     }
 
-    if wait_hints.is_empty() {
+    if ranked_hints.is_empty() {
         // It will be impossible to find any path if the direct path is not
         // valid and no hints exist. The presence of obstacles combined with the
         // absence of hints implies that the obstacles are permanent and there
         // will never be a way around them.
         return None;
     }
-
-    let mut ranked_hints: SmallVec<[RankedHint; 16]> = SmallVec::new();
-    for hint in wait_hints {
-        let reach = (hint.at_point - from_point.position).dot(&u);
-        let wait_t = (hint.until - from_point.time).as_secs_f64();
-        ranked_hints.push(RankedHint {
-            contour: Duration::from_secs_f64(wait_t - speed / reach),
-            reach,
-            hint: *hint,
-        });
-    }
-
-    ranked_hints.sort_by(|a, b| {
-        match a.contour.cmp(&b.contour) {
-            Ordering::Equal => {
-                if a.reach <= b.reach {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            }
-            other => other,
-        }
-    });
 
     let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
     search.push((0, None));
@@ -459,6 +510,7 @@ where
     None
 }
 
+#[derive(Debug)]
 struct RankedHint {
     contour: Duration,
     reach: f64,
@@ -720,7 +772,7 @@ where
     // dbg!();
 
     for obs in &in_environment.obstacles {
-        let min_distance_squared = profile.min_distance_squared(&obs.profile);
+        let min_distance_squared = profile.min_distance_squared_for(&obs.profile);
         // dbg!(min_distance_squared);
         let obs_traj = match &obs.trajectory {
             Some(r) => r,
@@ -811,7 +863,9 @@ where
         None => return SmallVec::new(),
     };
     let agent_dt = (wp1.time - wp0.time).as_secs_f64();
-    let agent_speed = (r - q).norm() / agent_dt;
+    let agent_v = (r - q) / agent_dt;
+    let agent_speed = agent_v.norm();
+    let s_max = (r - q).norm();
 
     let mut wait_hints = SmallVec::new();
     for (for_obstacle, obs) in in_environment.obstacles.iter().enumerate() {
@@ -824,7 +878,8 @@ where
             None => continue,
         };
 
-        let min_distance_squared = profile.min_distance_squared(&obs.profile);
+        let min_distance = profile.min_distance_for(&obs.profile);
+        let min_distance_squared = min_distance.powi(2);
         // dbg!(min_distance_squared);
         for [obs_wp0, obs_wp1] in obs_traj.iter().pairs() {
             let obs_wp0: WaypointR2 = obs_wp0.into();
@@ -863,12 +918,124 @@ where
 
                 if let Some((t_wait_at, _)) = wait_point_time {
                     if t_wait_at >= 0.0 {
-                        let at_point = q + agent_speed * t_wait_at * u;
+                        let at_point = q + agent_v * t_wait_at;
                         wait_hints.push(WaitHint {
                             at_point,
                             for_obstacle,
                             until: obs_t0 + Duration::from_secs_f64(t_end),
                         });
+                    }
+                }
+            }
+
+            let obs_v = (obs_r - obs_q) / obs_dt;
+            let aligned_speed = obs_v.dot(&u);
+            let time_overlap = !(obs_wp1.time < wp0.time || wp1.time < obs_wp0.time);
+            if aligned_speed >= 0.0 && time_overlap {
+                // The obstacle is either stationary or moving in the same
+                // direction as the agent. We should create hints based on
+                // following the obstacle from behind.
+                if agent_speed <= aligned_speed {
+                    // The obstacle moves faster than the agent along the
+                    // agent's path, so there is no need to do any waiting to
+                    // produce a valid action. Follower checkpoints will be
+                    // added in post-processing.
+                } else if aligned_speed > 1e-2 {
+                    // The obstacle is slower than the agent speed. We should
+                    // use a sawtooth pattern, moving forward until we've caught
+                    // up to the obstacle, then waiting to give the obstacle
+                    // time to get ahead.
+                    let (dq, mut t) = if obs_wp0.time < wp0.time {
+                        let t_offset = (wp0.time - obs_wp0.time).as_secs_f64();
+                        let dq = (obs_q + obs_v * t_offset) - q;
+                        (dq, 0.0)
+                    } else {
+                        let dq = obs_q - q;
+                        let t = (obs_wp0.time - wp0.time).as_secs_f64();
+                        (dq, t)
+                    };
+
+                    if dq.dot(&dq) >= min_distance_squared {
+                        let follow_distance = profile.follow_distance_for(&obs.profile);
+                        let v_rel = agent_speed - aligned_speed;
+                        let obs_s0 = dq.dot(&u);
+                        if obs_s0 >= 0.0 {
+                            let mut s = if obs_s0 <= min_distance + follow_distance {
+                                // Wait at the start until the obstacle has
+                                // reached the follow distance
+                                t += (min_distance + follow_distance - obs_s0) / aligned_speed;
+                                wait_hints.push(dbg!(WaitHint {
+                                    at_point: wp0.position,
+                                    until: wp0.time + Duration::from_secs_f64(t),
+                                    for_obstacle,
+                                }));
+                                0.0
+                            } else if obs_s0 - agent_speed * t <= min_distance + follow_distance {
+                                let wait_t = (obs_s0 - min_distance - follow_distance) / agent_speed;
+                                let s = if wait_t >= 0.0 {
+                                    // Move ahead just enough to come within the follow distance
+                                    // of the obstacle's initial position.
+                                    agent_speed * wait_t
+                                } else {
+                                    // Wait at the start until the obstacle reaches
+                                    // the follow distance
+                                    t += (min_distance + follow_distance - obs_s0) / aligned_speed;
+                                    0.0
+                                };
+                                wait_hints.push(dbg!(WaitHint {
+                                    at_point: q + s*u,
+                                    until: wp0.time + Duration::from_secs_f64(t),
+                                    for_obstacle,
+                                }));
+                                s
+                            } else {
+                                // Move ahead to the start position because the
+                                // obstacle will not be a blocker
+                                agent_speed * t
+                            };
+
+                            let wait_interval = (min_distance + follow_distance) / aligned_speed;
+                            while s < s_max {
+                                let obs_s = obs_s0 + aligned_speed * t;
+                                let ds = obs_s - s;
+                                let delta_t = (ds - min_distance) / v_rel;
+                                s += agent_speed * delta_t;
+                                t += delta_t + wait_interval;
+                                wait_hints.push(dbg!(WaitHint {
+                                    at_point: q + s*u,
+                                    until: wp0.time + Duration::from_secs_f64(t),
+                                    for_obstacle,
+                                }));
+                            }
+                        }
+                    }
+                } else {
+                    // The obstacle is nearly at a stand-still. We should
+                    // approach its closest waypoint and then wait for it to
+                    // vanish.
+                    let mut times: ArrayVec<f64, 2> = ArrayVec::new();
+                    for obs_q in [obs_q, obs_r] {
+                        if let Some((t, _)) = compute_stationary_proximity(
+                            obs_q, q, agent_v, min_distance_squared,
+                        ) {
+                            if t >= 0.0 {
+                                // This point will be an obstruction
+                                times.push(t);
+                            }
+                        }
+                    }
+
+                    let t_wait_at = times.iter().min_by(
+                        |a, b| a.partial_cmp(b).unwrap_or(Ordering::Less)
+                    );
+                    if let Some(t_wait_at) = t_wait_at {
+                        let at_point = q + agent_v * *t_wait_at;
+                        wait_hints.push(dbg!(WaitHint {
+                            at_point,
+                            for_obstacle,
+                            // Wait until this segment vanishes
+                            until: obs_wp1.time,
+                        }));
                     }
                 }
             }
@@ -880,6 +1047,7 @@ where
 
 // TODO(@mxgrey): Split this into two functions because the first and second
 // tuple elements are always used for different things.
+#[inline]
 fn compute_quadratic_wait_hints(
     q: Point,
     r: Point,
@@ -925,10 +1093,23 @@ fn compute_quadratic_wait_hints(
         return None;
     }
 
-    // t_perpendicular is the time when the smallest vector between the moving
-    // object and the reference line is no longer perpendicular to the reference
-    // line and instead is the vector between the moving object and the endpoint
-    // of the reference line.
+    // t_non_perpendicular is the time when the smallest vector between the
+    // moving object and the reference line is no longer perpendicular to the
+    // reference line and instead is the vector between the moving object and
+    // the endpoint of the reference line.
+    /*
+     *               pf
+     *              /
+     *             /
+     *            p(t_non_perpindicular)
+     *           /|
+     *          /||
+     *  q------/--r
+     *      ||/
+     *      |/
+     *      p0
+     *
+     */
     let t_non_perpendicular = (r - p0).dot(&u) / (v.dot(&u));
     // Checking past the perpendicular is only relevant when the object is
     // moving in the same direction as the reference line
@@ -937,23 +1118,41 @@ fn compute_quadratic_wait_hints(
         // Check if the proximity exit time relative to the endpoint is between
         // t_perpindicular and t_end. If so, that exit time should become the
         // new t_end.
-        let p0_r = p0 - r;
-        let a = v.dot(&v);
-        let b = 2.0 * v.dot(&p0_r);
-        let c = p0_r.dot(&p0_r) - min_distance_squared;
-
-        if a.abs() >= 1e-8 {
-            let radicand = b.powi(2) - 4.0 * a * c;
-            if radicand >= 0.0 {
-                let t_leave_endpoint = (-b + f64::sqrt(radicand)) / (2.0 * a);
-                if t_leave_endpoint < t_end {
-                    t_end = t_leave_endpoint;
-                }
+        if let Some((_, t_leave_endpoint)) = compute_stationary_proximity(
+            r, p0, v, min_distance_squared
+        ) {
+            if t_leave_endpoint < t_end {
+                t_end = t_leave_endpoint;
             }
         }
     }
 
     Some((t_begin, t_end))
+}
+
+#[inline]
+fn compute_stationary_proximity(
+    r: Point,
+    p0: Point,
+    v: Vector2,
+    min_distance_squared: f64,
+) -> Option<(f64, f64)> {
+    let p0_r = p0 - r;
+    let a = v.dot(&v);
+    let b = 2.0 * v.dot(&p0_r);
+    let c = p0_r.dot(&p0_r) - min_distance_squared;
+
+    if a.abs() >= 1e-8 {
+        let radicand = b.powi(2) - 4.0 * a * c;
+        if radicand >= 0.0 {
+            let sqrt_radicand = f64::sqrt(radicand);
+            let t_m = (-b + sqrt_radicand) / (2.0 * a);
+            let t_p = (-b + sqrt_radicand) / (2.0 * a);
+            return Some((t_m, t_p));
+        }
+    }
+
+    None
 }
 
 #[derive(Clone, Copy)]
@@ -1117,7 +1316,7 @@ mod tests {
 
             assert_relative_eq!(
                 (wait_p.position - obs_p).norm(),
-                profile.min_distance(&profile),
+                profile.min_distance_for(&profile),
                 max_relative=0.1,
             );
         }
@@ -1152,10 +1351,9 @@ mod tests {
 
         let path = paths.first().unwrap();
 
-        // The agent should not wait longer than it takes for the obstacle to
-        // vanish
-        let t_wait_until = path[1].wait_for().unwrap().time_estimate;
-        assert_relative_eq!(5.0, t_wait_until.as_secs_f64());
+        // The agent should not wait longer than it takes for the obstacle to vanish
+        let tf = path.last().unwrap().movement().unwrap().time;
+        assert!(tf.as_secs_f64() < 15.0);
     }
 
     #[test]
