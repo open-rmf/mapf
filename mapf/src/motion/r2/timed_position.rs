@@ -21,10 +21,20 @@ use crate::motion::{
     se2::Waypoint as WaypointSE2,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Waypoint {
     pub time: TimePoint,
     pub position: Position,
+}
+
+impl std::fmt::Debug for Waypoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f
+            .debug_struct("Waypoint")
+            .field("time", &self.time.as_secs_f64())
+            .field("position", &self.position)
+            .finish()
+    }
 }
 
 impl Waypoint {

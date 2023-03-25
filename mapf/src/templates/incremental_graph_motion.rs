@@ -321,7 +321,7 @@ where
             self.space.waypoint(&parent_forward_state.base_state).borrow(),
             self.space.waypoint(&parent_reverse_state.base_state).borrow(),
             reverse_action,
-            self.space.waypoint(&child_reverse_state.base_state).borrow(),
+            self.space.waypoint(&child_reverse_state.base_state).borrow()
         )
         .map(|(action, waypoint)| {
             let state = self.update_state_waypoint(waypoint, child_reverse_state);

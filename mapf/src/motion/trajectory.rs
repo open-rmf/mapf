@@ -451,6 +451,7 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
 pub struct TrajectoryIter<'a, W: Waypoint> {
     trajectory: &'a Trajectory<W>,
     next_element: TrajectoryIterNext,
+    begin: TimePoint,
     until: Option<TimePoint>,
 }
 
@@ -481,7 +482,7 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
             FindWaypoint::AfterFinish => TrajectoryIterNext::Depleted,
         };
 
-        Self { trajectory, next_element, until }
+        Self { trajectory, next_element, begin, until }
     }
 }
 
@@ -513,9 +514,17 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
             TrajectoryIterNext::Index(index) => {
                 let wp = self.trajectory.get(index).map(|wp| wp.clone());
                 if let (Some(t_f), Some(wp)) = (self.until, &wp) {
-                    if t_f < *wp.time() {
+                    if t_f <= *wp.time() {
+                        // We only include the first element that exceeds the
+                        // finish time.
                         self.next_element = TrajectoryIterNext::Depleted;
-                        return None;
+                        if *wp.time() < self.begin {
+                            // This element comes before the begin time.
+                            // This is not supposed to happen, but let's handle
+                            // it gracefully anyway.
+                            return None;
+                        }
+                        return Some(wp.clone());
                     }
                 }
 
