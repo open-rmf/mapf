@@ -415,7 +415,13 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
             FindWaypoint::BeforeStart | FindWaypoint::AfterFinish => {
                 // TODO(@mxgrey): Handle this differently for trajectories with
                 // indefinite initial/final times.
-                return Err(InterpError::OutOfBounds);
+                return Err(InterpError::OutOfBounds {
+                    range: [
+                        self.trajectory.initial_motion_time(),
+                        self.trajectory.finish_motion_time(),
+                    ],
+                    request: *time,
+                });
             }
         }
     }

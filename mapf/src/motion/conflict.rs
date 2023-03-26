@@ -293,8 +293,10 @@ where
     });
 
     dbg!(&ranked_hints);
+    dbg!(ranked_hints.len());
 
-    compute_safe_arrival_times(profile, to_point, in_environment)
+    dbg!();
+    dbg!(compute_safe_arrival_times(profile, to_point, in_environment))
         .into_iter()
         .filter_map(|arrival_time|
             compute_safe_arrival_path(
@@ -321,8 +323,10 @@ where
     // First find every safe arrival time above from_point.time
     let mut candidate_time = for_point.time;
     loop {
+        dbg!(candidate_time);
         let mut any_pushed = true;
         while any_pushed {
+            dbg!(candidate_time);
             any_pushed = false;
             for obs in &in_environment.obstacles {
                 let obs_traj = match &obs.trajectory {
@@ -330,12 +334,12 @@ where
                     None => continue,
                 };
 
-                let min_distance_squared = profile.critical_distance_squared_for(&obs.profile);
+                let critical_distance_squared = profile.critical_distance_squared_for(&obs.profile);
                 let adjustment = adjust_candidate_time(
                     for_point,
                     candidate_time,
                     obs_traj,
-                    min_distance_squared
+                    critical_distance_squared,
                 );
 
                 if !adjustment.pushed {
@@ -343,12 +347,13 @@ where
                 }
 
                 if let Some(new_candidate_time) = adjustment.result {
-                    candidate_time = new_candidate_time;
+                    candidate_time = dbg!(new_candidate_time);
                     any_pushed = true;
                 } else {
                     // This obstacle is violated and no end could be
                     // found for the violation, so there will never be
                     // another safe arrival time.
+                    dbg!();
                     return safe_arrival_times;
                 }
             }
@@ -374,19 +379,20 @@ where
                 min_distance_squared,
             ) {
                 if let Some(next_candidate_time) = &mut next_candidate_time {
-                    if check < *next_candidate_time {
+                    if dbg!(check < *next_candidate_time) {
                         *next_candidate_time = check;
                     }
                 } else {
+                    dbg!();
                     next_candidate_time = Some(check);
                 }
             }
         }
 
         candidate_time = match next_candidate_time {
-            Some(t) => t,
+            Some(t) => dbg!(t),
             // There are no more candidate times to consider
-            None => break,
+            None => { dbg!(); break },
         };
     }
 
@@ -405,6 +411,7 @@ fn compute_safe_arrival_path<W>(
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    dbg!(arrival_time);
     let dx = to_point.position - from_point.position;
     let dist = dx.norm();
     assert!(dist >= 1e-8);
@@ -457,6 +464,7 @@ where
     let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
     search.push((0, None));
     while let Some((consider, next)) = dbg!(search.pop()) {
+        dbg!((arrival_time.as_secs_f64(), ranked_hints.len(), &search));
         let mut consider_next = if let Some(next) = next {
             next + 1
         } else {
@@ -469,10 +477,21 @@ where
                 None => from_point,
             };
 
-            println!("Testing if arrival is safe");
+            dbg!((consider, ranked_hints.len()));
+            println!("Testing if arrival is safe {:?}", ranked_hints.get(consider).unwrap().hint);
             let hint_wp_end: WaypointR2 = ranked_hints.get(consider).unwrap().hint.into();
             let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
-            dbg!();
+            dbg!((hint_wp_start, hint_wp_end));
+            if hint_wp_end.time < hint_wp_start.time {
+                // If the end time of the hint is earlier than we would arrive
+                // then it's not actually a helpful hint.
+                if consider < ranked_hints.len() {
+                    search.push(dbg!((consider+1, None)));
+                }
+                continue;
+            }
+
+            dbg!((previous_wp, hint_wp_start));
             let safe_0 = dbg!(is_safe_segment(
                 profile, (&previous_wp, &hint_wp_start), None, in_environment
             ));
@@ -486,6 +505,9 @@ where
             if !safe_hint_arrival {
                 // We cannot safely arrive at this hint from the previous
                 // waypoint. We will prune this part of the search.
+                if consider < ranked_hints.len() {
+                    search.push(dbg!((consider+1, None)));
+                }
                 continue;
             }
 
@@ -543,7 +565,8 @@ where
             false
         };
 
-        if !pushed_child && consider < ranked_hints.len() {
+        if !pushed_child && ((consider + 1) < ranked_hints.len()) {
+            dbg!();
             search.push((consider+1, None));
         }
     }
@@ -665,7 +688,7 @@ fn detect_proximity(
             };
         } else {
             // The objects are not within proximity
-            // dbg!();
+            dbg!();
             return Proximity::none();
         }
     }
@@ -674,7 +697,7 @@ fn detect_proximity(
     if radicand < 0.0 {
         // The objects are moving relative to each other, but they will never come
         // close enough to each other.
-        // dbg!(radicand);
+        dbg!(radicand);
         return Proximity { enter: None, exit: None };
     }
 
@@ -724,10 +747,13 @@ where
     W: Into<WaypointR2> + Waypoint,
 {
     // Has this obstacle pushed the candidate time?
+    dbg!(candidate_time.as_secs_f64());
     let mut this_obs_violated = false;
     let mut new_candidate_time: Option<TimePoint> = None;
     for [wp0, wp1] in obs_traj.iter_from(candidate_time).pairs() {
+        dbg!((candidate_time, wp0.time(), wp1.time()));
         if candidate_time < *wp0.time() && !this_obs_violated {
+            dbg!();
             break;
         }
 
@@ -742,12 +768,14 @@ where
             (&wp0, &wp1),
         );
 
+        dbg!(&proximity);
+
         if this_obs_violated {
             // Look for a time where the footprints are no longer
             // overlapping
             let exit = match proximity.exit {
                 Some(exit) => exit,
-                None => continue,
+                None => {dbg!(); continue }
             };
 
             // If everything is working correctly, it should not be
@@ -755,19 +783,21 @@ where
             // candidate time (but we add some buffer to accommodate
             // floating point error).
             assert!(exit + time_point::Duration::new(10000) >= candidate_time);
-            new_candidate_time = Some(exit.max(candidate_time));
+            new_candidate_time = dbg!(Some(exit.max(candidate_time)));
             break;
         } else {
             let enter = match proximity.enter {
                 Some(enter) => enter,
-                None => continue,
+                None => { dbg!(); continue; }
             };
 
+            dbg!(enter.as_secs_f64());
             if enter > candidate_time {
                 // The violation happens after the candidate time
                 // so we can safely ignore it. It is also not
                 // possible for any more trajectory segments to
                 // violate the target at the candidate time.
+                dbg!();
                 break;
             }
 
@@ -780,14 +810,23 @@ where
             if exit > candidate_time {
                 // The violation is both entered and exited within
                 // this trajectory segment.
-                new_candidate_time = Some(exit);
+                new_candidate_time = dbg!(Some(exit));
                 break;
             }
 
-            if exit < candidate_time {
+            if exit <= candidate_time {
                 // The violation was relieved before the candidate
                 // time so it is not a relevant violation.
+                dbg!();
                 this_obs_violated = false;
+            }
+        }
+    }
+
+    if this_obs_violated && new_candidate_time.is_none() {
+        if let Some(tf) = obs_traj.finish_time() {
+            if candidate_time < tf {
+                new_candidate_time = Some(tf);
             }
         }
     }
@@ -808,7 +847,9 @@ fn find_next_candidate_time<W>(
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    dbg!();
     for [wp0, wp1] in obs_traj.iter_from(previous_candidate_time).pairs() {
+        dbg!();
         let wp0: WaypointR2 = wp0.into();
         let wp1: WaypointR2 = wp1.into();
         let proximity = detect_proximity(
@@ -820,9 +861,23 @@ where
             (&wp0, &wp1),
         );
 
-        if let Some(exit) = proximity.exit {
+        if let Some(exit) = dbg!(proximity.exit) {
+            dbg!((previous_candidate_time, exit));
             if previous_candidate_time < exit {
+                dbg!();
                 return Some(exit);
+            }
+        }
+    }
+
+    if let Some(tf) = obs_traj.finish_time() {
+        if previous_candidate_time < tf {
+            // Check if the trajectory ends within the critical distance. If it
+            // does then we should use its vanishing time as a candidate time.
+            let wpf: WaypointR2 = obs_traj.finish_motion().clone().into();
+            let dq = wpf.position - for_point.position;
+            if dq.dot(&dq) <= acceptable_distance_squared {
+                return Some(tf);
             }
         }
     }
@@ -1012,8 +1067,7 @@ where
 
             let obs_v = (obs_r - obs_q) / obs_dt;
             let aligned_speed = obs_v.dot(&u);
-            let time_overlap = !(obs_wp1.time < wp0.time || wp1.time < obs_wp0.time);
-            if aligned_speed >= 0.0 && time_overlap {
+            if aligned_speed >= 0.0 && wp0.time <= obs_wp1.time {
                 // The obstacle is either stationary or moving in the same
                 // direction as the agent. We should create hints based on
                 // following the obstacle from behind.
@@ -1099,11 +1153,12 @@ where
                         }
                     }
                 } else {
-                    // The obstacle is nearly at a stand-still. We should
-                    // approach its closest waypoint and then wait for it to
-                    // vanish.
+                    // The obstacle is nearly at a stand-still along the agent's
+                    // path. We should approach its closest waypoint and then
+                    // wait for it to vanish.
                     dbg!((obs_q, obs_r));
                     let mut times: ArrayVec<f64, 2> = ArrayVec::new();
+                    let mut both_in_range = true;
                     for obs_q in [obs_q, obs_r] {
                         if let Some((t, _)) = dbg!(compute_stationary_proximity(
                             obs_q, q, agent_v, min_distance_squared,
@@ -1113,20 +1168,29 @@ where
                                 // This point will be an obstruction
                                 times.push(t);
                             }
+                        } else {
+                            // This point is not an obstruction, which means
+                            // if the overall path is an obstruction then the
+                            // earlier compute_quadratic_wait_hints search will
+                            // find the right hint. We do not need to derive a
+                            // hint from this branch.
+                            both_in_range = false;
                         }
                     }
 
-                    let t_wait_at = times.iter().min_by(
-                        |a, b| a.partial_cmp(b).unwrap_or(Ordering::Less)
-                    );
-                    if let Some(t_wait_at) = t_wait_at {
-                        let at_point = q + agent_v * *t_wait_at;
-                        wait_hints.push(dbg!(WaitHint {
-                            at_point,
-                            for_obstacle,
-                            // Wait until this segment vanishes
-                            until: obs_wp1.time,
-                        }));
+                    if both_in_range {
+                        let t_wait_at = times.iter().min_by(
+                            |a, b| a.partial_cmp(b).unwrap_or(Ordering::Less)
+                        );
+                        if let Some(t_wait_at) = t_wait_at {
+                            let at_point = q + agent_v * *t_wait_at;
+                            wait_hints.push(dbg!(WaitHint {
+                                at_point,
+                                for_obstacle,
+                                // Wait until this segment vanishes
+                                until: obs_wp1.time,
+                            }));
+                        }
                     }
                 }
             }
@@ -1472,7 +1536,7 @@ mod tests {
         assert!(!is_safe_segment(&profile, line_a, None, &in_environment));
 
         let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
-        assert!(paths.len() == 1);
+        assert!(paths.len() >= 1);
 
         let path = paths.first().unwrap();
         println!("{path:?}");
@@ -1564,35 +1628,66 @@ mod tests {
         }
     }
 
-        // ALSO:
-        // * What if the obs line keeps going past the path for a long time
+    #[test]
+    fn test_cycling_endpoint_blocker() {
+        let profile = Profile {
+            footprint_radius: 0.25,
+            safety_distance: 0.5,
+            follow_distance: 1.0,
+        };
 
+        for t0 in [0.0, /*-43.1, 17.6, -782.994, 4230.0*/] {
+            let dt = 5.0;
+            let tf = t0 + dt;
+            for [x0, y0] in [
+                // [10.0, 0.0],
+                // [10.0, 10.0],
+                // [0.0, 10.0],
+                // [-10.0, 10.0],
+                [-10.0, 0.0],
+                // [-10.0, -10.0],
+                // [0.0, -10.0],
+                // [10.0, -10.0],
+            ] {
+                dbg!((t0, x0, y0));
+                let from_point = WaypointR2::new_f64(t0, x0, y0);
+                let to_point = WaypointR2::new_f64(tf, 0.0, 0.0);
 
-        // add_to_env(
-        //     (0.0, 1.0, -1.0),
-        //     (10.0, 0.0, 1.5),
-        // );
+                let mut obs_wps = Vec::new();
+                let n_cycles = 10;
+                for cycle in 0..n_cycles {
+                    for [t, x, y] in [
+                        [0.0, 0.0, 0.0],
+                        [5.0, 0.0, 5.0],
+                        [10.0, 5.0, 5.0],
+                        [15.0, 5.0, 0.0],
+                    ] {
+                        obs_wps.push(WaypointR2::new_f64(
+                            dbg!(20.0*(dbg!(cycle) as f64) + t), x, y
+                        ));
+                    }
+                }
+                obs_wps.push(WaypointR2::new_f64(
+                    20.0*(n_cycles as f64), 0.0, 0.0
+                ));
+                // Pause a moment on the destination for the very last waypoint
+                obs_wps.push(WaypointR2::new_f64(
+                    20.0*(n_cycles as f64) + 10.0, 0.0, 0.0
+                ));
 
-        // assert!(!is_safe_segment(&profile, (&from_point, &to_point), None, &in_environment));
+                let obs_traj = Trajectory::from_iter(obs_wps).unwrap();
+                let mut in_environment = DynamicEnvironment::new();
+                in_environment.obstacles.push(
+                    DynamicObstacle::new(profile)
+                    .with_trajectory(Some(obs_traj.clone()))
+                );
 
-        // let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
-        // println!("{paths:?}");
-
-        // let path = paths.first().unwrap();
-        // let wait_p = *path.first().unwrap().movement().unwrap();
-        // let line_a = (&from_point, &wait_p);
-
-        // println!(" ================================== ");
-        // dbg!(line_a);
-        // assert!(is_safe_segment(&profile, line_a, None, &in_environment));
-        // dbg!();
-
-        // let t = path[1].wait_for().unwrap().time_estimate;
-        // println!("{:?}", from_point.interpolate(&wait_p).compute_position(&t));
-        // dbg!();
-        // let obs_traj = in_environment.obstacles.first().unwrap().trajectory.as_ref().unwrap();
-        // dbg!();
-        // let obs_p = obs_traj.initial_motion().interpolate(obs_traj.finish_motion()).compute_position(&t).unwrap();
-        // println!("{:?}", obs_p);
-        // dbg!((wait_p.position - obs_p).norm());
+                let paths = compute_safe_linear_paths(
+                    &profile, from_point, to_point, &in_environment
+                );
+                dbg!(&paths);
+                dbg!(paths.len());
+            }
+        }
+    }
 }

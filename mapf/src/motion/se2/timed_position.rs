@@ -57,11 +57,17 @@ pub struct Motion {
 impl Motion {
     pub fn in_time_range(&self, time: &TimePoint) -> Result<(), InterpError> {
         if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
+            return Err(InterpError::OutOfBounds {
+                range: [self.initial_wp.time, self.final_wp.time],
+                request: *time,
+            });
         }
 
         if self.final_wp.time.nanos_since_zero < time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
+            return Err(InterpError::OutOfBounds {
+                range: [self.initial_wp.time, self.final_wp.time],
+                request: *time,
+            });
         }
 
         return Ok(());

@@ -39,6 +39,8 @@ pub use conflict::*;
 
 pub use time_point::{Duration, TimePoint};
 
+use crate::error::ThisError;
+
 /// The default translational threshold is 1mm
 pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
 
@@ -47,12 +49,11 @@ pub const DEFAULT_ROTATIONAL_THRESHOLD: f64 = 1.0f64 * std::f64::consts::PI / 18
 
 // TODO(@mxgrey): Should each implementation of Interpolation be allowed to specify
 // its own error types?
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ThisError)]
 pub enum InterpError {
-    /// The requested time is outside the time range of the motion
-    OutOfBounds,
-
-    /// The requested interpolation does not have a unique solution
+    #[error("The requested time [{request:?}] is outside the time range of the motion {range:?}")]
+    OutOfBounds{range: [TimePoint; 2], request: TimePoint},
+    #[error("The requested interpolation does not have a unique solution")]
     Indeterminate,
 }
 

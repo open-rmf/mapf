@@ -39,10 +39,17 @@ impl std::fmt::Debug for Waypoint {
 
 impl Waypoint {
     pub fn new(time: TimePoint, x: f64, y: f64) -> Self {
-        return Waypoint {
+        Waypoint {
             time,
             position: Position::new(x, y),
-        };
+        }
+    }
+
+    pub fn new_f64(time: f64, x: f64, y: f64) -> Self {
+        Waypoint {
+            time: TimePoint::from_secs_f64(time),
+            position: Position::new(x, y),
+        }
     }
 }
 
@@ -89,12 +96,20 @@ impl Motion {
     }
 
     pub fn in_range(&self, time: &TimePoint) -> Result<(), InterpError> {
-        if time.nanos_since_zero < self.initial_wp.time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
+        if *time < self.initial_wp.time {
+            dbg!((time, self.initial_wp.time));
+            return Err(InterpError::OutOfBounds{
+                range: [self.initial_wp.time, self.final_wp.time],
+                request: *time,
+            });
         }
 
-        if self.final_wp.time.nanos_since_zero < time.nanos_since_zero {
-            return Err(InterpError::OutOfBounds);
+        if self.final_wp.time < *time {
+            dbg!((time, self.final_wp.time));
+            return Err(InterpError::OutOfBounds{
+                range: [self.initial_wp.time, self.final_wp.time],
+                request: *time,
+            });
         }
 
         return Ok(());
