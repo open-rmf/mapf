@@ -457,7 +457,7 @@ where
     let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
     search.push((0, None));
     while let Some((consider, next)) = dbg!(search.pop()) {
-        let consider_next = if let Some(next) = next {
+        let mut consider_next = if let Some(next) = next {
             next + 1
         } else {
             // Test if we can safely reach the point being considered from the
@@ -523,10 +523,27 @@ where
             consider + 1
         };
 
-        if consider_next < ranked_hints.len() {
-            search.push((consider, Some(consider_next)));
-            search.push((consider_next, None));
-        } else if consider < ranked_hints.len() {
+        let pushed_child = 'pushed_child: {
+            while let (Some(prev_hint), Some(next_hint)) = (
+                ranked_hints.get(consider), ranked_hints.get(consider_next)
+            ) {
+                dbg!((prev_hint, next_hint));
+                dbg!((prev_hint.reach, next_hint.reach));
+                if prev_hint.reach <= next_hint.reach {
+                    // We need to always be moving towards hints that reach further
+                    // towards the goal. We do not support backtracking.
+                    search.push((consider, Some(consider_next)));
+                    search.push((consider_next, None));
+                    break 'pushed_child true;
+                }
+
+                consider_next += 1;
+            }
+
+            false
+        };
+
+        if !pushed_child && consider < ranked_hints.len() {
             search.push((consider+1, None));
         }
     }
