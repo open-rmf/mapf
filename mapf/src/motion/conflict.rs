@@ -292,8 +292,12 @@ where
         }
     });
 
-    dbg!(&ranked_hints);
+    // dbg!(ranked_hints.iter().enumerate());
+    for h in ranked_hints.iter().enumerate() {
+        dbg!(h);
+    }
     dbg!(ranked_hints.len());
+    // assert!(false);
 
     dbg!();
     dbg!(compute_safe_arrival_times(profile, to_point, in_environment))
@@ -427,11 +431,13 @@ where
         );
 
         if !is_safe_segment(profile, (&from_p, &arrival_wp), None, in_environment) {
+            dbg!();
             return false;
         }
 
         if arrival_wp.time < arrival_time {
             let final_wp = arrival_wp.with_time(arrival_time);
+            dbg!();
             return is_safe_segment(profile, (&arrival_wp, &final_wp), None, in_environment);
         }
 
@@ -463,8 +469,10 @@ where
 
     let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
     search.push((0, None));
+    let mut iter = 0;
     while let Some((consider, next)) = dbg!(search.pop()) {
-        dbg!((arrival_time.as_secs_f64(), ranked_hints.len(), &search));
+        iter += 1;
+        dbg!((arrival_time.as_secs_f64(), iter, ranked_hints.len(), &search));
         let mut consider_next = if let Some(next) = next {
             next + 1
         } else {
@@ -485,7 +493,7 @@ where
             if hint_wp_end.time < hint_wp_start.time {
                 // If the end time of the hint is earlier than we would arrive
                 // then it's not actually a helpful hint.
-                if consider < ranked_hints.len() {
+                if consider + 1 < ranked_hints.len() {
                     search.push(dbg!((consider+1, None)));
                 }
                 continue;
@@ -505,7 +513,7 @@ where
             if !safe_hint_arrival {
                 // We cannot safely arrive at this hint from the previous
                 // waypoint. We will prune this part of the search.
-                if consider < ranked_hints.len() {
+                if consider + 1 < ranked_hints.len() {
                     search.push(dbg!((consider+1, None)));
                 }
                 continue;
@@ -1056,11 +1064,11 @@ where
                 if let Some((t_wait_at, _)) = wait_point_time {
                     if t_wait_at >= 0.0 {
                         let at_point = q + agent_v * t_wait_at;
-                        wait_hints.push(WaitHint {
+                        wait_hints.push(dbg!(WaitHint {
                             at_point,
                             for_obstacle,
                             until: obs_t0 + Duration::from_secs_f64(t_end),
-                        });
+                        }));
                     }
                 }
             }
@@ -1120,7 +1128,7 @@ where
                                 };
                                 wait_hints.push(dbg!(WaitHint {
                                     at_point: q + s*u,
-                                    until: wp0.time + Duration::from_secs_f64(t),
+                                    until: dbg!(wp0.time) + Duration::from_secs_f64(dbg!(t)),
                                     for_obstacle,
                                 }));
                                 s
@@ -1131,13 +1139,21 @@ where
                             };
 
                             let wait_interval = (min_distance + follow_distance) / aligned_speed;
-                            while s < s_max {
-                                let obs_s = obs_s0 + aligned_speed * t;
-                                let ds = obs_s - s;
-                                let delta_t = (ds - min_distance) / v_rel;
+                            dbg!(s);
+                            loop {
+                                dbg!(s);
+                                let obs_s = obs_s0 + aligned_speed * dbg!(t);
+                                let ds = dbg!(obs_s) - s;
+                                let delta_t = dbg!(ds - min_distance) / dbg!(v_rel);
                                 s += agent_speed * delta_t;
                                 t += delta_t + wait_interval;
                                 let t_abs = wp0.time + Duration::from_secs_f64(t);
+                                if s >= s_max {
+                                    // A hint that would put us beyond the reach
+                                    // limit is not a helpful one.
+                                    break;
+                                }
+
                                 wait_hints.push(dbg!(WaitHint {
                                     at_point: q + s*u,
                                     until: t_abs.min(obs_wp1.time),
@@ -1640,11 +1656,11 @@ mod tests {
             let dt = 5.0;
             let tf = t0 + dt;
             for [x0, y0] in [
-                // [10.0, 0.0],
+                [10.0, 0.0],
                 // [10.0, 10.0],
                 // [0.0, 10.0],
                 // [-10.0, 10.0],
-                [-10.0, 0.0],
+                // [-10.0, 0.0],
                 // [-10.0, -10.0],
                 // [0.0, -10.0],
                 // [10.0, -10.0],
