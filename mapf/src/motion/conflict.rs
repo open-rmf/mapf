@@ -270,8 +270,8 @@ where
     for hint in wait_hints {
         let reach = (hint.at_point - from_point.position).dot(&u);
         let wait_t = (hint.until - from_point.time).as_secs_f64();
-        let contour = if reach > 1e-6 {
-            Duration::from_secs_f64(wait_t - speed / reach)
+        let contour = if speed > 1e-8 {
+            Duration::from_secs_f64(wait_t - reach / speed)
         } else {
             Duration::from_secs_f64(wait_t)
         };
@@ -444,11 +444,11 @@ where
         true
     };
 
-    let make_hint_arrival = |previous_wp: WaypointR2, hint_wp_end: WaypointR2| -> WaypointR2 {
-        let hint_p = hint_wp_end.position;
-        let dt_hint_arrival = (hint_p - previous_wp.position).norm() / speed;
-        let t_hint_arrival = previous_wp.time + Duration::from_secs_f64(dt_hint_arrival);
-        hint_wp_end.with_time(t_hint_arrival)
+    let make_parent_arrival = |child_wp: WaypointR2, parent_wp: WaypointR2| -> WaypointR2 {
+        let hint_p = parent_wp.position;
+        let dt_hint_arrival = (hint_p - child_wp.position).norm() / speed;
+        let t_hint_arrival = child_wp.time + Duration::from_secs_f64(dt_hint_arrival);
+        parent_wp.with_time(t_hint_arrival)
     };
 
     // First test if we can just go straight to the goal
@@ -467,73 +467,119 @@ where
         return None;
     }
 
-    let mut search: SmallVec<[(usize, Option<usize>); 16]> = SmallVec::new();
-    search.push((0, None));
-    let mut iter = 0;
-    while let Some((consider, next)) = dbg!(search.pop()) {
-        iter += 1;
-        dbg!((arrival_time.as_secs_f64(), iter, ranked_hints.len(), &search));
-        let mut consider_next = if let Some(next) = next {
-            next + 1
-        } else {
-            // Test if we can safely reach the point being considered from the
-            // previous point.
-            let previous_wp = match dbg!(search.last()) {
-                Some((previous_index, _)) => {
-                    ranked_hints.get(*previous_index).unwrap().hint.into()
-                }
-                None => from_point,
-            };
-
-            dbg!((consider, ranked_hints.len()));
-            println!("Testing if arrival is safe {:?}", ranked_hints.get(consider).unwrap().hint);
-            let hint_wp_end: WaypointR2 = ranked_hints.get(consider).unwrap().hint.into();
-            let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
-            dbg!((hint_wp_start, hint_wp_end));
-            if hint_wp_end.time < hint_wp_start.time {
-                // If the end time of the hint is earlier than we would arrive
-                // then it's not actually a helpful hint.
-                if consider + 1 < ranked_hints.len() {
-                    search.push(dbg!((consider+1, None)));
-                }
+    let mut search: SmallVec<[ArrivalPathSearchElement; 16]> = SmallVec::new();
+    {
+        let goal_contour = {
+            let goal_reach = (to_point.position - from_point.position).norm();
+            let goal_dt = arrival_time - from_point.time;
+            if speed > 1e-8 {
+                Duration::from_secs_f64(goal_dt.as_secs_f64() - goal_reach / speed)
+            } else {
+                goal_dt
+            }
+        };
+        let mut found_contour: Option<Duration> = None;
+        for (i, hint) in ranked_hints.iter().enumerate() {
+            dbg!(i);
+            if hint.contour < goal_contour {
+                dbg!((hint.contour, goal_contour));
                 continue;
             }
 
-            dbg!((previous_wp, hint_wp_start));
+            if let Some(found_contour) = found_contour {
+                if found_contour < hint.contour {
+                    // Don't bother searching anymore, we're past the lowest
+                    // acceptable contour.
+                    dbg!(i);
+                    break;
+                }
+
+                // Swap the previous initial search point with this new one
+                search.clear();
+                search.push(ArrivalPathSearchElement::new(i));
+            } else {
+                found_contour = Some(hint.contour);
+                search.push(ArrivalPathSearchElement::new(i));
+            }
+        }
+    }
+
+    let mut iter = 0;
+    while let Some(element) = dbg!(search.pop()) {
+        iter +=1;
+        dbg!((arrival_time.as_secs_f64(), iter, ranked_hints.len(), &search));
+
+        let ranking = match ranked_hints.get(element.index) {
+            Some(h) => h,
+            None => continue,
+        };
+        let hint_wp: WaypointR2 = ranking.hint.into();
+
+        if !element.tested_arrival_to_parent {
+            // Test if we can safely reach the parent point from the hint point.
+            let parent_wp_end = match dbg!(search.last()) {
+                Some(parent) => ranked_hints.get(parent.index).unwrap().hint.into(),
+                None => {
+                    let dt = (to_point.position - hint_wp.position).norm() / speed;
+                    to_point.with_time(hint_wp.time + Duration::from_secs_f64(dt))
+                }
+            };
+
+            let parent_wp_start = make_parent_arrival(hint_wp, parent_wp_end);
             let safe_0 = dbg!(is_safe_segment(
-                profile, (&previous_wp, &hint_wp_start), None, in_environment
+                &profile, (&hint_wp, &parent_wp_start), None, in_environment
             ));
-            dbg!();
             let safe_1 = dbg!(is_safe_segment(
-                profile, (&hint_wp_start, &hint_wp_end), None, in_environment
+                &profile, (&parent_wp_start, &parent_wp_end), None, in_environment
             ));
             let safe_hint_arrival = safe_0 && safe_1;
 
             dbg!(safe_hint_arrival);
             if !safe_hint_arrival {
-                // We cannot safely arrive at this hint from the previous
-                // waypoint. We will prune this part of the search.
-                if consider + 1 < ranked_hints.len() {
-                    search.push(dbg!((consider+1, None)));
+                // We can't safely reach the parent from this hint. We need to
+                // cull this branch, or if there's no parent then we need to
+                // increment by one to try out the next best final arrival hint.
+                if search.is_empty() {
+                    // Climb higher if possible
+                    if element.index + 1 < ranked_hints.len() {
+                        search.push(dbg!(ArrivalPathSearchElement::new(element.index + 1)));
+                    }
                 }
                 continue;
             }
+        }
+        let element = element.tested();
 
-            if can_arrive_safely(hint_wp_end) {
-                dbg!();
-                // We can safely arrive at the goal from this hint waypoint, so
-                // we no longer need to search for a path.
+        if let Some(child) = element.child {
+            search.push(dbg!(element.decrement_child()));
 
-                // Put the final waypoint back into the search vector to
-                // simplify the construction of the path.
-                search.push((consider, None));
-
+            let child_reach = ranked_hints.get(child).unwrap().reach;
+            if child_reach <= ranking.reach {
+                // If this child has a lesser or equal reach to the parent then
+                // we can add it to the search queue to consider it.
+                search.push(dbg!(ArrivalPathSearchElement::new(child)));
+            }
+        } else {
+            // Test if the start waypoint can arrive at this hint. If it can
+            // then we have found our path.
+            let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
+            let safe_0 = dbg!(is_safe_segment(
+                &profile, (&from_point, &hint_arrival_wp), None, &in_environment
+            ));
+            let safe_1 = dbg!(is_safe_segment(
+                &profile, (&hint_arrival_wp, &hint_wp), None, &in_environment
+            ));
+            let safe_hint_arrival = dbg!(safe_0 && safe_1);
+            if safe_hint_arrival {
+                // We have found the desired path
+                search.push(element);
+                search.reverse();
                 let mut path: SmallVec<[SafeAction<_, _>; 3]> = SmallVec::new();
                 let mut previous_wp = from_point;
-                for (hint_id, _) in &search {
-                    let hint = ranked_hints.get(*hint_id).unwrap().hint;
+                for element in &search {
+                    let hint = ranked_hints.get(element.index).unwrap().hint;
                     let hint_wp_end = hint.into();
-                    let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
+                    let hint_wp_start = make_parent_arrival(previous_wp, hint_wp_end);
                     path.push(SafeAction::Move(hint_wp_start));
                     path.push(SafeAction::Wait(WaitForObstacle {
                         for_obstacle: hint.for_obstacle,
@@ -543,41 +589,127 @@ where
                     previous_wp = hint_wp_end;
                 }
 
-                dbg!(previous_wp);
-                let final_wp = make_hint_arrival(previous_wp, to_point);
+                let final_wp = make_parent_arrival(previous_wp, to_point);
                 path.push(SafeAction::Move(final_wp));
-
                 return Some(path);
             }
-
-            consider + 1
         };
-
-        let pushed_child = 'pushed_child: {
-            while let (Some(prev_hint), Some(next_hint)) = (
-                ranked_hints.get(consider), ranked_hints.get(consider_next)
-            ) {
-                dbg!((prev_hint, next_hint));
-                dbg!((prev_hint.reach, next_hint.reach));
-                if prev_hint.reach <= next_hint.reach {
-                    // We need to always be moving towards hints that reach further
-                    // towards the goal. We do not support backtracking.
-                    search.push((consider, Some(consider_next)));
-                    search.push((consider_next, None));
-                    break 'pushed_child true;
-                }
-
-                consider_next += 1;
-            }
-
-            false
-        };
-
-        if !pushed_child && ((consider + 1) < ranked_hints.len()) {
-            dbg!();
-            search.push((consider+1, None));
-        }
     }
+
+    // Find the furthest reach of the lowest contour that is greater or equal to
+    // the goal contour. Then work backwards from there in search of a valid
+    // path from the goal.
+
+    // search.push((0, None));
+    // let mut iter = 0;
+    // while let Some((consider, next)) = dbg!(search.pop()) {
+    //     iter += 1;
+    //     dbg!((arrival_time.as_secs_f64(), iter, ranked_hints.len(), &search));
+    //     let mut consider_next = if let Some(next) = next {
+    //         next + 1
+    //     } else {
+    //         // Test if we can safely reach the point being considered from the
+    //         // previous point.
+    //         let previous_wp = match dbg!(search.last()) {
+    //             Some((previous_index, _)) => {
+    //                 ranked_hints.get(*previous_index).unwrap().hint.into()
+    //             }
+    //             None => from_point,
+    //         };
+
+    //         dbg!((consider, ranked_hints.len()));
+    //         println!("Testing if arrival is safe {:?}", ranked_hints.get(consider).unwrap().hint);
+    //         let hint_wp_end: WaypointR2 = ranked_hints.get(consider).unwrap().hint.into();
+    //         let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
+    //         dbg!((hint_wp_start, hint_wp_end));
+    //         if hint_wp_end.time < hint_wp_start.time {
+    //             // If the end time of the hint is earlier than we would arrive
+    //             // then it's not actually a helpful hint.
+    //             if consider + 1 < ranked_hints.len() {
+    //                 search.push(dbg!((consider+1, None)));
+    //             }
+    //             continue;
+    //         }
+
+    //         dbg!((previous_wp, hint_wp_start));
+    //         let safe_0 = dbg!(is_safe_segment(
+    //             profile, (&previous_wp, &hint_wp_start), None, in_environment
+    //         ));
+    //         dbg!();
+    //         let safe_1 = dbg!(is_safe_segment(
+    //             profile, (&hint_wp_start, &hint_wp_end), None, in_environment
+    //         ));
+    //         let safe_hint_arrival = safe_0 && safe_1;
+
+    //         dbg!(safe_hint_arrival);
+    //         if !safe_hint_arrival {
+    //             // We cannot safely arrive at this hint from the previous
+    //             // waypoint. We will prune this part of the search.
+    //             if consider + 1 < ranked_hints.len() {
+    //                 search.push(dbg!((consider+1, None)));
+    //             }
+    //             continue;
+    //         }
+
+    //         if can_arrive_safely(hint_wp_end) {
+    //             dbg!();
+    //             // We can safely arrive at the goal from this hint waypoint, so
+    //             // we no longer need to search for a path.
+
+    //             // Put the final waypoint back into the search vector to
+    //             // simplify the construction of the path.
+    //             search.push((consider, None));
+
+    //             let mut path: SmallVec<[SafeAction<_, _>; 3]> = SmallVec::new();
+    //             let mut previous_wp = from_point;
+    //             for (hint_id, _) in &search {
+    //                 let hint = ranked_hints.get(*hint_id).unwrap().hint;
+    //                 let hint_wp_end = hint.into();
+    //                 let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
+    //                 path.push(SafeAction::Move(hint_wp_start));
+    //                 path.push(SafeAction::Wait(WaitForObstacle {
+    //                     for_obstacle: hint.for_obstacle,
+    //                     time_estimate: hint.until,
+    //                 }));
+
+    //                 previous_wp = hint_wp_end;
+    //             }
+
+    //             dbg!(previous_wp);
+    //             let final_wp = make_hint_arrival(previous_wp, to_point);
+    //             path.push(SafeAction::Move(final_wp));
+
+    //             return Some(path);
+    //         }
+
+    //         consider + 1
+    //     };
+
+    //     let pushed_child = 'pushed_child: {
+    //         while let (Some(prev_hint), Some(next_hint)) = (
+    //             ranked_hints.get(consider), ranked_hints.get(consider_next)
+    //         ) {
+    //             dbg!((prev_hint, next_hint));
+    //             dbg!((prev_hint.reach, next_hint.reach));
+    //             if prev_hint.reach <= next_hint.reach {
+    //                 // We need to always be moving towards hints that reach further
+    //                 // towards the goal. We do not support backtracking.
+    //                 search.push((consider, Some(consider_next)));
+    //                 search.push((consider_next, None));
+    //                 break 'pushed_child true;
+    //             }
+
+    //             consider_next += 1;
+    //         }
+
+    //         false
+    //     };
+
+    //     if !pushed_child && ((consider + 1) < ranked_hints.len()) {
+    //         dbg!();
+    //         search.push((consider+1, None));
+    //     }
+    // }
 
     None
 }
@@ -587,6 +719,37 @@ struct RankedHint {
     contour: Duration,
     reach: f64,
     hint: WaitHint,
+}
+
+#[derive(Debug)]
+struct ArrivalPathSearchElement {
+    index: usize,
+    child: Option<usize>,
+    tested_arrival_to_parent: bool,
+}
+
+impl ArrivalPathSearchElement {
+    fn new(index: usize) -> Self {
+        Self {
+            index,
+            child: if index > 0 { Some(index-1) } else { None },
+            tested_arrival_to_parent: false,
+        }
+    }
+
+    fn decrement_child(mut self) -> Self {
+        self.child = if let Some(child) = self.child.filter(|c| *c > 0) {
+            Some(child - 1)
+        } else {
+            None
+        };
+        self
+    }
+
+    fn tested(mut self) -> Self {
+        self.tested_arrival_to_parent = true;
+        self
+    }
 }
 
 #[inline]
@@ -1452,6 +1615,7 @@ mod tests {
         for footprint_radius in [
             0.001, 0.01, 0.1, 0.25, 0.5, 1.0, 1.1, 1.5,
         ] {
+            dbg!(footprint_radius);
             let profile = Profile {
                 footprint_radius,
                 safety_distance: 0.5,
@@ -1470,6 +1634,7 @@ mod tests {
             );
 
             let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
+            dbg!(&paths);
             assert!(paths.len() == 1);
 
             let path = paths.first().unwrap();
