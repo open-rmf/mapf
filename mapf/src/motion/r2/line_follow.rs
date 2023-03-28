@@ -17,14 +17,20 @@
 
 use super::{Position, Waypoint, Positioned};
 use crate::{
-    motion::{self, SpeedLimiter, se2, Duration},
+    motion::{
+        self, SpeedLimiter, se2, Duration, DynamicEnvironment,
+        conflict::{compute_safe_linear_paths, SafeAction, WaitForObstacle},
+    },
     domain::{
         Extrapolator, IncrementalExtrapolator, ExtrapolationProgress,
         Reversible, Backtrack, flip_endpoint_times, backtrack_times,
+        ConflictAvoider,
     },
     error::{NoError, ThisError},
+    util::FlatResultMapTrait,
 };
 use arrayvec::ArrayVec;
+use smallvec::SmallVec;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineFollow {
@@ -164,6 +170,75 @@ impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for LineFollow {
             parent_reverse_state,
             reverse_action,
             child_reverse_state
+        )
+    }
+}
+
+impl<Target, Guidance, W> ConflictAvoider<Waypoint, Target, Guidance, DynamicEnvironment<W>> for LineFollow
+where
+    Target: Positioned,
+    Guidance: SpeedLimiter,
+    W: motion::Waypoint + Into<Waypoint>,
+{
+    type AvoidanceAction = SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]>;
+    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, Waypoint), LineFollowError>> + 'a
+    where
+        Target: 'a,
+        Guidance: 'a,
+        W: 'a;
+
+    type AvoidanceError = LineFollowError;
+
+    fn avoid_conflicts<'a>(
+        &'a self,
+        from_point: &Waypoint,
+        to_target: &Target,
+        with_guidance: &Guidance,
+        in_environment: &'a DynamicEnvironment<W>,
+    ) -> Self::AvoidanceActionIter<'a>
+    where
+        Self: 'a,
+        Self::AvoidanceAction: 'a,
+        Self::AvoidanceError: 'a,
+        Target: 'a,
+        Guidance: 'a,
+        DynamicEnvironment<W>: 'a
+    {
+        let from_point = *from_point;
+        self
+        .extrapolate(&from_point, to_target, with_guidance)
+        .into_iter()
+        .flat_map(move |r|
+            r.flat_result_map(move |(_, to_point)|
+                compute_safe_linear_paths(from_point, to_point, in_environment)
+                .into_iter()
+
+                // TODO(@mxgrey): Should we pass an error if the last
+                // element in the action is not a movement? That should
+                // never happen, so being quiet about it might not be a
+                // good thing.
+                // .filter_map(move |action| {
+                //     let wp = action
+                //         .last()
+                //         .map(|m| m.movement())
+                //         .flatten()
+                //         .copied();
+
+                //     wp.map(move |wp| (action, wp))
+                // })
+
+                .map(move |action| {
+                    // TODO(@mxgrey): Remove these unwraps before targeting
+                    // production. Either use the map technique that's commented
+                    // out above or return an error. I'm temporarily using
+                    // unwrap to violently catch internal mistakes.
+                    let wp = *action
+                        .last().unwrap()
+                        .movement().unwrap();
+
+                    (action, wp)
+                })
+            )
         )
     }
 }

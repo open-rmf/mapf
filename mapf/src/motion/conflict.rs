@@ -121,18 +121,13 @@ impl Profile {
 }
 
 pub struct DynamicEnvironment<W: Waypoint> {
+    pub profile: Profile,
     pub obstacles: Vec<DynamicObstacle<W>>,
 }
 
 impl<W: Waypoint> DynamicEnvironment<W> {
-    pub fn new() -> Self {
-        Self { obstacles: Vec::new() }
-    }
-}
-
-impl<W: Waypoint> Default for DynamicEnvironment<W> {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(profile: Profile) -> Self {
+        Self { profile, obstacles: Vec::new() }
     }
 }
 
@@ -200,6 +195,13 @@ impl<Movement, WaitFor> SafeAction<Movement, WaitFor> {
         }
     }
 
+    pub fn map_movement<U, F: FnOnce(Movement) -> U>(self, op: F) -> SafeAction<U, WaitFor> {
+        match self {
+            SafeAction::Move(m) => SafeAction::Move(op(m)),
+            SafeAction::Wait(w) => SafeAction::Wait(w),
+        }
+    }
+
     pub fn wait_for(&self) -> Option<&WaitFor> {
         match self {
             Self::Wait(w) => Some(w),
@@ -227,21 +229,21 @@ impl std::fmt::Debug for WaitForObstacle {
 }
 
 pub fn compute_safe_linear_paths<W>(
-    profile: &Profile,
     from_point: WaypointR2,
     to_point: WaypointR2,
     in_environment: &DynamicEnvironment<W>,
-) -> SmallVec<[SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>; 3]>
+) -> SmallVec<[SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>; 3]>
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    let profile = &in_environment.profile;
     let delta_t = (to_point.time - from_point.time).as_secs_f64();
     assert!(delta_t >= 0.0);
     let bb = BoundingBox::for_line(profile, &from_point, &to_point);
     if delta_t < 1e-8 {
         // This very small time interval suggests that the agent is not moving
         // significantly. Just check if the proposed path is safe or not.
-        if is_safe_segment(profile, (&from_point, &to_point), Some(bb), in_environment) {
+        if is_safe_segment((&from_point, &to_point), Some(bb), in_environment) {
             return SmallVec::from_iter([
                 SmallVec::from_iter([
                     SafeAction::Move(to_point)
@@ -255,7 +257,6 @@ where
     }
 
     let wait_hints = compute_wait_hints(
-        profile,
         (&from_point, &to_point),
         &bb,
         in_environment
@@ -294,11 +295,10 @@ where
         }
     });
 
-    compute_safe_arrival_times(profile, to_point, in_environment)
+    compute_safe_arrival_times(to_point, in_environment)
         .into_iter()
         .filter_map(|arrival_time|
             compute_safe_arrival_path(
-                profile,
                 from_point,
                 to_point,
                 arrival_time,
@@ -308,14 +308,15 @@ where
         ).collect()
 }
 
-pub fn compute_safe_arrival_times<W>(
-    profile: &Profile,
+#[inline]
+fn compute_safe_arrival_times<W>(
     for_point: WaypointR2,
     in_environment: &DynamicEnvironment<W>,
 ) -> SmallVec<[TimePoint; 3]>
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    let profile = &in_environment.profile;
     let mut safe_arrival_times = SmallVec::<[TimePoint; 3]>::new();
 
     // First find every safe arrival time above from_point.time
@@ -395,13 +396,12 @@ where
 
 #[inline]
 fn compute_safe_arrival_path<W>(
-    profile: &Profile,
     from_point: WaypointR2,
     to_point: WaypointR2,
     arrival_time: TimePoint,
     ranked_hints: &SmallVec<[RankedHint; 16]>,
     in_environment: &DynamicEnvironment<W>,
-) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 3]>>
+) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>>
 where
     W: Into<WaypointR2> + Waypoint,
 {
@@ -419,13 +419,13 @@ where
             to_point.position.y,
         );
 
-        if !is_safe_segment(profile, (&from_p, &arrival_wp), None, in_environment) {
+        if !is_safe_segment((&from_p, &arrival_wp), None, in_environment) {
             return false;
         }
 
         if arrival_wp.time < arrival_time {
             let final_wp = arrival_wp.with_time(arrival_time);
-            return is_safe_segment(profile, (&arrival_wp, &final_wp), None, in_environment);
+            return is_safe_segment((&arrival_wp, &final_wp), None, in_environment);
         }
 
         true
@@ -507,9 +507,9 @@ where
 
             let parent_wp_start = make_parent_arrival(hint_wp, parent_wp_end);
             let safe_hint_arrival = is_safe_segment(
-                &profile, (&hint_wp, &parent_wp_start), None, in_environment
+                (&hint_wp, &parent_wp_start), None, in_environment
             ) && is_safe_segment(
-                &profile, (&parent_wp_start, &parent_wp_end), None, in_environment
+                (&parent_wp_start, &parent_wp_end), None, in_environment
             );
 
             if !safe_hint_arrival {
@@ -541,15 +541,15 @@ where
             // then we have found our path.
             let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
             let safe_hint_arrival = is_safe_segment(
-                &profile, (&from_point, &hint_arrival_wp), None, &in_environment
+                (&from_point, &hint_arrival_wp), None, &in_environment
             ) && is_safe_segment(
-                &profile, (&hint_arrival_wp, &hint_wp), None, &in_environment
+                (&hint_arrival_wp, &hint_wp), None, &in_environment
             );
             if safe_hint_arrival {
                 // We have found the desired path
                 search.push(element);
                 search.reverse();
-                let mut path: SmallVec<[SafeAction<_, _>; 3]> = SmallVec::new();
+                let mut path: SmallVec<[SafeAction<_, _>; 5]> = SmallVec::new();
                 let mut previous_wp = from_point;
                 for element in &search {
                     let hint = ranked_hints.get(element.index).unwrap().hint;
@@ -894,8 +894,7 @@ where
 }
 
 #[inline]
-fn is_safe_segment<W>(
-    profile: &Profile,
+pub fn is_safe_segment<W>(
     line_a: (&WaypointR2, &WaypointR2),
     bb: Option<BoundingBox>,
     in_environment: &DynamicEnvironment<W>,
@@ -903,6 +902,7 @@ fn is_safe_segment<W>(
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    let profile = &in_environment.profile;
     let bb = match bb {
         Some(bb) => bb,
         None => BoundingBox::for_line(profile, line_a.0, line_a.1),
@@ -978,7 +978,6 @@ where
 
 #[inline]
 fn compute_wait_hints<W>(
-    profile: &Profile,
     (wp0, wp1): (&WaypointR2, &WaypointR2),
     bb: &BoundingBox,
     in_environment: &DynamicEnvironment<W>,
@@ -986,6 +985,7 @@ fn compute_wait_hints<W>(
 where
     W: Into<WaypointR2> + Waypoint,
 {
+    let profile = &in_environment.profile;
     let q = wp0.position;
     let r = wp1.position;
     let u = match (r -q).try_normalize(1e-8) {
@@ -1337,7 +1337,7 @@ impl From<WaitHint> for WaypointR2 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BoundingBox {
+pub struct BoundingBox {
     min: Vector2,
     max: Vector2,
 }
@@ -1448,20 +1448,20 @@ mod tests {
             let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
 
             let y_obs = 1.0 + 2.0 * footprint_radius;
-            let mut in_environment = DynamicEnvironment::new();
+            let mut in_environment = DynamicEnvironment::new(profile);
             add_to_env(
                 &mut in_environment, profile,
                 (0.0, 10.0, -y_obs),
                 (10.0, 0.0, y_obs),
             );
 
-            let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
+            let paths = compute_safe_linear_paths(from_point, to_point, &in_environment);
             assert_eq!(1, paths.len());
 
             let path = paths.first().unwrap();
             let wait_p = *path.first().unwrap().movement().unwrap();
             let line_a = (&from_point, &wait_p);
-            assert!(is_safe_segment(&profile, line_a, None, &in_environment));
+            assert!(is_safe_segment(line_a, None, &in_environment));
 
             let t_wait_until = path[1].wait_for().unwrap().time_estimate;
             let obs_traj = in_environment.obstacles.first().unwrap().trajectory.as_ref().unwrap();
@@ -1491,7 +1491,7 @@ mod tests {
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
         let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
 
-        let mut in_environment = DynamicEnvironment::new();
+        let mut in_environment = DynamicEnvironment::new(profile);
 
         let x_obs = 0.5 + 2.0*footprint_radius;
         add_to_env(
@@ -1501,9 +1501,9 @@ mod tests {
         );
 
         let line_a = (&from_point, &to_point);
-        assert!(!is_safe_segment(&profile, line_a, None, &in_environment));
+        assert!(!is_safe_segment(line_a, None, &in_environment));
 
-        let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
+        let paths = compute_safe_linear_paths(from_point, to_point, &in_environment);
         assert_eq!(1, paths.len());
 
         let path = paths.first().unwrap();
@@ -1525,7 +1525,7 @@ mod tests {
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
         let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
 
-        let mut in_environment = DynamicEnvironment::new();
+        let mut in_environment = DynamicEnvironment::new(profile);
 
         let x_obs = 0.5 + 2.0*footprint_radius;
         add_to_env(
@@ -1535,9 +1535,9 @@ mod tests {
         );
 
         let line_a = (&from_point, &to_point);
-        assert!(!is_safe_segment(&profile, line_a, None, &in_environment));
+        assert!(!is_safe_segment(line_a, None, &in_environment));
 
-        let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
+        let paths = compute_safe_linear_paths(from_point, to_point, &in_environment);
         assert!(paths.len() >= 1);
     }
 
@@ -1569,7 +1569,7 @@ mod tests {
                 let p1 = to_point.position;
                 let v = (p1 - p0).norm() / dt;
 
-                let mut in_environment = DynamicEnvironment::new();
+                let mut in_environment = DynamicEnvironment::new(profile);
 
                 let obs_a = p0 + (p1 - p0) * 0.3;
                 let obs_b = p0 + (p1 - p0) * 0.6;
@@ -1602,9 +1602,9 @@ mod tests {
                 );
 
                 let line_a = (&from_point, &to_point);
-                assert!(!is_safe_segment(&profile, line_a, None, &in_environment));
+                assert!(!is_safe_segment(line_a, None, &in_environment));
 
-                let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
+                let paths = compute_safe_linear_paths(from_point, to_point, &in_environment);
                 assert_eq!(1, paths.len());
 
                 let path = paths.first().unwrap();
@@ -1662,14 +1662,14 @@ mod tests {
                 ));
 
                 let obs_traj = Trajectory::from_iter(obs_wps).unwrap();
-                let mut in_environment = DynamicEnvironment::new();
+                let mut in_environment = DynamicEnvironment::new(profile);
                 in_environment.obstacles.push(
                     DynamicObstacle::new(profile)
                     .with_trajectory(Some(obs_traj.clone()))
                 );
 
                 let paths = compute_safe_linear_paths(
-                    &profile, from_point, to_point, &in_environment
+                    from_point, to_point, &in_environment
                 );
                 assert_eq!(11, paths.len());
 

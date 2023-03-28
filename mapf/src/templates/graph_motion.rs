@@ -99,11 +99,11 @@ where
             .flat_result_map(move |v| {
                 let from_state = from_state.clone();
                 let to_vertex = to_vertex.clone();
-                let extrapolation = self.extrapolator.extrapolate(
+                let extrapolations = self.extrapolator.extrapolate(
                     self.space.waypoint(&from_state).borrow(), v.borrow(), &edge
                 );
 
-                extrapolation
+                extrapolations
                 .into_iter()
                 .map(move |r| {
                     let to_vertex = to_vertex.clone();

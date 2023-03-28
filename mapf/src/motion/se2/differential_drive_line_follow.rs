@@ -17,14 +17,24 @@
 
 use super::{Point, Position, Waypoint, MaybeOriented, StateSE2};
 use crate::{
-    motion::{self, SpeedLimiter, Duration, r2::{self, MaybePositioned}},
+    motion::{
+        self, SpeedLimiter, Duration, DynamicEnvironment,
+        r2::{self, MaybePositioned},
+        conflict::{
+            compute_safe_linear_paths, is_safe_segment,
+            SafeAction, WaitForObstacle
+        },
+    },
     domain::{
         Extrapolator, IncrementalExtrapolator, SelfKey, Connectable, Reversible,
         ExtrapolationProgress, Backtrack, flip_endpoint_times, backtrack_times,
+        ConflictAvoider,
     },
     error::{ThisError, NoError},
+    util::ForkIter,
 };
 use arrayvec::ArrayVec;
+use smallvec::SmallVec;
 use time_point::TimePoint;
 use std::borrow::Borrow;
 
@@ -334,6 +344,121 @@ impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for Differential
             parent_reverse_state,
             reverse_action,
             child_reverse_state
+        )
+    }
+}
+
+impl<Target, Guidance, W> ConflictAvoider<Waypoint, Target, Guidance, DynamicEnvironment<W>> for DifferentialDriveLineFollow
+where
+    Target: r2::Positioned + MaybeOriented,
+    Guidance: SpeedLimiter,
+    W: motion::Waypoint + Into<r2::Waypoint>,
+{
+    type AvoidanceAction = SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]>;
+    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, Waypoint), Self::AvoidanceError>> + 'a
+    where
+        Target: 'a,
+        Guidance: 'a,
+        W: 'a;
+
+    type AvoidanceError = DifferentialDriveLineFollowError;
+
+    fn avoid_conflicts<'a>(
+        &'a self,
+        from_state: &Waypoint,
+        to_target: &Target,
+        with_guidance: &Guidance,
+        in_environment: &'a DynamicEnvironment<W>,
+    ) -> Self::AvoidanceActionIter<'a>
+    where
+        Self: 'a,
+        Self::AvoidanceAction: 'a,
+        Self::AvoidanceError: 'a,
+        Waypoint: 'a,
+        Target: 'a,
+        Guidance: 'a,
+        DynamicEnvironment<W>: 'a,
+    {
+        let target_point = to_target.point();
+        let mut arrival = match self.move_towards_target(
+            from_state,
+            &target_point,
+            with_guidance,
+        ) {
+            Ok(arrival) => arrival,
+            Err(err) => return ForkIter::Left(Some(Err(err)).into_iter()),
+        };
+
+        if arrival.waypoints.len() > 1 {
+            assert!(arrival.waypoints.len() < 3);
+            let wp0 = arrival.waypoints[0].clone().into();
+            // Make sure the act of rotating to face the target is valid
+            if !is_safe_segment(
+                (&from_state.clone().into(), &wp0), None, in_environment,
+            ) {
+                // We cannot rotate to face the target, so there is no way to
+                // avoid conflicts from the start state.
+                return ForkIter::Left(None.into_iter());
+            }
+        }
+
+        let to_position = match arrival.waypoints.last() {
+            Some(p) => *p,
+            // No motion is needed, the agent is already on the target
+            None => return ForkIter::Left(Some(Ok((SmallVec::new(), *from_state))).into_iter()),
+        };
+
+        let maybe_oriented = to_target.maybe_oriented();
+        let from_point: r2::Waypoint = from_state.clone().into();
+        let to_point: r2::Waypoint = to_position.into();
+        let yaw = arrival.yaw.angle();
+        ForkIter::Right(
+            compute_safe_linear_paths(from_point, to_point, in_environment)
+            .into_iter()
+            .filter_map(move |action| {
+                let mut action: SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]> =
+                    action
+                    .into_iter()
+                    .map(|a| a.map_movement(|wp| wp.with_yaw(yaw)))
+                    .collect();
+
+                if arrival.waypoints.len() > 1 {
+                    // Add the initial rotation to the safe actions
+                    action.insert(0, SafeAction::Move(arrival.waypoints[0]));
+                }
+
+                // TODO(@mxgrey): Remove these unwraps before targeting production.
+                let arrival_wp = *action.last().unwrap().movement().unwrap();
+                if let Some(target_yaw) = maybe_oriented {
+                    // TODO(@mxgrey): Consider how to de-duplicate this block
+                    // from the Extrapolator impl.
+                    let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
+                    if delta_yaw_abs > self.rotational_threshold {
+                        arrival.time += Duration::from_secs_f64(
+                            self.direction * delta_yaw_abs / self.rotational_speed
+                        );
+                        let final_wp = Waypoint {
+                            time: arrival.time,
+                            position: Position::new(
+                                target_point.coords,
+                                target_yaw.angle(),
+                            ),
+                        };
+
+                        if !is_safe_segment(
+                            (&arrival_wp.into(), &final_wp.into()), None, in_environment,
+                        ) {
+                            // We cannot rotate to face the target orientation
+                            // so this is not a valid action.
+                            return None;
+                        }
+                        action.push(SafeAction::Move(final_wp));
+                    }
+                }
+
+                let wp = *action.last().unwrap().movement().unwrap();
+                Some(Ok((action, wp)))
+            })
         )
     }
 }

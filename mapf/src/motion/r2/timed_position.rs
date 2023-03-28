@@ -51,6 +51,10 @@ impl Waypoint {
             position: Position::new(x, y),
         }
     }
+
+    pub fn with_yaw(self, yaw: f64) -> WaypointSE2 {
+        WaypointSE2::new(self.time, self.position.x, self.position.y, yaw)
+    }
 }
 
 impl timed::Timed for Waypoint {

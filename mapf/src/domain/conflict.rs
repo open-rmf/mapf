@@ -36,7 +36,7 @@ pub trait ConflictAvoider<State, Target, Guidance, Environment> {
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
-        in_environment: &Environment,
+        in_environment: &'a Environment,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,
