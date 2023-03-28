@@ -35,26 +35,26 @@ pub struct Profile {
     /// location where the footprint of an obstacle will collide with it. When
     /// two agents in contention have different `safety_distance` values, the
     /// larger value will be used by both.
-    safety_distance: f64,
+    safety_buffer: f64,
 
     /// When an agent is following an obstacle or another agent (the dot
     /// product of their velocities is positive), the agent's movements should
     /// be broken into segments of this size
-    follow_distance: f64,
+    follow_buffer: f64,
 }
 
 impl Profile {
 
     pub fn new(
         footprint_radius: f64,
-        safety_distance: f64,
-        follow_distance: f64,
+        safety_buffer: f64,
+        follow_buffer: f64,
     ) -> Result<Self, ()> {
-        if footprint_radius < 0.0 || safety_distance < 0.0 || follow_distance < 0.0 {
+        if footprint_radius < 0.0 || safety_buffer < 0.0 || follow_buffer < 0.0 {
             return Err(());
         }
 
-        Ok(Self { footprint_radius, safety_distance, follow_distance })
+        Ok(Self { footprint_radius, safety_buffer, follow_buffer })
     }
 
     pub fn with_footprint_radius(mut self, footprint_radius: f64) -> Result<Self, ()> {
@@ -69,7 +69,7 @@ impl Profile {
         if safety_distance < 0.0 {
             return Err(());
         }
-        self.safety_distance = safety_distance;
+        self.safety_buffer = safety_distance;
         Ok(self)
     }
 
@@ -77,7 +77,7 @@ impl Profile {
         if follow_distance < 0.0 {
             return Err(());
         }
-        self.follow_distance = follow_distance;
+        self.follow_buffer = follow_distance;
         Ok(self)
     }
 
@@ -110,11 +110,13 @@ impl Profile {
     }
 
     pub fn safety_distance_for(&self, other: &Profile) -> f64 {
-        f64::max(self.safety_distance, other.safety_distance)
+        let d = self.critical_distance_for(other);
+        f64::max(self.safety_buffer, other.safety_buffer) + d
     }
 
     pub fn follow_distance_for(&self, other: &Profile) -> f64 {
-        f64::max(self.follow_distance, other.follow_distance)
+        let d = self.critical_distance_for(&other);
+        f64::max(f64::max(self.follow_buffer, other.follow_buffer), d) + d
     }
 }
 
@@ -478,6 +480,8 @@ where
                 goal_dt
             }
         };
+        dbg!(goal_contour);
+        dbg!(arrival_time.as_secs_f64());
         let mut found_contour: Option<Duration> = None;
         for (i, hint) in ranked_hints.iter().enumerate() {
             dbg!(i);
@@ -513,6 +517,7 @@ where
             Some(h) => h,
             None => continue,
         };
+        dbg!(ranking);
         let hint_wp: WaypointR2 = ranking.hint.into();
 
         if !element.tested_arrival_to_parent {
@@ -595,121 +600,6 @@ where
             }
         };
     }
-
-    // Find the furthest reach of the lowest contour that is greater or equal to
-    // the goal contour. Then work backwards from there in search of a valid
-    // path from the goal.
-
-    // search.push((0, None));
-    // let mut iter = 0;
-    // while let Some((consider, next)) = dbg!(search.pop()) {
-    //     iter += 1;
-    //     dbg!((arrival_time.as_secs_f64(), iter, ranked_hints.len(), &search));
-    //     let mut consider_next = if let Some(next) = next {
-    //         next + 1
-    //     } else {
-    //         // Test if we can safely reach the point being considered from the
-    //         // previous point.
-    //         let previous_wp = match dbg!(search.last()) {
-    //             Some((previous_index, _)) => {
-    //                 ranked_hints.get(*previous_index).unwrap().hint.into()
-    //             }
-    //             None => from_point,
-    //         };
-
-    //         dbg!((consider, ranked_hints.len()));
-    //         println!("Testing if arrival is safe {:?}", ranked_hints.get(consider).unwrap().hint);
-    //         let hint_wp_end: WaypointR2 = ranked_hints.get(consider).unwrap().hint.into();
-    //         let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
-    //         dbg!((hint_wp_start, hint_wp_end));
-    //         if hint_wp_end.time < hint_wp_start.time {
-    //             // If the end time of the hint is earlier than we would arrive
-    //             // then it's not actually a helpful hint.
-    //             if consider + 1 < ranked_hints.len() {
-    //                 search.push(dbg!((consider+1, None)));
-    //             }
-    //             continue;
-    //         }
-
-    //         dbg!((previous_wp, hint_wp_start));
-    //         let safe_0 = dbg!(is_safe_segment(
-    //             profile, (&previous_wp, &hint_wp_start), None, in_environment
-    //         ));
-    //         dbg!();
-    //         let safe_1 = dbg!(is_safe_segment(
-    //             profile, (&hint_wp_start, &hint_wp_end), None, in_environment
-    //         ));
-    //         let safe_hint_arrival = safe_0 && safe_1;
-
-    //         dbg!(safe_hint_arrival);
-    //         if !safe_hint_arrival {
-    //             // We cannot safely arrive at this hint from the previous
-    //             // waypoint. We will prune this part of the search.
-    //             if consider + 1 < ranked_hints.len() {
-    //                 search.push(dbg!((consider+1, None)));
-    //             }
-    //             continue;
-    //         }
-
-    //         if can_arrive_safely(hint_wp_end) {
-    //             dbg!();
-    //             // We can safely arrive at the goal from this hint waypoint, so
-    //             // we no longer need to search for a path.
-
-    //             // Put the final waypoint back into the search vector to
-    //             // simplify the construction of the path.
-    //             search.push((consider, None));
-
-    //             let mut path: SmallVec<[SafeAction<_, _>; 3]> = SmallVec::new();
-    //             let mut previous_wp = from_point;
-    //             for (hint_id, _) in &search {
-    //                 let hint = ranked_hints.get(*hint_id).unwrap().hint;
-    //                 let hint_wp_end = hint.into();
-    //                 let hint_wp_start = make_hint_arrival(previous_wp, hint_wp_end);
-    //                 path.push(SafeAction::Move(hint_wp_start));
-    //                 path.push(SafeAction::Wait(WaitForObstacle {
-    //                     for_obstacle: hint.for_obstacle,
-    //                     time_estimate: hint.until,
-    //                 }));
-
-    //                 previous_wp = hint_wp_end;
-    //             }
-
-    //             dbg!(previous_wp);
-    //             let final_wp = make_hint_arrival(previous_wp, to_point);
-    //             path.push(SafeAction::Move(final_wp));
-
-    //             return Some(path);
-    //         }
-
-    //         consider + 1
-    //     };
-
-    //     let pushed_child = 'pushed_child: {
-    //         while let (Some(prev_hint), Some(next_hint)) = (
-    //             ranked_hints.get(consider), ranked_hints.get(consider_next)
-    //         ) {
-    //             dbg!((prev_hint, next_hint));
-    //             dbg!((prev_hint.reach, next_hint.reach));
-    //             if prev_hint.reach <= next_hint.reach {
-    //                 // We need to always be moving towards hints that reach further
-    //                 // towards the goal. We do not support backtracking.
-    //                 search.push((consider, Some(consider_next)));
-    //                 search.push((consider_next, None));
-    //                 break 'pushed_child true;
-    //             }
-
-    //             consider_next += 1;
-    //         }
-
-    //         false
-    //     };
-
-    //     if !pushed_child && ((consider + 1) < ranked_hints.len()) {
-    //         dbg!();
-    //         search.push((consider+1, None));
-    //     }
-    // }
 
     None
 }
@@ -1225,13 +1115,14 @@ where
                 );
 
                 if let Some((t_wait_at, _)) = wait_point_time {
-                    if t_wait_at >= 0.0 {
-                        let at_point = q + agent_v * t_wait_at;
-                        wait_hints.push(dbg!(WaitHint {
-                            at_point,
-                            for_obstacle,
-                            until: obs_t0 + Duration::from_secs_f64(t_end),
-                        }));
+                    if 0.0 <= t_wait_at {
+                        let until = obs_t0 + Duration::from_secs_f64(t_end);
+                        let arrival = wp0.time + Duration::from_secs_f64(t_wait_at);
+                        if arrival <= until {
+                            let at_point = q + agent_v * t_wait_at;
+                            dbg!((t_wait_at, t_end, obs_t0.as_secs_f64()));
+                            wait_hints.push(dbg!(WaitHint { at_point, until, for_obstacle }));
+                        }
                     }
                 }
             }
@@ -1255,75 +1146,81 @@ where
                     let (dq, mut t) = if obs_wp0.time < wp0.time {
                         let t_offset = (wp0.time - obs_wp0.time).as_secs_f64();
                         let dq = (obs_q + obs_v * t_offset) - q;
-                        (dq, 0.0)
+                        dbg!((dq, wp0.time.as_secs_f64()))
                     } else {
                         let dq = obs_q - q;
-                        let t = (obs_wp0.time - wp0.time).as_secs_f64();
-                        (dq, t)
+                        dbg!((dq, obs_wp0.time.as_secs_f64()))
                     };
 
                     if dq.dot(&dq) >= min_distance_squared {
                         let follow_distance = profile.follow_distance_for(&obs.profile);
                         let v_rel = agent_speed - aligned_speed;
                         let obs_s0 = dq.dot(&u);
+                        let t0 = wp0.time.as_secs_f64();
+                        let obs_t0 = obs_t0.as_secs_f64();
                         if obs_s0 >= 0.0 {
-                            let mut s = if obs_s0 <= min_distance + follow_distance {
+                            let mut s = if obs_s0 <= follow_distance {
                                 // Wait at the start until the obstacle has
                                 // reached the follow distance
-                                t += (min_distance + follow_distance - obs_s0) / aligned_speed;
+                                t += (follow_distance - obs_s0) / aligned_speed;
                                 wait_hints.push(dbg!(WaitHint {
                                     at_point: wp0.position,
-                                    until: wp0.time + Duration::from_secs_f64(t),
+                                    until: TimePoint::from_secs_f64(t),
                                     for_obstacle,
                                 }));
-                                0.0
-                            } else if obs_s0 - agent_speed * t <= min_distance + follow_distance {
-                                let wait_t = (obs_s0 - min_distance - follow_distance) / agent_speed;
-                                let s = if wait_t >= 0.0 {
+                                dbg!(0.0)
+                            } else if obs_s0 - agent_speed * (t - t0) <= follow_distance {
+                                let wait_dt = (obs_s0 - follow_distance) / agent_speed;
+                                let s = if wait_dt >= 0.0 {
                                     // Move ahead just enough to come within the follow distance
                                     // of the obstacle's initial position.
-                                    agent_speed * wait_t
+                                    dbg!(agent_speed * wait_dt)
                                 } else {
                                     // Wait at the start until the obstacle reaches
                                     // the follow distance
-                                    t += (min_distance + follow_distance - obs_s0) / aligned_speed;
-                                    0.0
+                                    t += (follow_distance - obs_s0) / aligned_speed;
+                                    dbg!(0.0)
                                 };
                                 wait_hints.push(dbg!(WaitHint {
                                     at_point: q + s*u,
-                                    until: dbg!(wp0.time) + Duration::from_secs_f64(dbg!(t)),
+                                    until: TimePoint::from_secs_f64(t),
                                     for_obstacle,
                                 }));
-                                s
+                                dbg!(s)
                             } else {
                                 // Move ahead to the start position because the
                                 // obstacle will not be a blocker
-                                agent_speed * t
+                                dbg!(agent_speed * (t - t0))
                             };
 
-                            let wait_interval = (min_distance + follow_distance) / aligned_speed;
-                            dbg!(s);
+                            let wait_interval = follow_distance / aligned_speed;
+                            dbg!(s, t);
                             loop {
                                 dbg!(s);
-                                let obs_s = obs_s0 + aligned_speed * dbg!(t);
+                                let obs_s = obs_s0 + aligned_speed * dbg!(t - obs_t0);
                                 let ds = dbg!(obs_s) - s;
                                 let delta_t = dbg!(ds - min_distance) / dbg!(v_rel);
                                 s += agent_speed * delta_t;
                                 t += delta_t + wait_interval;
-                                let t_abs = wp0.time + Duration::from_secs_f64(t);
-                                if s >= s_max {
+                                let reached_end = s >= s_max;
+                                if reached_end {
+                                    dbg!((s, s_max));
                                     // A hint that would put us beyond the reach
-                                    // limit is not a helpful one.
-                                    break;
+                                    // limit is not a helpful one. Let's cap it
+                                    // at the point where it reaches s_max.
+                                    let t_backtrack = dbg!((s - s_max) / agent_speed);
+                                    t -= t_backtrack;
+                                    s = s_max;
                                 }
 
+                                let tp = TimePoint::from_secs_f64(t);
                                 wait_hints.push(dbg!(WaitHint {
                                     at_point: q + s*u,
-                                    until: t_abs.min(obs_wp1.time),
+                                    until: tp.min(obs_wp1.time),
                                     for_obstacle,
                                 }));
 
-                                if t_abs >= obs_wp1.time {
+                                if tp >= obs_wp1.time || reached_end {
                                     // We don't need to follow any longer once
                                     // the obstacle vanishes.
                                     break;
@@ -1618,8 +1515,8 @@ mod tests {
             dbg!(footprint_radius);
             let profile = Profile {
                 footprint_radius,
-                safety_distance: 0.5,
-                follow_distance: 1.0,
+                safety_buffer: 0.5,
+                follow_buffer: 1.0,
             };
 
             let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
@@ -1635,7 +1532,7 @@ mod tests {
 
             let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
             dbg!(&paths);
-            assert!(paths.len() == 1);
+            assert_eq!(1, paths.len());
 
             let path = paths.first().unwrap();
             let wait_p = *path.first().unwrap().movement().unwrap();
@@ -1663,8 +1560,8 @@ mod tests {
         let footprint_radius = 0.5;
         let profile = Profile {
             footprint_radius,
-            safety_distance: 0.5,
-            follow_distance: 1.0,
+            safety_buffer: 0.5,
+            follow_buffer: 1.0,
         };
 
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
@@ -1683,7 +1580,7 @@ mod tests {
         assert!(!is_safe_segment(&profile, line_a, None, &in_environment));
 
         let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
-        assert!(paths.len() == 1);
+        assert_eq!(1, paths.len());
 
         let path = paths.first().unwrap();
 
@@ -1697,8 +1594,8 @@ mod tests {
         let footprint_radius = 0.5;
         let profile = Profile {
             footprint_radius,
-            safety_distance: 0.5,
-            follow_distance: 1.0,
+            safety_buffer: 0.5,
+            follow_buffer: 1.0,
         };
 
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
@@ -1738,8 +1635,8 @@ mod tests {
         let footprint_radius = 0.5;
         let profile = Profile {
             footprint_radius,
-            safety_distance: 0.5,
-            follow_distance: 1.0,
+            safety_buffer: 0.5,
+            follow_buffer: 1.0,
         };
 
         for t0 in [0.0, -22.3, 3.5, -1015.7, 476.2] {
@@ -1799,7 +1696,7 @@ mod tests {
 
                 let paths = compute_safe_linear_paths(&profile, from_point, to_point, &in_environment);
                 println!("paths: {paths:?}");
-                assert!(paths.len() == 1);
+                assert_eq!(1, paths.len());
 
                 let path = paths.first().unwrap();
                 let wp_f = path.last().unwrap().movement().unwrap();
@@ -1813,22 +1710,22 @@ mod tests {
     fn test_cycling_endpoint_blocker() {
         let profile = Profile {
             footprint_radius: 0.25,
-            safety_distance: 0.5,
-            follow_distance: 1.0,
+            safety_buffer: 0.5,
+            follow_buffer: 1.0,
         };
 
-        for t0 in [0.0, /*-43.1, 17.6, -782.994, 4230.0*/] {
+        for t0 in [0.0, -413.1, 17.6, -782.994, 4230.0] {
             let dt = 5.0;
             let tf = t0 + dt;
             for [x0, y0] in [
                 [10.0, 0.0],
-                // [10.0, 10.0],
-                // [0.0, 10.0],
-                // [-10.0, 10.0],
-                // [-10.0, 0.0],
-                // [-10.0, -10.0],
-                // [0.0, -10.0],
-                // [10.0, -10.0],
+                [10.0, 10.0],
+                [0.0, 10.0],
+                [-10.0, 10.0],
+                [-10.0, 0.0],
+                [-10.0, -10.0],
+                [0.0, -10.0],
+                [10.0, -10.0],
             ] {
                 dbg!((t0, x0, y0));
                 let from_point = WaypointR2::new_f64(t0, x0, y0);
@@ -1844,16 +1741,16 @@ mod tests {
                         [15.0, 5.0, 0.0],
                     ] {
                         obs_wps.push(WaypointR2::new_f64(
-                            dbg!(20.0*(dbg!(cycle) as f64) + t), x, y
+                            dbg!(20.0*(dbg!(cycle) as f64) + t + t0), x, y
                         ));
                     }
                 }
                 obs_wps.push(WaypointR2::new_f64(
-                    20.0*(n_cycles as f64), 0.0, 0.0
+                    20.0*(n_cycles as f64) + t0, 0.0, 0.0
                 ));
                 // Pause a moment on the destination for the very last waypoint
                 obs_wps.push(WaypointR2::new_f64(
-                    20.0*(n_cycles as f64) + 10.0, 0.0, 0.0
+                    20.0*(n_cycles as f64) + 10.0 + t0, 0.0, 0.0
                 ));
 
                 let obs_traj = Trajectory::from_iter(obs_wps).unwrap();
@@ -1867,7 +1764,24 @@ mod tests {
                     &profile, from_point, to_point, &in_environment
                 );
                 dbg!(&paths);
-                dbg!(paths.len());
+                for p in &paths {
+                    dbg!(p.last().unwrap().movement().unwrap().time.as_secs_f64());
+                }
+                assert_eq!(11, paths.len());
+
+                for i in 0..n_cycles {
+                    let tf = paths[i].last().unwrap().movement().unwrap().time.as_secs_f64();
+                    let i = i as f64;
+                    assert!(20.0*i + t0 < tf);
+                    dbg!(tf, 20.0*(i+1.0) + t0);
+                    assert!(tf < 20.0*(i+1.0) + t0);
+                }
+
+                let tf = paths.last().unwrap().last().unwrap().movement().unwrap().time.as_secs_f64();
+                let obs_tf = 20.0*(n_cycles as f64) + 10.0 + t0;
+                dbg!(obs_tf, tf);
+                assert!(obs_tf < tf);
+                assert!(tf < obs_tf + 1.0);
             }
         }
     }
