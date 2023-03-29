@@ -17,12 +17,13 @@
 
 pub type Position = nalgebra::geometry::Point2<f64>;
 pub type Point = Position;
+pub type Vector = nalgebra::Vector2<f64>;
 pub type Velocity = nalgebra::Vector2<f64>;
 
 pub mod timed_position;
 pub use timed_position::*;
 
-pub type LinearTrajectory = super::Trajectory<Waypoint>;
+pub type LinearTrajectory = super::Trajectory<WaypointR2>;
 
 pub mod space;
 pub use space::*;

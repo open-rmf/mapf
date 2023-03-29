@@ -48,8 +48,9 @@ pub struct AStar<D>(pub D);
 #[derive(Debug, Clone)]
 pub struct AStarConnect<D>(pub D);
 
+#[derive(Debug)]
 pub struct Memory<Closed, State, Action, Cost>(
-    Tree<Closed, Node<State, Action, Cost>, Cost>
+    pub Tree<Closed, Node<State, Action, Cost>, Cost>
 );
 
 impl<Closed, State, Action, Cost> Measure for Memory<Closed, State, Action, Cost>
@@ -422,7 +423,7 @@ where
         Ok(Status::Incomplete)
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Node<State, Action, Cost> {
     state: State,
     cost: Cost,

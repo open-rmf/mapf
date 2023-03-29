@@ -18,7 +18,8 @@
 use crate::{
     motion::{
         Trajectory, Waypoint, TimePoint, Interpolation, Motion, Timed, Duration,
-        r2::{Waypoint as WaypointR2, Point},
+        Environment, CircularProfile, DynamicCircularObstacle, BoundingBox,
+        r2::{WaypointR2 as WaypointR2, Point},
     },
 };
 use smallvec::SmallVec;
@@ -27,157 +28,6 @@ use std::cmp::Ordering;
 
 type Vector2 = nalgebra::Vector2<f64>;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Profile {
-    /// Radius that encompasses the physical footprint of the robot
-    footprint_radius: f64,
-    /// Distance that the agent should try to keep its footprint away from the
-    /// location where the footprint of an obstacle will collide with it. When
-    /// two agents in contention have different `safety_distance` values, the
-    /// larger value will be used by both.
-    safety_buffer: f64,
-
-    /// When an agent is following an obstacle or another agent (the dot
-    /// product of their velocities is positive), the agent's movements should
-    /// be broken into segments of this size
-    follow_buffer: f64,
-}
-
-impl Profile {
-
-    pub fn new(
-        footprint_radius: f64,
-        safety_buffer: f64,
-        follow_buffer: f64,
-    ) -> Result<Self, ()> {
-        if footprint_radius < 0.0 || safety_buffer < 0.0 || follow_buffer < 0.0 {
-            return Err(());
-        }
-
-        Ok(Self { footprint_radius, safety_buffer, follow_buffer })
-    }
-
-    pub fn with_footprint_radius(mut self, footprint_radius: f64) -> Result<Self, ()> {
-        if footprint_radius < 0.0 {
-            return Err(());
-        }
-        self.footprint_radius = footprint_radius;
-        Ok(self)
-    }
-
-    pub fn with_safety_distance(mut self, safety_distance: f64) -> Result<Self, ()> {
-        if safety_distance < 0.0 {
-            return Err(());
-        }
-        self.safety_buffer = safety_distance;
-        Ok(self)
-    }
-
-    pub fn with_follow_distance(mut self, follow_distance: f64) -> Result<Self, ()> {
-        if follow_distance < 0.0 {
-            return Err(());
-        }
-        self.follow_buffer = follow_distance;
-        Ok(self)
-    }
-
-    /// The critical distance is the distance between two traffic participants
-    /// where they must not approach each other any closer. Use this value when
-    /// calculating an acceptable stopping location for an agent.
-    ///
-    /// See also [`Profile::conflict_distance_for`]
-    pub fn critical_distance_for(&self, other: &Profile) -> f64 {
-        let d = self.footprint_radius + other.footprint_radius;
-        f64::max(d, 1e-3)
-    }
-
-    /// When two traffic participants are at or within this distance, then we
-    /// will consider them to be in-conflict if they move any closer towards
-    /// each other.
-    ///
-    /// See also [`Profile::critical_distance_for`]
-    pub fn conflict_distance_for(&self, other: &Profile) -> f64 {
-        let d = self.footprint_radius + other.footprint_radius;
-        f64::max(d - 1e-3, 0.0)
-    }
-
-    pub fn critical_distance_squared_for(&self, other: &Profile) -> f64 {
-        self.critical_distance_for(other).powi(2)
-    }
-
-    pub fn conflict_distance_squared_for(&self, other: &Profile) -> f64 {
-        self.conflict_distance_for(other).powi(2)
-    }
-
-    pub fn safety_distance_for(&self, other: &Profile) -> f64 {
-        let d = self.critical_distance_for(other);
-        f64::max(self.safety_buffer, other.safety_buffer) + d
-    }
-
-    pub fn follow_distance_for(&self, other: &Profile) -> f64 {
-        let d = self.critical_distance_for(&other);
-        f64::max(f64::max(self.follow_buffer, other.follow_buffer), d) + d
-    }
-}
-
-pub struct DynamicEnvironment<W: Waypoint> {
-    pub profile: Profile,
-    pub obstacles: Vec<DynamicObstacle<W>>,
-}
-
-impl<W: Waypoint> DynamicEnvironment<W> {
-    pub fn new(profile: Profile) -> Self {
-        Self { profile, obstacles: Vec::new() }
-    }
-}
-
-pub struct DynamicObstacle<W: Waypoint> {
-    profile: Profile,
-    trajectory: Option<Trajectory<W>>,
-    bounding_box: Option<BoundingBox>,
-}
-
-impl<W: Waypoint + Into<WaypointR2>> DynamicObstacle<W> {
-    pub fn new(profile: Profile) -> Self {
-        Self {
-            profile,
-            trajectory: None,
-            bounding_box: None,
-        }
-    }
-
-    pub fn with_trajectory(self, trajectory: Option<Trajectory<W>>) -> Self {
-        Self {
-            bounding_box: trajectory.as_ref().map(
-                |t| BoundingBox::for_trajectory(&self.profile, t)
-            ),
-            profile: self.profile,
-            trajectory,
-        }
-    }
-
-    pub fn profile(&self) -> &Profile {
-        &self.profile
-    }
-
-    pub fn set_profile(&mut self, profile: Profile) {
-        self.profile = profile;
-        self.bounding_box = self.trajectory.as_ref().map(
-            |t| BoundingBox::for_trajectory(&self.profile, t)
-        );
-    }
-
-    pub fn trajectory(&self) -> Option<&Trajectory<W>> {
-        self.trajectory.as_ref()
-    }
-
-    pub fn set_trajectory(&mut self, trajectory: Option<Trajectory<W>>) {
-        self.trajectory = trajectory;
-        self.bounding_box = self.trajectory.as_ref().map(
-            |t| BoundingBox::for_trajectory(&self.profile, t)
-        );
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum SafeAction<Movement, WaitFor> {
@@ -210,6 +60,12 @@ impl<Movement, WaitFor> SafeAction<Movement, WaitFor> {
     }
 }
 
+impl<Movement, WaitFor> From<Movement> for SafeAction<Movement, WaitFor> {
+    fn from(value: Movement) -> Self {
+        SafeAction::Move(value)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct WaitForObstacle {
     /// Which obstacle needs to be waited on
@@ -228,15 +84,16 @@ impl std::fmt::Debug for WaitForObstacle {
     }
 }
 
-pub fn compute_safe_linear_paths<W>(
+pub fn compute_safe_linear_paths<Env, W>(
     from_point: WaypointR2,
     to_point: WaypointR2,
-    in_environment: &DynamicEnvironment<W>,
+    in_environment: &Env,
 ) -> SmallVec<[SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>; 3]>
 where
     W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
-    let profile = &in_environment.profile;
+    let profile = in_environment.agent_profile();
     let delta_t = (to_point.time - from_point.time).as_secs_f64();
     assert!(delta_t >= 0.0);
     let bb = BoundingBox::for_line(profile, &from_point, &to_point);
@@ -309,14 +166,15 @@ where
 }
 
 #[inline]
-fn compute_safe_arrival_times<W>(
+fn compute_safe_arrival_times<Env, W>(
     for_point: WaypointR2,
-    in_environment: &DynamicEnvironment<W>,
+    in_environment: &Env,
 ) -> SmallVec<[TimePoint; 3]>
 where
     W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
-    let profile = &in_environment.profile;
+    let profile = in_environment.agent_profile();
     let mut safe_arrival_times = SmallVec::<[TimePoint; 3]>::new();
 
     // First find every safe arrival time above from_point.time
@@ -325,13 +183,13 @@ where
         let mut any_pushed = true;
         while any_pushed {
             any_pushed = false;
-            for obs in &in_environment.obstacles {
-                let obs_traj = match &obs.trajectory {
+            for obs in in_environment.obstacles() {
+                let obs_traj = match obs.trajectory() {
                     Some(r) => r,
                     None => continue,
                 };
 
-                let critical_distance_squared = profile.critical_distance_squared_for(&obs.profile);
+                let critical_distance_squared = profile.critical_distance_squared_for(obs.profile());
                 let adjustment = adjust_candidate_time(
                     for_point,
                     candidate_time,
@@ -360,10 +218,10 @@ where
 
         // Look for the next soonest candidate time
         let mut next_candidate_time = None;
-        for obs in &in_environment.obstacles {
-            let min_distance_squared = profile.critical_distance_squared_for(&obs.profile);
+        for obs in in_environment.obstacles() {
+            let min_distance_squared = profile.critical_distance_squared_for(obs.profile());
 
-            let obs_traj = match &obs.trajectory {
+            let obs_traj = match obs.trajectory() {
                 Some(r) => r,
                 None => continue,
             };
@@ -395,15 +253,16 @@ where
 }
 
 #[inline]
-fn compute_safe_arrival_path<W>(
+fn compute_safe_arrival_path<Env, W>(
     from_point: WaypointR2,
     to_point: WaypointR2,
     arrival_time: TimePoint,
     ranked_hints: &SmallVec<[RankedHint; 16]>,
-    in_environment: &DynamicEnvironment<W>,
+    in_environment: &Env,
 ) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>>
 where
     W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
     let dx = to_point.position - from_point.position;
     let dist = dx.norm();
@@ -541,9 +400,9 @@ where
             // then we have found our path.
             let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
             let safe_hint_arrival = is_safe_segment(
-                (&from_point, &hint_arrival_wp), None, &in_environment
+                (&from_point, &hint_arrival_wp), None, in_environment
             ) && is_safe_segment(
-                (&hint_arrival_wp, &hint_wp), None, &in_environment
+                (&hint_arrival_wp, &hint_wp), None, in_environment
             );
             if safe_hint_arrival {
                 // We have found the desired path
@@ -894,28 +753,29 @@ where
 }
 
 #[inline]
-pub fn is_safe_segment<W>(
+pub fn is_safe_segment<Env, W>(
     line_a: (&WaypointR2, &WaypointR2),
     bb: Option<BoundingBox>,
-    in_environment: &DynamicEnvironment<W>,
+    in_environment: &Env,
 ) -> bool
 where
     W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
-    let profile = &in_environment.profile;
+    let profile = in_environment.agent_profile();
     let bb = match bb {
         Some(bb) => bb,
         None => BoundingBox::for_line(profile, line_a.0, line_a.1),
     };
 
-    for obs in &in_environment.obstacles {
-        let conflict_distance_squared = profile.conflict_distance_squared_for(&obs.profile);
-        let obs_traj = match &obs.trajectory {
+    for obs in in_environment.obstacles() {
+        let conflict_distance_squared = profile.conflict_distance_squared_for(obs.profile());
+        let obs_traj = match obs.trajectory() {
             Some(r) => r,
             None => continue,
         };
 
-        if !bb.overlaps(obs.bounding_box) {
+        if !bb.overlaps(obs.bounding_box().cloned()) {
             continue;
         }
 
@@ -931,7 +791,7 @@ where
             let line_b = (&wp0_b, &wp1_b);
 
             if !bb.overlaps(Some(
-                BoundingBox::for_line(&obs.profile, &wp0_b, &wp1_b)
+                BoundingBox::for_line(obs.profile(), &wp0_b, &wp1_b)
                 .inflated_by(1e-3)
             )) {
                 continue;
@@ -977,15 +837,16 @@ where
 }
 
 #[inline]
-fn compute_wait_hints<W>(
+fn compute_wait_hints<Env, W>(
     (wp0, wp1): (&WaypointR2, &WaypointR2),
     bb: &BoundingBox,
-    in_environment: &DynamicEnvironment<W>,
+    in_environment: &Env,
 ) -> SmallVec<[WaitHint; 16]>
 where
     W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
-    let profile = &in_environment.profile;
+    let profile = in_environment.agent_profile();
     let q = wp0.position;
     let r = wp1.position;
     let u = match (r -q).try_normalize(1e-8) {
@@ -1000,23 +861,23 @@ where
     let s_max = (r - q).norm();
 
     let mut wait_hints = SmallVec::new();
-    for (for_obstacle, obs) in in_environment.obstacles.iter().enumerate() {
-        if !bb.overlaps(obs.bounding_box) {
+    for (for_obstacle, obs) in in_environment.obstacles().into_iter().enumerate() {
+        if !bb.overlaps(obs.bounding_box().cloned()) {
             continue;
         }
 
-        let obs_traj = match &obs.trajectory {
+        let obs_traj = match obs.trajectory() {
             Some(t) => t,
             None => continue,
         };
 
-        let min_distance = profile.critical_distance_for(&obs.profile);
+        let min_distance = profile.critical_distance_for(obs.profile());
         let min_distance_squared = min_distance.powi(2);
         for [obs_wp0, obs_wp1] in obs_traj.iter().pairs() {
             let obs_wp0: WaypointR2 = obs_wp0.into();
             let obs_wp1: WaypointR2 = obs_wp1.into();
             if !bb.overlaps(Some(
-                BoundingBox::for_line(&obs.profile, &obs_wp0, &obs_wp1)
+                BoundingBox::for_line(obs.profile(), &obs_wp0, &obs_wp1)
                 .inflated_by(1e-3)
             )) {
                 continue;
@@ -1084,7 +945,7 @@ where
                     };
 
                     if dq.dot(&dq) >= min_distance_squared {
-                        let follow_distance = profile.follow_distance_for(&obs.profile);
+                        let follow_distance = profile.follow_distance_for(obs.profile());
                         let v_rel = agent_speed - aligned_speed;
                         let obs_s0 = dq.dot(&u);
                         let t0 = wp0.time.as_secs_f64();
@@ -1336,94 +1197,20 @@ impl From<WaitHint> for WaypointR2 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BoundingBox {
-    min: Vector2,
-    max: Vector2,
-}
-
-impl BoundingBox {
-    fn overlaps(&self, other: Option<BoundingBox>) -> bool {
-        let other = match other {
-            Some(b) => b,
-            None => return false,
-        };
-        if other.max.x < self.min.x {
-            return false;
-        }
-        if other.max.y < self.min.y {
-            return false;
-        }
-        if self.max.x < other.min.x {
-            return false;
-        }
-        if self.max.y < other.min.y {
-            return false;
-        }
-        return true;
-    }
-
-    fn for_point(p: Point) -> Self {
-        Self {
-            min: p.coords,
-            max: p.coords,
-        }
-    }
-
-    fn for_line(profile: &Profile, wp0: &WaypointR2, wp1: &WaypointR2) -> Self {
-        Self::for_point(wp0.position)
-        .incorporating(wp1.position)
-        .inflated_by(profile.footprint_radius)
-    }
-
-    fn for_trajectory<W>(profile: &Profile, trajectory: &Trajectory<W>) -> Self
-    where
-        W: Into<WaypointR2> + Waypoint,
-    {
-        let initial_bb = BoundingBox::for_point(
-            trajectory.initial_motion().clone().into().position
-        );
-
-        trajectory
-        .iter()
-        .fold(initial_bb, |b: Self, p| b.incorporating(p.into().position))
-        .inflated_by(profile.footprint_radius)
-    }
-
-    fn incorporating(self, p: Point) -> Self {
-        Self {
-            min: Vector2::new(
-                f64::min(self.min.x, p.x),
-                f64::min(self.min.y, p.y),
-            ),
-            max: Vector2::new(
-                f64::max(self.max.x, p.x),
-                f64::max(self.max.y, p.y),
-            ),
-        }
-    }
-
-    fn inflated_by(self, r: f64) -> Self {
-        Self {
-            min: self.min - Vector2::from_element(r),
-            max: self.max + Vector2::from_element(r),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::motion::{DynamicEnvironment, CircularProfile};
     use approx::assert_relative_eq;
 
     fn add_to_env(
         in_environment: &mut DynamicEnvironment<WaypointR2>,
-        profile: Profile,
+        profile: CircularProfile,
         (t0, x0, y0): (f64, f64, f64),
         (t1, x1, y1): (f64, f64, f64),
     ) {
         in_environment.obstacles.push(
-            DynamicObstacle::new(profile)
+            DynamicCircularObstacle::new(profile)
             .with_trajectory(Some(Trajectory::from_iter(
                 [
                     WaypointR2::new(TimePoint::from_secs_f64(t0), x0, y0),
@@ -1438,11 +1225,7 @@ mod tests {
         for footprint_radius in [
             0.001, 0.01, 0.1, 0.25, 0.5, 1.0, 1.1, 1.5,
         ] {
-            let profile = Profile {
-                footprint_radius,
-                safety_buffer: 0.5,
-                follow_buffer: 1.0,
-            };
+            let profile = CircularProfile::new(footprint_radius, 0.5, 1.0).unwrap();
 
             let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
             let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
@@ -1464,7 +1247,7 @@ mod tests {
             assert!(is_safe_segment(line_a, None, &in_environment));
 
             let t_wait_until = path[1].wait_for().unwrap().time_estimate;
-            let obs_traj = in_environment.obstacles.first().unwrap().trajectory.as_ref().unwrap();
+            let obs_traj = in_environment.obstacles.first().unwrap().trajectory().unwrap();
             let obs_p = obs_traj
                 .initial_motion()
                 .interpolate(obs_traj.finish_motion())
@@ -1482,11 +1265,7 @@ mod tests {
     #[test]
     fn test_follow_mid_vanish() {
         let footprint_radius = 0.5;
-        let profile = Profile {
-            footprint_radius,
-            safety_buffer: 0.5,
-            follow_buffer: 1.0,
-        };
+        let profile = CircularProfile::new(footprint_radius, 0.5, 1.0).unwrap();
 
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
         let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
@@ -1516,11 +1295,7 @@ mod tests {
     #[test]
     fn test_follow_cross_over() {
         let footprint_radius = 0.5;
-        let profile = Profile {
-            footprint_radius,
-            safety_buffer: 0.5,
-            follow_buffer: 1.0,
-        };
+        let profile = CircularProfile::new(footprint_radius, 0.5, 1.0).unwrap();
 
         let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
         let to_point = WaypointR2::new(TimePoint::from_secs_f64(10.0), 10.0, 0.0);
@@ -1544,11 +1319,7 @@ mod tests {
     #[test]
     fn test_temporary_blockers() {
         let footprint_radius = 0.5;
-        let profile = Profile {
-            footprint_radius,
-            safety_buffer: 0.5,
-            follow_buffer: 1.0,
-        };
+        let profile = CircularProfile::new(footprint_radius, 0.5, 1.0).unwrap();
 
         for t0 in [0.0, -22.3, 3.5, -1015.7, 476.2] {
             let dt = 10.0;
@@ -1617,11 +1388,7 @@ mod tests {
 
     #[test]
     fn test_cycling_endpoint_blocker() {
-        let profile = Profile {
-            footprint_radius: 0.25,
-            safety_buffer: 0.5,
-            follow_buffer: 1.0,
-        };
+        let profile = CircularProfile::new(0.25, 0.5, 1.0,).unwrap();
 
         for t0 in [0.0, -413.1, 17.6, -782.994, 4230.0] {
             let dt = 5.0;
@@ -1664,7 +1431,7 @@ mod tests {
                 let obs_traj = Trajectory::from_iter(obs_wps).unwrap();
                 let mut in_environment = DynamicEnvironment::new(profile);
                 in_environment.obstacles.push(
-                    DynamicObstacle::new(profile)
+                    DynamicCircularObstacle::new(profile)
                     .with_trajectory(Some(obs_traj.clone()))
                 );
 

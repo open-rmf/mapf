@@ -20,7 +20,7 @@ use crate::{
     motion::{
         r2::{
             Position, DiscreteSpaceTimeR2, StateR2 as StateR2,
-            LineFollow, LineFollowError, Waypoint,
+            LineFollow, LineFollowError, WaypointR2,
         },
     },
     domain::{
@@ -44,7 +44,7 @@ where
     G: Graph,
     G::Key: Key + Clone,
     G::Vertex: Borrow<Position>,
-    W: Weighted<StateR2<G::Key>, ArrayVec<Waypoint, 1>>,
+    W: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     Goal: SelfKey<Key=G::Key>,
 {
     type CostEstimate = W::Cost;

@@ -26,6 +26,7 @@ use std::{
 };
 
 /// A data structure for storing, managing, and growing a tree of nodes.
+#[derive(Debug)]
 pub struct Tree<Closed, Node, Cost> {
     /// The set of tree nodes that have been closed. Closing a node usually
     /// suggests that the node represents the shortest path to the node's state

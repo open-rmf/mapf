@@ -71,7 +71,7 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
             }
 
             let result = self.step()?;
-            if let Status::Incomplete = result {
+            if result.incomplete() {
                 continue;
             }
 

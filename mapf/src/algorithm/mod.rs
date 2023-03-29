@@ -23,7 +23,7 @@ pub use dijkstra::{Dijkstra, BackwardDijkstra};
 
 pub mod tree;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status<Solution> {
     Incomplete,
     Impossible,
@@ -63,7 +63,7 @@ impl<S> Status<S> {
         match self {
             Status::Solved(solution) => Ok(Status::Solved(op(solution)?)),
             Status::Incomplete => Ok(Status::Incomplete),
-            Status::Impossible => Ok(Status::Incomplete),
+            Status::Impossible => Ok(Status::Impossible),
         }
     }
 }

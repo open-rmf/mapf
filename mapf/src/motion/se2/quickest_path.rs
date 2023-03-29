@@ -21,7 +21,7 @@ use crate::{
         SpeedLimiter,
         se2::{
             DiscreteSpaceTimeSE2, StarburstSE2, StateSE2,
-            MaybeOriented, DifferentialDriveLineFollow, Waypoint,
+            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2,
         },
         r2::Positioned,
     },
@@ -41,7 +41,7 @@ use std::{
     sync::Arc,
 };
 
-type QuickestPathSearch<G, W, const R: u32> =
+pub type QuickestPathSearch<G, W, const R: u32> =
     UninformedSearch<
         IncrementalGraphMotion<
             DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
@@ -55,12 +55,13 @@ type QuickestPathSearch<G, W, const R: u32> =
         (),
     >;
 
-type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W, R>>>>;
+pub type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W, R>>>>;
 
+#[derive(Clone)]
 pub struct QuickestPathHeuristic<G, W, const R: u32>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<Waypoint, 1>>,
+    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
@@ -73,7 +74,7 @@ where
 impl<G, W, const R: u32> QuickestPathHeuristic<G, W, R>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<Waypoint, 1>>,
+    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
@@ -100,7 +101,7 @@ where
                         )
                         .with_initializer(StarburstSE2::for_start(graph.clone()))
                         .with_satisfier(
-                            StarburstSE2::for_goal(&graph)
+                            StarburstSE2::for_goal(graph)
                             .map_err(InformedSearchReversalError::Satisfier)?
                         )
                     )?
@@ -113,15 +114,15 @@ where
 impl<G, W, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeuristic<G, W, R>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<Waypoint, 1>>,
-    W::Cost: Clone + Ord + Add<W::Cost, Output=W::Cost> + std::fmt::Debug,
+    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
+    W::Cost: Clone + Ord + Add<W::Cost, Output=W::Cost>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
-    G::Key: Key + Clone + std::fmt::Debug,
+    G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
-    G::EdgeAttributes: SpeedLimiter + Clone + std::fmt::Debug,
-    State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
-    Goal: Borrow<StateSE2<G::Key, R>>,
+    G::EdgeAttributes: SpeedLimiter + Clone,
+    State: Borrow<StateSE2<G::Key, R>>,
+    Goal: Borrow<G::Key>,
 {
     type CostEstimate = W::Cost;
     type InformedError = QuickestPathHeuristicError;
@@ -131,9 +132,9 @@ where
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let start: &StateSE2<G::Key, R> = from_state.borrow();
-        let goal: &StateSE2<G::Key, R> = to_goal.borrow();
+        let goal: &G::Key = to_goal.borrow();
         self.planner
-            .plan(start.key.vertex.clone(), goal.key.vertex.clone())
+            .plan(start.key.vertex.clone(), goal.clone())
             .map_err(|_| QuickestPathHeuristicError::PlannerError)?
             .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)
             .map(|status| status.solution().map(|s| {
@@ -200,8 +201,8 @@ mod tests {
             DifferentialDriveLineFollow::new(1.0, 1.0).unwrap(),
         ).unwrap();
 
-        let start = StateSE2::new(0usize, Waypoint::new(TimePoint::zero(), 0.0, 0.0, 0.0));
-        let goal = StateSE2::new(8usize, Waypoint::new(TimePoint::zero(), 3.0, -2.0, 0.0));
+        let start = StateSE2::new(0usize, WaypointSE2::new(TimePoint::zero(), 0.0, 0.0, 0.0));
+        let goal = 8usize;
 
         let estimate = heuristic.estimate_remaining_cost(&start, &goal).unwrap().unwrap();
 

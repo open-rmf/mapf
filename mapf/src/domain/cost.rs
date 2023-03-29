@@ -21,6 +21,7 @@ use std::{
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign},
 };
+use num::traits::Zero;
 
 /// Use Cost(f64) or Cost(f32) to use floating point values as planner costs,
 /// giving them the traits of total ordering, full equivalence, and hashability.
@@ -98,6 +99,17 @@ macro_rules! cost_impl {
         impl DivAssign for Cost<$f> {
             fn div_assign(&mut self, rhs: Self) {
                 self.0 /= rhs.0;
+            }
+        }
+        impl Zero for Cost<$f> {
+            fn zero() -> Self {
+                Cost(0.0)
+            }
+            fn set_zero(&mut self) {
+                self.0 = 0.0
+            }
+            fn is_zero(&self) -> bool {
+                self.0 == 0.0
             }
         }
     };

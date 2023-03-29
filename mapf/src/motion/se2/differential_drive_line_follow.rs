@@ -15,10 +15,12 @@
  *
 */
 
-use super::{Point, Position, Waypoint, MaybeOriented, StateSE2};
+use super::{Point, Position, WaypointSE2, MaybeOriented, StateSE2};
 use crate::{
     motion::{
-        self, SpeedLimiter, Duration, DynamicEnvironment,
+        self, SpeedLimiter, Duration, SharedEnvironment, SharedEnvironmentError,
+        WithEnvironment, Environment, OverlayedDynamicEnvironment, CircularProfile,
+        DynamicCircularObstacle,
         r2::{self, MaybePositioned},
         conflict::{
             compute_safe_linear_paths, is_safe_segment,
@@ -136,13 +138,13 @@ impl DifferentialDriveLineFollow {
     /// use by other functions
     fn move_towards_target(
         &self,
-        from_waypoint: &Waypoint,
+        from_waypoint: &WaypointSE2,
         to_target: &Point,
         speed_limiter: &impl SpeedLimiter,
     ) -> Result<ReachedTarget, DifferentialDriveLineFollowError> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
-        let mut output: ArrayVec<Waypoint, 3> = ArrayVec::new();
+        let mut output: ArrayVec<WaypointSE2, 3> = ArrayVec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
 
@@ -164,7 +166,7 @@ impl DifferentialDriveLineFollow {
                 current_time += time_point::Duration::from_secs_f64(
                     self.direction * delta_yaw_abs / self.rotational_speed
                 );
-                output.push(Waypoint {
+                output.push(WaypointSE2 {
                     time: current_time,
                     position: Position::from_parts(
                         from_waypoint.position.translation,
@@ -177,7 +179,7 @@ impl DifferentialDriveLineFollow {
             current_time += time_point::Duration::from_secs_f64(
                 self.direction * distance / translational_speed
             );
-            output.push(Waypoint {
+            output.push(WaypointSE2 {
                 time: current_time,
                 position: Position::new(p1.coords, approach_yaw.angle()),
             });
@@ -192,26 +194,26 @@ impl DifferentialDriveLineFollow {
 }
 
 struct ReachedTarget {
-    waypoints: ArrayVec<Waypoint, 3>,
+    waypoints: ArrayVec<WaypointSE2, 3>,
     time: TimePoint,
     yaw: nalgebra::UnitComplex<f64>,
 }
 
-impl<Target, Guidance> Extrapolator<Waypoint, Target, Guidance> for DifferentialDriveLineFollow
+impl<Target, Guidance> Extrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
 {
-    type Extrapolation = ArrayVec<Waypoint, 3>;
+    type Extrapolation = ArrayVec<WaypointSE2, 3>;
     type ExtrapolationError = DifferentialDriveLineFollowError;
-    type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, Waypoint), Self::ExtrapolationError>>
+    type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, WaypointSE2), Self::ExtrapolationError>>
     where
         Target: 'a,
         Guidance: 'a;
 
     fn extrapolate<'a>(
         &'a self,
-        from_state: &Waypoint,
+        from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
     ) -> Self::ExtrapolationIter<'a>
@@ -237,7 +239,7 @@ where
                 arrival.time += Duration::from_secs_f64(
                     self.direction * delta_yaw_abs / self.rotational_speed
                 );
-                arrival.waypoints.push(Waypoint {
+                arrival.waypoints.push(WaypointSE2 {
                     time: arrival.time,
                     position: Position::new(
                         target_point.coords,
@@ -252,15 +254,15 @@ where
     }
 }
 
-impl<Target, Guidance> IncrementalExtrapolator<Waypoint, Target, Guidance> for DifferentialDriveLineFollow
+impl<Target, Guidance> IncrementalExtrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
 {
-    type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
+    type IncrementalExtrapolation = ArrayVec<WaypointSE2, 1>;
     type IncrementalExtrapolationError = DifferentialDriveLineFollowError;
     type IncrementalExtrapolationIter<'a> = Option<Result<
-        (Self::IncrementalExtrapolation, Waypoint, ExtrapolationProgress),
+        (Self::IncrementalExtrapolation, WaypointSE2, ExtrapolationProgress),
         Self::IncrementalExtrapolationError
     >>
     where
@@ -269,7 +271,7 @@ where
 
     fn incremental_extrapolate<'a>(
         &'a self,
-        from_state: &Waypoint,
+        from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
     ) -> Self::IncrementalExtrapolationIter<'a>
@@ -304,7 +306,7 @@ where
                     // Rotate towards the target orientation if we're not
                     // already facing it.
                     arrival.time += Duration::from_secs_f64(delta_yaw_abs / self.rotational_speed);
-                    let wp = Waypoint {
+                    let wp = WaypointSE2 {
                         time: arrival.time,
                         position: Position::new(
                             target_point.coords,
@@ -322,23 +324,23 @@ where
     }
 }
 
-impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for DifferentialDriveLineFollow {
+impl<const N: usize> Backtrack<WaypointSE2, ArrayVec<WaypointSE2, N>> for DifferentialDriveLineFollow {
     type BacktrackError = NoError;
     fn flip_endpoints(
         &self,
-        initial_reverse_state: &Waypoint,
-        final_reverse_state: &Waypoint,
-    ) -> Result<(Waypoint, Waypoint), Self::BacktrackError> {
+        initial_reverse_state: &WaypointSE2,
+        final_reverse_state: &WaypointSE2,
+    ) -> Result<(WaypointSE2, WaypointSE2), Self::BacktrackError> {
         flip_endpoint_times(initial_reverse_state, final_reverse_state)
     }
 
     fn backtrack(
         &self,
-        parent_forward_state: &Waypoint,
-        parent_reverse_state: &Waypoint,
-        reverse_action: &ArrayVec<Waypoint, N>,
-        child_reverse_state: &Waypoint,
-    ) -> Result<(ArrayVec<Waypoint, N>, Waypoint), Self::BacktrackError> {
+        parent_forward_state: &WaypointSE2,
+        parent_reverse_state: &WaypointSE2,
+        reverse_action: &ArrayVec<WaypointSE2, N>,
+        child_reverse_state: &WaypointSE2,
+    ) -> Result<(ArrayVec<WaypointSE2, N>, WaypointSE2), Self::BacktrackError> {
         backtrack_times(
             parent_forward_state,
             parent_reverse_state,
@@ -348,36 +350,36 @@ impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for Differential
     }
 }
 
-impl<Target, Guidance, W> ConflictAvoider<Waypoint, Target, Guidance, DynamicEnvironment<W>> for DifferentialDriveLineFollow
+impl<Target, Guidance, Env> ConflictAvoider<WaypointSE2, Target, Guidance, Env> for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
-    W: motion::Waypoint + Into<r2::Waypoint>,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<WaypointSE2>>,
 {
-    type AvoidanceAction = SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, Waypoint), Self::AvoidanceError>> + 'a
+    type AvoidanceAction = SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]>;
+    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointSE2), Self::AvoidanceError>> + 'a
     where
         Target: 'a,
         Guidance: 'a,
-        W: 'a;
+        Env: 'a;
 
     type AvoidanceError = DifferentialDriveLineFollowError;
 
     fn avoid_conflicts<'a>(
         &'a self,
-        from_state: &Waypoint,
+        from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
-        in_environment: &'a DynamicEnvironment<W>,
+        in_environment: &Env,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,
         Self::AvoidanceAction: 'a,
         Self::AvoidanceError: 'a,
-        Waypoint: 'a,
+        WaypointSE2: 'a,
         Target: 'a,
         Guidance: 'a,
-        DynamicEnvironment<W>: 'a,
+        Env: 'a,
     {
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(
@@ -409,57 +411,60 @@ where
         };
 
         let maybe_oriented = to_target.maybe_oriented();
-        let from_point: r2::Waypoint = from_state.clone().into();
-        let to_point: r2::Waypoint = to_position.into();
+        let from_point: r2::WaypointR2 = from_state.clone().into();
+        let to_point: r2::WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
-        ForkIter::Right(
-            compute_safe_linear_paths(from_point, to_point, in_environment)
-            .into_iter()
-            .filter_map(move |action| {
-                let mut action: SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]> =
-                    action
-                    .into_iter()
-                    .map(|a| a.map_movement(|wp| wp.with_yaw(yaw)))
-                    .collect();
-
-                if arrival.waypoints.len() > 1 {
-                    // Add the initial rotation to the safe actions
-                    action.insert(0, SafeAction::Move(arrival.waypoints[0]));
-                }
-
-                // TODO(@mxgrey): Remove these unwraps before targeting production.
-                let arrival_wp = *action.last().unwrap().movement().unwrap();
-                if let Some(target_yaw) = maybe_oriented {
-                    // TODO(@mxgrey): Consider how to de-duplicate this block
-                    // from the Extrapolator impl.
-                    let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
-                    if delta_yaw_abs > self.rotational_threshold {
-                        arrival.time += Duration::from_secs_f64(
-                            self.direction * delta_yaw_abs / self.rotational_speed
-                        );
-                        let final_wp = Waypoint {
-                            time: arrival.time,
-                            position: Position::new(
-                                target_point.coords,
-                                target_yaw.angle(),
-                            ),
-                        };
-
-                        if !is_safe_segment(
-                            (&arrival_wp.into(), &final_wp.into()), None, in_environment,
-                        ) {
-                            // We cannot rotate to face the target orientation
-                            // so this is not a valid action.
-                            return None;
-                        }
-                        action.push(SafeAction::Move(final_wp));
-                    }
-                }
-
-                let wp = *action.last().unwrap().movement().unwrap();
-                Some(Ok((action, wp)))
-            })
+        let paths: SmallVec<[_; 3]> = compute_safe_linear_paths(
+            from_point, to_point, in_environment
         )
+        .into_iter()
+        .filter_map(move |action| {
+            let mut action: SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]> =
+                action
+                .into_iter()
+                .map(|a| a.map_movement(|wp| wp.with_yaw(yaw)))
+                .collect();
+
+            if arrival.waypoints.len() > 1 {
+                // Add the initial rotation to the safe actions
+                action.insert(0, SafeAction::Move(arrival.waypoints[0]));
+            }
+
+            // TODO(@mxgrey): Remove these unwraps before targeting production.
+            let arrival_wp = *action.last().unwrap().movement().unwrap();
+            if let Some(target_yaw) = maybe_oriented {
+                // TODO(@mxgrey): Consider how to de-duplicate this block
+                // from the Extrapolator impl.
+                let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
+                if delta_yaw_abs > self.rotational_threshold {
+                    arrival.time += Duration::from_secs_f64(
+                        self.direction * delta_yaw_abs / self.rotational_speed
+                    );
+                    let final_wp = WaypointSE2 {
+                        time: arrival.time,
+                        position: Position::new(
+                            target_point.coords,
+                            target_yaw.angle(),
+                        ),
+                    };
+
+                    if !is_safe_segment(
+                        (&arrival_wp.into(), &final_wp.into()), None, in_environment,
+                    ) {
+                        // We cannot rotate to face the target orientation
+                        // so this is not a valid action.
+                        return None;
+                    }
+                    action.push(SafeAction::Move(final_wp));
+                }
+            }
+
+            let wp = *action.last().unwrap().movement().unwrap();
+            Some(Ok((action, wp)))
+        })
+        .collect();
+
+        ForkIter::Right(paths.into_iter())
     }
 }
 
@@ -482,15 +487,17 @@ impl Reversible for DifferentialDriveLineFollow {
 #[derive(Debug, Clone)]
 pub struct MergeIntoGoal<const R: u32>(pub DifferentialDriveLineFollow);
 
-impl<K, Target, const R: u32> Connectable<StateSE2<K, R>, ArrayVec<Waypoint, 3>, Target> for MergeIntoGoal<R>
+impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target> for MergeIntoGoal<R>
 where
+    Action: FromIterator<WaypointSE2>,
     Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
-    K: PartialEq + std::fmt::Debug,
+    K: PartialEq,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
-    type Connections<'a> = Option<Result<(ArrayVec<Waypoint, 3>, StateSE2<K, R>), Self::ConnectionError>>
+    type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
     where
         K: 'a,
+        Action: 'a,
         Target: 'a;
 
     fn connect<'a>(
@@ -502,7 +509,7 @@ where
         Self: 'a,
         Self::ConnectionError: 'a,
         StateSE2<K, R>: 'a,
-        ArrayVec<Waypoint, 3>: 'a,
+        Action: 'a,
         Target: 'a,
     {
         let goal_key = to_target.key();
@@ -526,10 +533,108 @@ where
 
         self.0.extrapolate(&from_state.waypoint, &target_pos, &())
         .map(|r|
-            r.map(|(action, wp)|
-                (action, StateSE2::new(from_state.key.vertex, wp))
-            )
+            r.map(|(action, wp)| {
+                let output_action: Action = action
+                    .into_iter()
+                    .collect();
+                (output_action, StateSE2::new(from_state.key.vertex, wp))
+            })
         )
+    }
+}
+
+#[derive(Clone)]
+pub struct SafeMergeIntoGoal<const R: u32> {
+    pub motion: DifferentialDriveLineFollow,
+    // TODO(@mxgrey): Think about how to generalize this
+    pub environment: SharedEnvironment<OverlayedDynamicEnvironment<WaypointSE2>>,
+}
+
+impl<const R: u32> SafeMergeIntoGoal<R> {
+    pub fn new(
+        motion: DifferentialDriveLineFollow,
+        environment: SharedEnvironment<OverlayedDynamicEnvironment<WaypointSE2>>,
+    ) -> Self {
+        Self { motion, environment }
+    }
+}
+
+impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target> for SafeMergeIntoGoal<R>
+where
+    Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>>,
+    Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
+    K: PartialEq,
+{
+    type ConnectionError = SafeMergeIntoGoalError;
+    type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
+    where
+        K: 'a,
+        Action: 'a,
+        Target: 'a;
+
+    fn connect<'a>(
+        &'a self,
+        from_state: StateSE2<K, R>,
+        to_target: &'a Target,
+    ) -> Self::Connections<'a>
+    where
+        Self: 'a,
+        Self::ConnectionError: 'a,
+        StateSE2<K, R>: 'a,
+        Action: 'a,
+        Target: 'a,
+    {
+        let mut prev_wp = from_state.waypoint;
+        let (action, finish_state): (ArrayVec<WaypointSE2, 3>, _) = match MergeIntoGoal(
+            self.motion).connect(from_state, to_target
+        )? {
+            Ok(connection) => connection,
+            Err(err) => return Some(Err(err.into())),
+        };
+
+        let reader = match self.environment.read_environment() {
+            Ok(env) => env,
+            Err(err) => return Some(Err(err.into())),
+        };
+        let env: &OverlayedDynamicEnvironment<WaypointSE2> = reader.borrow();
+
+        for wp in &action {
+            if !is_safe_segment(
+                (&prev_wp.into(), &wp.clone().into()), None, env,
+            ) {
+                return None;
+            }
+
+            prev_wp = *wp;
+        }
+
+        let action = action
+            .into_iter()
+            .map(|a| SafeAction::Move(a))
+            .collect();
+
+        Some(Ok((action, finish_state)))
+    }
+
+}
+
+#[derive(Debug, ThisError)]
+pub enum SafeMergeIntoGoalError {
+    #[error("An error happened in the line follower: {0}")]
+    Motion(DifferentialDriveLineFollowError),
+    #[error("An error happened in reading the environment: {0}")]
+    Environment(SharedEnvironmentError),
+}
+
+impl From<SharedEnvironmentError> for SafeMergeIntoGoalError {
+    fn from(value: SharedEnvironmentError) -> Self {
+        SafeMergeIntoGoalError::Environment(value)
+    }
+}
+
+impl From<DifferentialDriveLineFollowError> for SafeMergeIntoGoalError {
+    fn from(value: DifferentialDriveLineFollowError) -> Self {
+        SafeMergeIntoGoalError::Motion(value)
     }
 }
 
@@ -542,7 +647,7 @@ mod tests {
     #[test]
     fn test_extrapolation() {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
-        let wp0 = Waypoint::new(t0, 1.0, -3.0, -40f64.to_radians());
+        let wp0 = WaypointSE2::new(t0, 1.0, -3.0, -40f64.to_radians());
         let movement = DifferentialDriveLineFollow::new(2.0, 3.0)
             .expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());

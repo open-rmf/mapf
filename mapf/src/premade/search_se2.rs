@@ -34,8 +34,9 @@ const DEFAULT_RES: u32 = 360;
 /// rotations.
 ///
 /// WARNING: To have a final orientation in the goal conditions, this domain
-/// needs to be given to [`crate::a_star::AStarConnect`] instead of
-/// [`crate::a_star::AStar`], otherwise the planner will fail to reach the goal.
+/// needs to be given to [`crate::algorithm::AStarConnect`] instead of
+/// [`crate::algorithm::AStar`], otherwise the planner will fail to reach the
+/// goal.
 pub type SearchSE2<G> = InformedSearch<
     GraphMotion<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>, SharedGraph<G>, DifferentialDriveLineFollow>,
     TravelTimeCost,
@@ -50,9 +51,9 @@ pub type SearchSE2<G> = InformedSearch<
     MergeIntoGoal<DEFAULT_RES>,
 >;
 
-impl<G: Reversible> SearchSE2<G>
+impl<G> SearchSE2<G>
 where
-    G: Graph,
+    G: Graph + Reversible,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter,

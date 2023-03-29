@@ -18,35 +18,35 @@
 use super::{Position, Velocity};
 use crate::motion::{
     self, timed, InterpError, Interpolation, TimePoint,
-    se2::Waypoint as WaypointSE2,
+    se2::WaypointSE2 as WaypointSE2,
 };
 
 #[derive(Clone, Copy, PartialEq)]
-pub struct Waypoint {
+pub struct WaypointR2 {
     pub time: TimePoint,
     pub position: Position,
 }
 
-impl std::fmt::Debug for Waypoint {
+impl std::fmt::Debug for WaypointR2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f
-            .debug_struct("Waypoint")
+            .debug_struct("WaypointR2")
             .field("time", &self.time.as_secs_f64())
             .field("position", &self.position)
             .finish()
     }
 }
 
-impl Waypoint {
+impl WaypointR2 {
     pub fn new(time: TimePoint, x: f64, y: f64) -> Self {
-        Waypoint {
+        WaypointR2 {
             time,
             position: Position::new(x, y),
         }
     }
 
     pub fn new_f64(time: f64, x: f64, y: f64) -> Self {
-        Waypoint {
+        WaypointR2 {
             time: TimePoint::from_secs_f64(time),
             position: Position::new(x, y),
         }
@@ -57,7 +57,7 @@ impl Waypoint {
     }
 }
 
-impl timed::Timed for Waypoint {
+impl timed::Timed for WaypointR2 {
     fn time(&self) -> &TimePoint {
         return &self.time;
     }
@@ -67,7 +67,7 @@ impl timed::Timed for Waypoint {
     }
 }
 
-impl From<WaypointSE2> for Waypoint {
+impl From<WaypointSE2> for WaypointR2 {
     fn from(value: WaypointSE2) -> Self {
         Self::new(
             value.time,
@@ -77,19 +77,19 @@ impl From<WaypointSE2> for Waypoint {
     }
 }
 
-impl motion::Waypoint for Waypoint {
+impl motion::Waypoint for WaypointR2 {
     type Position = Position;
     type Velocity = Velocity;
 }
 
 pub struct Motion {
-    initial_wp: Waypoint,
-    final_wp: Waypoint,
+    initial_wp: WaypointR2,
+    final_wp: WaypointR2,
     v: Velocity,
 }
 
 impl Motion {
-    fn new(initial_wp: Waypoint, final_wp: Waypoint) -> Self {
+    fn new(initial_wp: WaypointR2, final_wp: WaypointR2) -> Self {
         let dx = final_wp.position - initial_wp.position;
         let dt = (final_wp.time - initial_wp.time).as_secs_f64();
         Self {
@@ -101,7 +101,6 @@ impl Motion {
 
     pub fn in_range(&self, time: &TimePoint) -> Result<(), InterpError> {
         if *time < self.initial_wp.time {
-            dbg!((time, self.initial_wp.time));
             return Err(InterpError::OutOfBounds{
                 range: [self.initial_wp.time, self.final_wp.time],
                 request: *time,
@@ -109,7 +108,6 @@ impl Motion {
         }
 
         if self.final_wp.time < *time {
-            dbg!((time, self.final_wp.time));
             return Err(InterpError::OutOfBounds{
                 range: [self.initial_wp.time, self.final_wp.time],
                 request: *time,
@@ -133,7 +131,7 @@ impl crate::motion::Motion<Position, Velocity> for Motion {
     }
 }
 
-impl Interpolation<Position, Velocity> for Waypoint {
+impl Interpolation<Position, Velocity> for WaypointR2 {
     type Motion = Motion;
 
     fn interpolate(&self, up_to: &Self) -> Self::Motion {
@@ -151,8 +149,8 @@ mod tests {
     fn test_interpolation() {
         let t0 = TimePoint::new(0);
         let t1 = t0 + Duration::from_secs_f64(2.0);
-        let wp0 = Waypoint::new(t0, 1.0, 5.0);
-        let wp1 = Waypoint::new(t1, 1.0, 10.0);
+        let wp0 = WaypointR2::new(t0, 1.0, 5.0);
+        let wp1 = WaypointR2::new(t1, 1.0, 10.0);
 
         let motion = wp0.interpolate(&wp1);
         let t = (t1 - t0) / 2_f64 + t0;

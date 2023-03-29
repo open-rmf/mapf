@@ -18,13 +18,13 @@
 use super::{Position, Vector, Velocity};
 use crate::motion::{self, timed, InterpError, Interpolation, TimePoint};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Waypoint {
+#[derive(Clone, Copy, PartialEq)]
+pub struct WaypointSE2 {
     pub time: TimePoint,
     pub position: Position,
 }
 
-impl timed::Timed for Waypoint {
+impl timed::Timed for WaypointSE2 {
     fn time(&self) -> &TimePoint {
         return &self.time;
     }
@@ -34,24 +34,41 @@ impl timed::Timed for Waypoint {
     }
 }
 
-impl Waypoint {
+impl WaypointSE2 {
     pub fn new(time: TimePoint, x: f64, y: f64, yaw: f64) -> Self {
-        return Waypoint {
+        return WaypointSE2 {
             time,
             position: Position::new(Vector::new(x, y), yaw),
         };
     }
+
+    pub fn new_f64(time: f64, x: f64, y: f64, yaw: f64) -> Self {
+        return WaypointSE2 {
+            time: TimePoint::from_secs_f64(time),
+            position: Position::new(Vector::new(x, y), yaw),
+        }
+    }
 }
 
-impl motion::Waypoint for Waypoint {
+impl std::fmt::Debug for WaypointSE2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f
+            .debug_struct("WaypointSE2")
+            .field("time", &self.time.as_secs_f64())
+            .field("position", &self.position)
+            .finish()
+    }
+}
+
+impl motion::Waypoint for WaypointSE2 {
     type Position = Position;
     type Velocity = Velocity;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Motion {
-    initial_wp: Waypoint,
-    final_wp: Waypoint,
+    initial_wp: WaypointSE2,
+    final_wp: WaypointSE2,
 }
 
 impl Motion {
@@ -105,7 +122,7 @@ impl motion::Motion<Position, Velocity> for Motion {
     }
 }
 
-impl Interpolation<Position, Velocity> for Waypoint {
+impl Interpolation<Position, Velocity> for WaypointSE2 {
     type Motion = Motion;
 
     fn interpolate(&self, up_to: &Self) -> Self::Motion {
@@ -126,8 +143,8 @@ mod tests {
     fn test_interpolation() {
         let t0 = time_point::TimePoint::new(0);
         let t1 = t0 + time_point::Duration::from_secs_f64(2.0);
-        let wp0 = Waypoint::new(t0, 1.0, 5.0, 10f64.to_radians());
-        let wp1 = Waypoint::new(t1, 1.0, 10.0, -20f64.to_radians());
+        let wp0 = WaypointSE2::new(t0, 1.0, 5.0, 10f64.to_radians());
+        let wp1 = WaypointSE2::new(t1, 1.0, 10.0, -20f64.to_radians());
 
         let motion = wp0.interpolate(&wp1);
         let t = (t1 - t0) / 2f64 + t0;

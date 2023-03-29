@@ -47,7 +47,7 @@ impl<Key> Default for DiscreteSpaceTimeR2<Key> {
 
 impl<Key> Space for DiscreteSpaceTimeR2<Key> {
     type State = StateR2<Key>;
-    type Waypoint = timed_position::Waypoint;
+    type Waypoint = timed_position::WaypointR2;
 
     type WaypointRef<'a> = &'a Self::Waypoint where Key: 'a;
     fn waypoint<'a>(&'a self, state: &'a Self::State) -> &'a Self::Waypoint {
@@ -95,7 +95,7 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
 #[derive(Debug, Clone, Copy)]
 pub struct StateR2<K> {
     pub key: K,
-    pub waypoint: timed_position::Waypoint,
+    pub waypoint: timed_position::WaypointR2,
 }
 
 impl<K> Borrow<K> for StateR2<K> {
@@ -135,7 +135,7 @@ impl<K, const R: u32> From<StateSE2<K, R>> for StateR2<K> {
     fn from(value: StateSE2<K, R>) -> Self {
         StateR2 {
             key: value.key.vertex,
-            waypoint: Waypoint {
+            waypoint: WaypointR2 {
                 time: value.waypoint.time,
                 position: value.waypoint.position.point(),
             }
@@ -194,7 +194,7 @@ where
                 let v: &Position = v.borrow().borrow();
                 StateR2 {
                     key: start.key,
-                    waypoint: Waypoint::new(start.time, v.x, v.y),
+                    waypoint: WaypointR2::new(start.time, v.x, v.y),
                 }
             })
         ]

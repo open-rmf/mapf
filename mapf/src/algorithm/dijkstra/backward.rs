@@ -123,7 +123,7 @@ where
     >,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost> + std::fmt::Debug,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -146,5 +146,84 @@ where
                 r.and_then(|path| path.backtrack(self.backward.domain()))
                     .map_err(DijkstraSearchError::Domain)
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        graph::{SimpleGraph, SharedGraph},
+        motion::{
+            se2::*,
+            TravelTimeCost,
+        },
+        templates::{UninformedSearch, IncrementalGraphMotion},
+        domain::KeyedCloser,
+    };
+    use std::sync::Arc;
+
+    #[test]
+    fn test_dijkstra_same_start_and_goal_se2() {
+        /*
+         * 0-----1-----2-----3
+         *           /       |
+         *         /         |
+         *       4-----5     6
+         *             |
+         *             |
+         *             7-----8
+         */
+
+        let graph = SharedGraph::new(SimpleGraph::from_iters(
+            [
+                Point::new(0.0, 0.0), // 0
+                Point::new(1.0, 0.0), // 1
+                Point::new(2.0, 0.0), // 2
+                Point::new(3.0, 0.0), // 3
+                Point::new(1.0, -1.0), // 4
+                Point::new(2.0, -1.0), // 5
+                Point::new(3.0, -1.0), // 6
+                Point::new(2.0, -2.0), // 7
+                Point::new(3.0, -2.0), // 8
+            ],
+            [
+                (0, 1, ()), (1, 0, ()),
+                (1, 2, ()), (2, 1, ()),
+                (2, 3, ()), (3, 2, ()),
+                (2, 4, ()), (4, 2, ()),
+                (3, 6, ()), (6, 3, ()),
+                (4, 5, ()), (5, 4, ()),
+                (5, 7, ()), (7, 5, ()),
+                (7, 8, ()), (8, 7, ()),
+            ]
+        ));
+
+        let motion = DifferentialDriveLineFollow::new(1.0, 1.0).unwrap();
+        let weight = TravelTimeCost(1.0);
+
+        let planner = quickest_path::QuickestPathPlanner::new(
+            Arc::new(
+                BackwardDijkstra::new(
+                    &UninformedSearch::new_uninformed(
+                        IncrementalGraphMotion {
+                            space: DiscreteSpaceTimeSE2::<usize, 100>::new(),
+                            graph: graph.clone(),
+                            extrapolator: motion,
+                        },
+                        weight,
+                        KeyedCloser(DiscreteSpaceTimeSE2::new()),
+                    )
+                    .with_initializer(StarburstSE2::for_start(graph.clone()))
+                    .with_satisfier(StarburstSE2::for_goal(graph).unwrap())
+                ).unwrap()
+            )
+        );
+
+        for i in 0..=8 {
+            let result = planner.plan(i, i).unwrap().solve().unwrap();
+            let solution = result.solution().unwrap();
+            assert!(solution.total_cost.0 == 0.0);
+        }
     }
 }

@@ -154,7 +154,7 @@ where
     + Closable<D::State>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost> + std::fmt::Debug,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -252,6 +252,8 @@ where
                             // expand from this top node.
                             continue;
                         }
+
+                        *prior = top_id;
                     }
 
                     for next in self.domain.choices(top.state.clone()) {
@@ -273,6 +275,7 @@ where
 
                     let top_key_ref = self.domain.key_for(top.state());
                     let top_key: &D::Key = top_key_ref.borrow();
+                    // TODO(@mxgrey): Why don't we use a hash set here?
                     for goal_key in &memory.goal_keys {
                         if *top_key == *goal_key {
                             // We have found a solution.
@@ -306,15 +309,20 @@ where
             }
 
             if let Some(solution) = tree_solution {
-                if let Some((best, cost)) = &mut memory.best_solution {
-                    if solution.total_cost < *cost {
-                        *best = tree_i;
-                        *cost = solution.total_cost.clone();
+                if mt.solution.as_ref().filter(
+                    |prior_solution| prior_solution.total_cost < solution.total_cost
+                ).is_none() {
+                    if let Some((best, cost)) = &mut memory.best_solution {
+                        if solution.total_cost < *cost {
+                            *best = tree_i;
+                            *cost = solution.total_cost.clone();
+                        }
+                    } else {
+                        memory.best_solution = Some((tree_i, solution.total_cost.clone()));
                     }
-                } else {
-                    memory.best_solution = Some((tree_i, solution.total_cost.clone()));
+
+                    mt.solution = Some(solution);
                 }
-                mt.solution = Some(solution);
             }
 
             memory.exhausted = exhausted;

@@ -141,3 +141,15 @@ impl<L: Iterator, R: Iterator<Item=L::Item>> Iterator for ForkIter<L, R> {
         }
     }
 }
+
+pub fn wrap_to_pi(mut value: f64) -> f64 {
+    while std::f64::consts::PI < value {
+        value -= 2.0*std::f64::consts::PI;
+    }
+
+    while value < -std::f64::consts::PI {
+        value += 2.0*std::f64::consts::PI;
+    }
+
+    value
+}

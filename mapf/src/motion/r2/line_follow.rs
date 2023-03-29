@@ -15,7 +15,7 @@
  *
 */
 
-use super::{Position, Waypoint, Positioned};
+use super::{Position, WaypointR2, Positioned};
 use crate::{
     motion::{
         self, SpeedLimiter, se2, Duration, DynamicEnvironment,
@@ -27,7 +27,7 @@ use crate::{
         ConflictAvoider,
     },
     error::{NoError, ThisError},
-    util::FlatResultMapTrait,
+    util::ForkIter,
 };
 use arrayvec::ArrayVec;
 use smallvec::SmallVec;
@@ -67,10 +67,10 @@ impl LineFollow {
 
     fn extrapolate_impl(
         &self,
-        from_waypoint: &Waypoint,
+        from_waypoint: &WaypointR2,
         to_target: &Position,
         speed_limit: Option<f64>,
-    ) -> Result<Option<(ArrayVec<Waypoint, 1>, Waypoint)>, LineFollowError> {
+    ) -> Result<(ArrayVec<WaypointR2, 1>, WaypointR2), LineFollowError> {
         let speed = if let Some(limit) = speed_limit {
             if limit <= 0.0 {
                 return Err(LineFollowError::InvalidSpeedLimit(limit));
@@ -84,32 +84,32 @@ impl LineFollow {
         if dx <= self.distance_threshold {
             // The target is close enough to the start point that we treat it
             // as though the agent is already there.
-            let wp = Waypoint::new(from_waypoint.time, to_target.x, to_target.y);
-            return Ok(Some((ArrayVec::new(), wp)));
+            let wp = WaypointR2::new(from_waypoint.time, to_target.x, to_target.y);
+            return Ok((ArrayVec::new(), wp));
         }
 
         let t = Duration::from_secs_f64(self.direction * dx / speed) + from_waypoint.time;
-        let wp = Waypoint::new(t, to_target.x, to_target.y);
+        let wp = WaypointR2::new(t, to_target.x, to_target.y);
         let extrap = ArrayVec::from_iter([wp]);
-        Ok(Some((extrap, wp)))
+        Ok((extrap, wp))
     }
 }
 
-impl<Target, Guidance> Extrapolator<Waypoint, Target, Guidance> for LineFollow
+impl<Target, Guidance> Extrapolator<WaypointR2, Target, Guidance> for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
 {
-    type Extrapolation = ArrayVec<Waypoint, 1>;
+    type Extrapolation = ArrayVec<WaypointR2, 1>;
     type ExtrapolationError = LineFollowError;
-    type ExtrapolationIter<'a> = Option<Result<(ArrayVec<Waypoint, 1>, Waypoint), LineFollowError>>
+    type ExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2), LineFollowError>>
     where
         Target: 'a,
         Guidance: 'a;
 
     fn extrapolate<'a>(
         &'a self,
-        from_state: &Waypoint,
+        from_state: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
     ) -> Self::ExtrapolationIter<'a>
@@ -117,25 +117,25 @@ where
         Target: 'a,
         Guidance: 'a,
     {
-        self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit()).transpose()
+        Some(self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit()))
     }
 }
 
-impl<Target, Guidance> IncrementalExtrapolator<Waypoint, Target, Guidance> for LineFollow
+impl<Target, Guidance> IncrementalExtrapolator<WaypointR2, Target, Guidance> for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
 {
-    type IncrementalExtrapolation = ArrayVec<Waypoint, 1>;
+    type IncrementalExtrapolation = ArrayVec<WaypointR2, 1>;
     type IncrementalExtrapolationError = LineFollowError;
-    type IncrementalExtrapolationIter<'a> = Option<Result<(ArrayVec<Waypoint, 1>, Waypoint, ExtrapolationProgress), LineFollowError>>
+    type IncrementalExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2, ExtrapolationProgress), LineFollowError>>
     where
         Target: 'a,
         Guidance: 'a;
 
     fn incremental_extrapolate<'a>(
         &'a self,
-        from_state: &Waypoint,
+        from_state: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
     ) -> Self::IncrementalExtrapolationIter<'a>
@@ -148,23 +148,23 @@ where
     }
 }
 
-impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for LineFollow {
+impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFollow {
     type BacktrackError = NoError;
     fn flip_endpoints(
         &self,
-        initial_reverse_state: &Waypoint,
-        final_reverse_state: &Waypoint,
-    ) -> Result<(Waypoint, Waypoint), Self::BacktrackError> {
+        initial_reverse_state: &WaypointR2,
+        final_reverse_state: &WaypointR2,
+    ) -> Result<(WaypointR2, WaypointR2), Self::BacktrackError> {
         flip_endpoint_times(initial_reverse_state, final_reverse_state)
     }
 
     fn backtrack(
         &self,
-        parent_forward_state: &Waypoint,
-        parent_reverse_state: &Waypoint,
-        reverse_action: &ArrayVec<Waypoint, N>,
-        child_reverse_state: &Waypoint,
-    ) -> Result<(ArrayVec<Waypoint, N>, Waypoint), Self::BacktrackError> {
+        parent_forward_state: &WaypointR2,
+        parent_reverse_state: &WaypointR2,
+        reverse_action: &ArrayVec<WaypointR2, N>,
+        child_reverse_state: &WaypointR2,
+    ) -> Result<(ArrayVec<WaypointR2, N>, WaypointR2), Self::BacktrackError> {
         backtrack_times(
             parent_forward_state,
             parent_reverse_state,
@@ -174,14 +174,14 @@ impl<const N: usize> Backtrack<Waypoint, ArrayVec<Waypoint, N>> for LineFollow {
     }
 }
 
-impl<Target, Guidance, W> ConflictAvoider<Waypoint, Target, Guidance, DynamicEnvironment<W>> for LineFollow
+impl<Target, Guidance, W> ConflictAvoider<WaypointR2, Target, Guidance, DynamicEnvironment<W>> for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
-    W: motion::Waypoint + Into<Waypoint>,
+    W: motion::Waypoint + Into<WaypointR2>,
 {
-    type AvoidanceAction = SmallVec<[SafeAction<Waypoint, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, Waypoint), LineFollowError>> + 'a
+    type AvoidanceAction = SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>;
+    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointR2), LineFollowError>> + 'a
     where
         Target: 'a,
         Guidance: 'a,
@@ -191,10 +191,10 @@ where
 
     fn avoid_conflicts<'a>(
         &'a self,
-        from_point: &Waypoint,
+        from_point: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
-        in_environment: &'a DynamicEnvironment<W>,
+        in_environment: &DynamicEnvironment<W>,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,
@@ -205,40 +205,41 @@ where
         DynamicEnvironment<W>: 'a
     {
         let from_point = *from_point;
-        self
-        .extrapolate(&from_point, to_target, with_guidance)
-        .into_iter()
-        .flat_map(move |r|
-            r.flat_result_map(move |(_, to_point)|
-                compute_safe_linear_paths(from_point, to_point, in_environment)
-                .into_iter()
+        let to_point = match self.extrapolate_impl(
+            &from_point, &to_target.point(), with_guidance.speed_limit(),
+        ) {
+            Ok(extrapolation) => extrapolation.1,
+            Err(err) => return ForkIter::Left(Some(Err(err)).into_iter()),
+        };
 
-                // TODO(@mxgrey): Should we pass an error if the last
-                // element in the action is not a movement? That should
-                // never happen, so being quiet about it might not be a
-                // good thing.
-                // .filter_map(move |action| {
-                //     let wp = action
-                //         .last()
-                //         .map(|m| m.movement())
-                //         .flatten()
-                //         .copied();
+        let paths = compute_safe_linear_paths(from_point, to_point, in_environment);
+        ForkIter::Right(
+            paths
+            .into_iter()
+            // TODO(@mxgrey): Should we pass an error if the last
+            // element in the action is not a movement? That should
+            // never happen, so being quiet about it might not be a
+            // good thing.
+            // .filter_map(move |action| {
+            //     let wp = action
+            //         .last()
+            //         .map(|m| m.movement())
+            //         .flatten()
+            //         .copied();
 
-                //     wp.map(move |wp| (action, wp))
-                // })
+            //     wp.map(move |wp| (action, wp))
+            // })
+            .map(move |action| {
+                // TODO(@mxgrey): Remove these unwraps before targeting
+                // production. Either use the map technique that's commented
+                // out above or return an error. I'm temporarily using
+                // unwrap to violently catch internal mistakes.
+                let wp = *action
+                    .last().unwrap()
+                    .movement().unwrap();
 
-                .map(move |action| {
-                    // TODO(@mxgrey): Remove these unwraps before targeting
-                    // production. Either use the map technique that's commented
-                    // out above or return an error. I'm temporarily using
-                    // unwrap to violently catch internal mistakes.
-                    let wp = *action
-                        .last().unwrap()
-                        .movement().unwrap();
-
-                    (action, wp)
-                })
-            )
+                Ok((action, wp))
+            })
         )
     }
 }
@@ -277,7 +278,7 @@ mod tests {
     #[test]
     fn test_extrapolation() {
         let t0 = TimePoint::from_secs_f64(3.0);
-        let wp0 = Waypoint::new(t0, 1.0, -3.0);
+        let wp0 = WaypointR2::new(t0, 1.0, -3.0);
         let movement = LineFollow::new(2.0).expect("Failed to make LineFollow");
         let p_target = Position::new(1.0, 3.0);
         let (waypoints, _) = movement
