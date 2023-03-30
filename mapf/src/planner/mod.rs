@@ -22,6 +22,7 @@ pub mod halt;
 pub use halt::Halt;
 
 use crate::{
+    domain::Configurable,
     algorithm::{Coherent, Solvable},
     error::Anyhow,
 };
@@ -166,6 +167,20 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         AbstractPlanner {
             implementation: Box::new(RefCell::new(self)),
         }
+    }
+}
+
+impl<A: Configurable, H> Configurable for Planner<A, H> {
+    type Configuration = A::Configuration;
+    type ConfigurationError = A::ConfigurationError;
+    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    where
+        F: FnOnce(Self::Configuration) -> Self::Configuration,
+    {
+        Ok(Self {
+            algorithm: self.algorithm.configure(f)?,
+            default_halting: self.default_halting,
+        })
     }
 }
 

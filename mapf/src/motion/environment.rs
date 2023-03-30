@@ -20,12 +20,10 @@ use crate::{
         Waypoint, Trajectory,
         r2::{WaypointR2, Point},
     },
-    error::ThisError,
 };
 use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock, RwLockReadGuard},
-    ops::Deref,
+    collections::{HashMap, hash_map::Entry},
+    sync::Arc,
 };
 
 type Vector2 = nalgebra::Vector2<f64>;
@@ -40,26 +38,6 @@ pub trait Environment<Profile, Obstacle> {
     fn agent_profile(&self) -> &Profile;
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a>;
-}
-
-pub trait WithEnvironment {
-    type Environment;
-
-    // TODO(@mxgrey): Is Deref really the best trait bound for this associated type?
-    type EnvironmentReader<'a>: Deref<Target=Self::Environment> + 'a
-    where
-        Self: 'a,
-        Self::Environment: 'a;
-    type EnvironmentError;
-
-    fn read_environment<'a>(
-        &'a self
-    ) -> Result<Self::EnvironmentReader<'a>, Self::EnvironmentError>;
-
-    fn modify_environment<U, F: FnOnce(&mut Self::Environment) -> U>(
-        &mut self,
-        op: F
-    ) -> Result<U, Self::EnvironmentError>;
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +66,7 @@ impl<W: Waypoint> DynamicEnvironment<W> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct DynamicEnvironmentOverlay<W: Waypoint> {
     pub profile: Option<CircularProfile>,
     pub obstacles: HashMap<usize, DynamicCircularObstacle<W>>,
@@ -99,6 +78,7 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OverlayedDynamicEnvironment<W: Waypoint> {
     base: Arc<DynamicEnvironment<W>>,
     overlay: DynamicEnvironmentOverlay<W>,
@@ -112,9 +92,6 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     /// Overlay an obstacle. If there was already an overlay for this obstacle
     /// then get back the previous overlay.
     ///
-    /// Passing in None will revert the obstacle to the base version. To remove
-    /// the presence of an obstacle pass in `Some(obstacle.with_trajectory(None))`.
-    ///
     /// This will return an `Err` if the base environment does not have an entry
     /// for the obstacle. Any obstacle overlays that do not exist in the base
     /// environment will not be iterated over when calling [`Environment::obstacles`].
@@ -124,13 +101,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     pub fn overlay_obstacle(
         &mut self,
         index: usize,
-        obstacle: Option<DynamicCircularObstacle<W>>,
+        obstacle: DynamicCircularObstacle<W>,
     ) -> Result<Option<DynamicCircularObstacle<W>>, Option<DynamicCircularObstacle<W>>> {
-        let r = match obstacle {
-            Some(obstacle) => self.overlay.obstacles.insert(index, obstacle),
-            None => self.overlay.obstacles.remove(&index),
-        };
-
+        let r = self.overlay.obstacles.insert(index, obstacle);
         if index < self.base.obstacles.len() {
             Ok(r)
         } else {
@@ -138,8 +111,89 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         }
     }
 
-    pub fn change_base(&mut self, base: Arc<DynamicEnvironment<W>>) {
+    /// Revert an obstacle to its base version, removing it from the overlay.
+    ///
+    /// This will return an `Err` if the base environment does not have an entry
+    /// for the obstacle, but you will still receive a copy of the obstacle that
+    /// existed in the overlay if it was there.
+    pub fn revert_obstacle(
+        &mut self,
+        index: usize,
+    ) -> Result<Option<DynamicCircularObstacle<W>>, Option<DynamicCircularObstacle<W>>> {
+        let r = self.overlay.obstacles.remove(&index);
+        if index < self.base.obstacles.len() {
+            Ok(r)
+        } else {
+            Err(r)
+        }
+    }
+
+    /// Overlay a trajectory for the specified obstacle. If there was already an
+    /// overlay for the obstacle, get back the trajectory that was there.
+    ///
+    /// Passing in [`None`] will make it appear that the obstacle has no presence
+    /// in the world.
+    ///
+    /// If the base environment does not have a matching obstacle entry, this
+    /// will return `Err`. If the overlay also does not have a matching obstacle
+    /// entry then the input trajectory will be passed back in the `Err` and it
+    /// will not be retained in the overlay at all. This is because we cannot
+    /// infer a profile for the obstacle if it is not already present in either
+    /// the base environment or in the overlay.
+    pub fn overlay_trajectory(
+        &mut self,
+        index: usize,
+        trajectory: Option<Trajectory<W>>,
+    ) -> Result<Option<Option<Trajectory<W>>>, Option<Option<Trajectory<W>>>>
+    where
+        W: Into<WaypointR2>,
+    {
+        let prior_trajectory = match self.overlay.obstacles.entry(index) {
+            Entry::Occupied(mut obstacle) => {
+                let obstacle = obstacle.get_mut();
+                let prior = obstacle.trajectory.take();
+                obstacle.set_trajectory(trajectory);
+                Some(prior)
+            }
+            Entry::Vacant(vacant) => {
+                let base_obs = match self.base.obstacles.get(index) {
+                    Some(base_obs) => base_obs,
+                    None => return Err(Some(trajectory)),
+                };
+                let overlay_obs = DynamicCircularObstacle::new(base_obs.profile)
+                    .with_trajectory(trajectory);
+                vacant.insert(overlay_obs);
+                None
+            }
+        };
+
+        if index < self.base.obstacles.len() {
+            Ok(prior_trajectory)
+        } else {
+            Err(prior_trajectory)
+        }
+    }
+
+    /// Set the base environment to a specific shared environment.
+    pub fn set_base(&mut self, base: Arc<DynamicEnvironment<W>>) {
         self.base = base;
+    }
+
+    /// Change something within the base environment. This will avoid cloning
+    /// the base environment if it is not being shared, but will incur a cloning
+    /// cost if it is being shared.
+    pub fn modify_base<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut DynamicEnvironment<W>),
+    {
+        let mut env = match Arc::try_unwrap(self.base) {
+            Ok(base) => base,
+            Err(arc_base) => (*arc_base).clone()
+        };
+
+        f(&mut env);
+        self.base = Arc::new(env);
+        self
     }
 }
 
@@ -162,47 +216,23 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>> for O
     }
 }
 
-pub struct SharedEnvironment<Env> {
-    // TODO(@mxgrey): It might be possible to implement this using RefCell
-    // instead of RwLock if users are only allowed to modify the environment
-    // using modify_environment since that function requires mutable access.
-    inner: Arc<RwLock<Env>>,
-}
-
-impl<Env> SharedEnvironment<Env> {
-    pub fn new(env: Env) -> Self {
-        Self { inner: Arc::new(RwLock::new(env)) }
-    }
-}
-
-impl<Env> Clone for SharedEnvironment<Env> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
-impl<Env> WithEnvironment for SharedEnvironment<Env> {
-    type Environment = Env;
-    type EnvironmentReader<'a> = RwLockReadGuard<'a, Env>
+impl<Env, Profile, Obstacle> Environment<Profile, Obstacle> for Arc<Env>
+where
+    Env: Environment<Profile, Obstacle>
+{
+    type Obstacles<'a> = Env::Obstacles<'a>
     where
-        Env: 'a;
-    type EnvironmentError = SharedEnvironmentError;
+        Env: 'a,
+        Profile: 'a,
+        Obstacle: 'a;
 
-    fn read_environment<'a>(&'a self) -> Result<Self::EnvironmentReader<'a>, Self::EnvironmentError> {
-        self.inner.read().map_err(|_| SharedEnvironmentError::PoisonedMutex)
+    fn agent_profile(&self) -> &Profile {
+        self.as_ref().agent_profile()
     }
 
-    fn modify_environment<U, F: FnOnce(&mut Env) -> U>(&mut self, op: F) -> Result<U, Self::EnvironmentError> {
-        let mut guard = self.inner.write()
-            .map_err(|_| SharedEnvironmentError::PoisonedMutex)?;
-        Ok(op(&mut guard))
+    fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
+        self.as_ref().obstacles()
     }
-}
-
-#[derive(Debug, ThisError)]
-pub enum SharedEnvironmentError {
-    #[error("The mutex used by the shared environment has been poisoned")]
-    PoisonedMutex,
 }
 
 #[derive(Debug, Clone, Copy)]

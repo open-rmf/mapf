@@ -18,9 +18,8 @@
 use super::{Point, Position, WaypointSE2, MaybeOriented, StateSE2};
 use crate::{
     motion::{
-        self, SpeedLimiter, Duration, SharedEnvironment, SharedEnvironmentError,
-        WithEnvironment, Environment, OverlayedDynamicEnvironment, CircularProfile,
-        DynamicCircularObstacle,
+        self, SpeedLimiter, Duration, Environment, OverlayedDynamicEnvironment,
+        CircularProfile, DynamicCircularObstacle,
         r2::{self, MaybePositioned},
         conflict::{
             compute_safe_linear_paths, is_safe_segment,
@@ -38,7 +37,10 @@ use crate::{
 use arrayvec::ArrayVec;
 use smallvec::SmallVec;
 use time_point::TimePoint;
-use std::borrow::Borrow;
+use std::{
+    sync::Arc,
+    borrow::Borrow,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DifferentialDriveLineFollow {
@@ -547,13 +549,13 @@ where
 pub struct SafeMergeIntoGoal<const R: u32> {
     pub motion: DifferentialDriveLineFollow,
     // TODO(@mxgrey): Think about how to generalize this
-    pub environment: SharedEnvironment<OverlayedDynamicEnvironment<WaypointSE2>>,
+    pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
 }
 
 impl<const R: u32> SafeMergeIntoGoal<R> {
     pub fn new(
         motion: DifferentialDriveLineFollow,
-        environment: SharedEnvironment<OverlayedDynamicEnvironment<WaypointSE2>>,
+        environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
     ) -> Self {
         Self { motion, environment }
     }
@@ -565,7 +567,7 @@ where
     Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
     K: PartialEq,
 {
-    type ConnectionError = SafeMergeIntoGoalError;
+    type ConnectionError = DifferentialDriveLineFollowError;
     type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
     where
         K: 'a,
@@ -589,18 +591,12 @@ where
             self.motion).connect(from_state, to_target
         )? {
             Ok(connection) => connection,
-            Err(err) => return Some(Err(err.into())),
+            Err(err) => return Some(Err(err)),
         };
-
-        let reader = match self.environment.read_environment() {
-            Ok(env) => env,
-            Err(err) => return Some(Err(err.into())),
-        };
-        let env: &OverlayedDynamicEnvironment<WaypointSE2> = reader.borrow();
 
         for wp in &action {
             if !is_safe_segment(
-                (&prev_wp.into(), &wp.clone().into()), None, env,
+                (&prev_wp.into(), &wp.clone().into()), None, &self.environment,
             ) {
                 return None;
             }
@@ -616,26 +612,6 @@ where
         Some(Ok((action, finish_state)))
     }
 
-}
-
-#[derive(Debug, ThisError)]
-pub enum SafeMergeIntoGoalError {
-    #[error("An error happened in the line follower: {0}")]
-    Motion(DifferentialDriveLineFollowError),
-    #[error("An error happened in reading the environment: {0}")]
-    Environment(SharedEnvironmentError),
-}
-
-impl From<SharedEnvironmentError> for SafeMergeIntoGoalError {
-    fn from(value: SharedEnvironmentError) -> Self {
-        SafeMergeIntoGoalError::Environment(value)
-    }
-}
-
-impl From<DifferentialDriveLineFollowError> for SafeMergeIntoGoalError {
-    fn from(value: DifferentialDriveLineFollowError) -> Self {
-        SafeMergeIntoGoalError::Motion(value)
-    }
 }
 
 #[cfg(test)]

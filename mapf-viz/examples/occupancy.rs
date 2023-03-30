@@ -24,7 +24,7 @@ use iced::{
     executor, keyboard,
 };
 use iced_native;
-use mapf::occupancy::{Grid, SparseGrid, Cell, CornerStatus};
+use mapf::graph::occupancy::{Grid, SparseGrid, Cell, CornerStatus};
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
     spatial_canvas::SpatialCanvas,
@@ -295,7 +295,7 @@ enum Message {
     RobotSizeSlide(u32),
     ResetView,
     EventOccurred(iced_native::Event),
-    CornerSelected(mapf::occupancy::Cell, bool),
+    CornerSelected(Cell, bool),
 }
 
 fn main() -> iced::Result {

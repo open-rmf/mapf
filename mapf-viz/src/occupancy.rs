@@ -27,7 +27,7 @@ use iced::{
     },
     keyboard, mouse, Rectangle,
 };
-use mapf::occupancy::{Cell, Grid, Point, SparseGrid, Visibility};
+use mapf::graph::occupancy::{Cell, Grid, Point, SparseGrid, Visibility};
 use std::collections::HashMap;
 
 #[derive(Derivative)]

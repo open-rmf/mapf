@@ -23,7 +23,7 @@ use crate::{
     },
     domain::{
         Domain, Activity, Weighted, Initializable, Informed, Satisfiable,
-        Closable, ClosedSet, CloseResult, Connectable,
+        Closable, ClosedSet, CloseResult, Connectable, Configurable,
     },
 };
 use std::ops::Add;
@@ -335,6 +335,17 @@ where
     }
 }
 
+impl<D: Configurable> Configurable for AStar<D> {
+    type Configuration = D::Configuration;
+    type ConfigurationError = D::ConfigurationError;
+    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    where
+        F: FnOnce(Self::Configuration) -> Self::Configuration,
+    {
+        Ok(AStar(self.0.configure(f)?))
+    }
+}
+
 impl<D> Algorithm for AStarConnect<D>
 where
     D: Domain
@@ -423,6 +434,18 @@ where
         Ok(Status::Incomplete)
     }
 }
+
+impl<D: Configurable> Configurable for AStarConnect<D> {
+    type Configuration = D::Configuration;
+    type ConfigurationError = D::ConfigurationError;
+    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    where
+        F: FnOnce(Self::Configuration) -> Self::Configuration,
+    {
+        Ok(AStarConnect(self.0.configure(f)?))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Node<State, Action, Cost> {
     state: State,

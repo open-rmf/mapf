@@ -15,12 +15,7 @@
  *
 */
 
-use crate::{
-    domain::{Extrapolator, ConflictAvoider},
-    motion::WithEnvironment,
-    error::ThisError,
-    util::ForkIter,
-};
+use crate::domain::{Extrapolator, ConflictAvoider};
 
 #[derive(Debug, Clone)]
 pub struct ConflictAvoidance<Avoider, Environment> {
@@ -30,11 +25,10 @@ pub struct ConflictAvoidance<Avoider, Environment> {
 
 impl<Avoider, Env, State, Target, Guidance> Extrapolator<State, Target, Guidance> for ConflictAvoidance<Avoider, Env>
 where
-    Env: WithEnvironment,
-    Avoider: ConflictAvoider<State, Target, Guidance, Env::Environment>,
+    Avoider: ConflictAvoider<State, Target, Guidance, Env>,
 {
     type Extrapolation = Avoider::AvoidanceAction;
-    type ExtrapolationError = ConflictAvoidanceError<Avoider::AvoidanceError, Env::EnvironmentError>;
+    type ExtrapolationError = Avoider::AvoidanceError;
     type ExtrapolationIter<'a> = impl Iterator<Item=Result<(Avoider::AvoidanceAction, State), Self::ExtrapolationError>> + 'a
     where
         Self: 'a,
@@ -58,30 +52,14 @@ where
         Target: 'a,
         Guidance: 'a,
     {
-        let env = match self.environment.read_environment().map_err(ConflictAvoidanceError::Environment) {
-            Ok(env) => env,
-            Err(err) => return ForkIter::Left(Some(Err(err)).into_iter()),
-        };
-
-        ForkIter::Right(
-            self
-            .avoider
-            .avoid_conflicts(
-                from_state,
-                to_target,
-                with_guidance,
-                &env,
-            )
-            .into_iter()
-            .map(|r| r.map_err(ConflictAvoidanceError::Avoider))
+        self
+        .avoider
+        .avoid_conflicts(
+            from_state,
+            to_target,
+            with_guidance,
+            &self.environment,
         )
+        .into_iter()
     }
-}
-
-#[derive(Debug, ThisError)]
-pub enum ConflictAvoidanceError<A, E> {
-    #[error("An error occurred in the avoider: {0}")]
-    Avoider(A),
-    #[error("An error occurred in the environment reader: {0}")]
-    Environment(E),
 }

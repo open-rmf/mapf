@@ -19,6 +19,7 @@ use crate::{
     domain::{
         Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
         ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
+        Configurable,
     },
     algorithm::{Algorithm, Coherent, Solvable, Status, tree::*},
     error::ThisError,
@@ -39,7 +40,7 @@ where
     + Closable<D::State>
 {
     domain: D,
-    cache: Mutex<Cache<D>>,
+    cache: Arc<Mutex<Cache<D>>>,
 }
 
 impl<D> Algorithm for Dijkstra<D>
@@ -64,7 +65,7 @@ where
     pub fn new(domain: D) -> Self {
         Self {
             domain,
-            cache: Mutex::new(Default::default()),
+            cache: Arc::new(Mutex::new(Default::default())),
         }
     }
 
@@ -329,6 +330,26 @@ where
         }
 
         return Ok(Status::Incomplete);
+    }
+}
+
+impl<D: Configurable> Configurable for Dijkstra<D>
+where
+    D: Domain
+    + Keyed
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>
+{
+    type Configuration = D::Configuration;
+    type ConfigurationError = D::ConfigurationError;
+    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    where
+        F: FnOnce(Self::Configuration) -> Self::Configuration,
+    {
+        // We have to assume that all caches are invalidated when the domain
+        // gets configured.
+        Ok(Self::new(self.domain.configure(f)?))
     }
 }
 
