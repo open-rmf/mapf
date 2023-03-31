@@ -58,7 +58,7 @@ use mapf::{
     },
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, Algorithm, SearchStatus},
+    algorithm::{AStarConnect, Algorithm, SearchStatus, tree::NodeContainer},
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -651,6 +651,7 @@ spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, En
 
 type GraphKey = Cell;
 type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>>>;
+type TreeTicket = mapf::algorithm::tree::TreeQueueTicket<mapf::domain::Cost<f64>>;
 
 struct App {
     robot_size_slider: slider::State,
@@ -666,7 +667,7 @@ struct App {
     step_progress: button::State,
     expander: Planner<MyAlgo, ()>,
     debug_on: bool,
-    memory: <MyAlgo as Algorithm>::Memory,
+    memory: Vec<TreeTicket>,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
 }
@@ -743,20 +744,23 @@ impl App {
             self.debug_step_count += 1;
             if let SearchStatus::Solved(solution) = search.step().unwrap() {
                 println!("Solution: {:#?}", solution);
-                self.canvas.program.layers.3.solution = solution.motion().clone();
+                self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap();
                 self.debug_node_selected = None;
                 self.search = None;
-                self.expander = None;
-                self.memory.clear();
             } else {
-                self.memory = self.search.as_ref().unwrap().memory()
-                    .queue().clone().into_iter_sorted()
-                    .map(|n| n.0.0.clone()).collect();
+                self.memory = self.search.as_ref().unwrap().memory().0
+                    .queue.clone().into_iter_sorted()
+                    .map(|n| n.0.clone()).collect();
 
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.memory.get(selection) {
-                        if let Some(expander) = &self.expander {
-                            self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
+                        if let Some(search) = &self.search {
+                            self.canvas.program.layers.3.solution = search
+                                .memory().0.arena
+                                .retrace(node.node_id)
+                                .unwrap()
+                                .make_trajectory()
+                                .unwrap();
                         }
                     }
                 }
@@ -865,6 +869,9 @@ impl App {
                         orientation: None,
                     },
                 ).unwrap();
+
+
+
 
                 self.debug_step_count = 0;
                 if self.debug_on {

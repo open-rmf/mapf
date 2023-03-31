@@ -61,8 +61,8 @@ where
     S::Key: Borrow<G::Key>,
     S::State: Clone,
     G: Graph,
-    G::Key: Clone + 'static,
-    G::EdgeAttributes: Clone + 'static,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
     E::ExtrapolationError: StdError,
 {

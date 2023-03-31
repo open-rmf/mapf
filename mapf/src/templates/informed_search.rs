@@ -369,19 +369,15 @@ where
 
 impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::ActivityAction, Goal> for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State> + 'static,
-    W: 'static,
-    H: 'static,
-    X: 'static,
-    I: 'static,
-    S: 'static,
+    A: Domain + Activity<A::State>,
     A::State: Clone,
-    C: Connectable<A::State, A::ActivityAction, Goal> + 'static,
+    C: Connectable<A::State, A::ActivityAction, Goal>,
     C::ConnectionError: Into<Anyhow>,
 {
     type ConnectionError = anyhow::Error;
     type Connections<'a> = impl IntoIterator<Item=Result<(A::ActivityAction, A::State), Self::ConnectionError>> + 'a
     where
+        Self: 'a,
         Self::ConnectionError: 'a,
         A::State: 'a,
         A::ActivityAction: 'a,

@@ -107,7 +107,7 @@ pub trait TreeNode {
     fn queue_evaluation(&self) -> Self::Cost;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct TreeQueueTicket<Cost> {
     pub evaluation: Cost,
     pub node_id: usize,

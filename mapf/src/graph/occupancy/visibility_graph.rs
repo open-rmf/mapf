@@ -153,9 +153,8 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
             })
             .chain({
                 let interest = self.visibility_of_interest.get(&from_cell);
-                [interest]
+                interest
                     .into_iter()
-                    .filter_map(|x| x)
                     .flat_map(|x| x)
                     .map(move |point_of_interest| (from_cell, *point_of_interest))
                     .chain(
@@ -183,6 +182,48 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
                             }),
                     )
             })
+    }
+
+    type LazyEdgeIter<'a> = Option<(Cell, Cell)> where G: 'a;
+    fn lazy_edges_between<'a>(
+        &'a self,
+        from_key: &Self::Key,
+        to_key: &Self::Key
+    ) -> Self::LazyEdgeIter<'a>
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a
+    {
+        if self.visibility.points.contains_key(to_key) || self.points_of_interest.contains(to_key) {
+            // No need to return anything because the target is in the set of
+            // points that will be returned by edges_from_vertex(from_key)
+            return None;
+        }
+
+        let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
+        let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
+        for p in [from_p, to_p] {
+            if self.visibility.grid()
+                .is_square_occupied(p, 2.0 * self.visibility.agent_radius)
+                .is_some()
+            {
+                // An endpoint cell is occupied so we cannot generate an edge
+                // between the two cells.
+                return None;
+            }
+        }
+
+        if self.visibility.grid().is_sweep_occupied(
+            from_p, to_p, 2.0 * self.visibility.agent_radius()
+        ).is_some() {
+            // A point along the sweep between the cells is occupied so we
+            // cannot generate an edge between teh two cells.
+            return None;
+        }
+
+        return Some((*from_key, *to_key));
     }
 }
 
@@ -237,7 +278,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         }
     }
 
-    fn edges_from_vertex<'a, 'b>(&'a self, from_cell: &'b Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a>(&'a self, from_cell: &Self::Key) -> Self::EdgeIter<'a>
     where
         Cell: 'a,
     {
@@ -277,9 +318,8 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
                     )
                     .chain({
                         let interest = self.visibility_of_interest.get(&from_cell);
-                        [interest]
+                        interest
                             .into_iter()
-                            .filter_map(|x| x)
                             .flat_map(|x| x)
                             .map(move |point_of_interest| (from_cell, *point_of_interest))
                             .chain([interest].into_iter().filter(|x| x.is_none()).flat_map(
@@ -304,6 +344,49 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
                             ))
                     })
             })
+    }
+
+    type LazyEdgeIter<'a> = Option<(Cell, Cell)> where G: 'a;
+
+    fn lazy_edges_between<'a>(
+        &'a self,
+        from_key: &Self::Key,
+        to_key: &Self::Key
+    ) -> Self::LazyEdgeIter<'a>
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a
+    {
+        if self.visibility.points.contains_key(to_key) || self.points_of_interest.contains(to_key) {
+            // No need to return anything because the target is in the set of
+            // points that will be returned by edges_from_vertex(from_key)
+            return None;
+        }
+
+        let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
+        let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
+        for p in [from_p, to_p] {
+            if self.visibility.grid()
+                .is_square_occupied(p, 2.0 * self.visibility.agent_radius)
+                .is_some()
+            {
+                // An endpoint cell is occupied so we cannot generate an edge
+                // between the two cells.
+                return None;
+            }
+        }
+
+        if self.visibility.grid().is_sweep_occupied(
+            from_p, to_p, 2.0 * self.visibility.agent_radius()
+        ).is_some() {
+            // A point along the sweep between the cells is occupied so we
+            // cannot generate an edge between teh two cells.
+            return None;
+        }
+
+        return Some((*from_key, *to_key));
     }
 }
 

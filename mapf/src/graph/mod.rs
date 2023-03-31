@@ -31,11 +31,8 @@ pub trait Edge<Key, Attributes> {
     fn attributes(&self) -> &Attributes;
 }
 
-// TODO(@mxgrey): Consider if it there is a way to assign a lifetime bound to Vertex
-// and Edge so that vertex() and edges_from_vertex() could choose between
-// returning a concrete value or a reference. For some types of Graph it would
-// be more efficient to return a reference type, but for other types of Graph it
-// is not possible to return a reference.
+/// The basic trait for Graphs to implement. Some algorithms might require
+/// additional traits, such as [`crate::domain::Reversible`] or [`WithPointsOfInterest`].
 pub trait Graph {
     /// What type of data is stored at each vertex of the graph.
     type Vertex;
@@ -78,10 +75,42 @@ pub trait Graph {
 
     /// Get the vertex associated with `key`. If no such vertex exists, this
     /// will return None.
-    fn vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Option<Self::VertexRef<'a>>;
+    fn vertex<'a>(&'a self, key: &Self::Key) -> Option<Self::VertexRef<'a>>;
 
     /// Get the edges that originate from the given vertex.
-    fn edges_from_vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a>(&'a self, key: &Self::Key) -> Self::EdgeIter<'a>
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a;
+
+    type LazyEdgeIter<'a>: IntoIterator<Item=Self::Edge<'a>> + 'a
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a;
+
+    /// Get the "lazy" edges that exist between from_key and to_key. Lazy Graphs
+    /// ("lazy" in the sense of lazy evaluation) can cover more space with less
+    /// branching by not returning all possible edges in the `edges_from_vertex`
+    /// function and instead only returning edges that lead to critical vertices.
+    /// Then those critical vertices can be supplemented with this
+    /// `lazy_edges_between` function to find connections to points of interest
+    /// that would not normally be included among the critical vertices.
+    ///
+    /// A correct implementation of this function should not return any edges
+    /// that would normally show up by calling `edges_from_vertex(from_key)`. It
+    /// should only return edges that are generated on demand.
+    ///
+    /// Graphs structures that are not capable of lazy evaluation can correctly
+    /// implement this function by simply returning a zero-sized array.
+    fn lazy_edges_between<'a>(
+        &'a self,
+        from_key: &Self::Key,
+        to_key: &Self::Key
+    ) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,

@@ -168,6 +168,10 @@ impl<Algo, Halting> Planner<Algo, Halting> {
             implementation: Box::new(RefCell::new(self)),
         }
     }
+
+    pub fn algorithm(&self) -> &Algo {
+        &self.algorithm
+    }
 }
 
 impl<A: Configurable, H> Configurable for Planner<A, H> {

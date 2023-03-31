@@ -80,11 +80,11 @@ impl<G: Graph> Graph for SharedGraph<G> {
     where
         G: 'a;
 
-    fn vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Option<Self::VertexRef<'a>> {
+    fn vertex<'a>(&'a self, key: &Self::Key) -> Option<Self::VertexRef<'a>> {
         self.graph.vertex(key)
     }
 
-    fn edges_from_vertex<'a, 'b>(&'a self, key: &'b Self::Key) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a>(&'a self, key: &Self::Key) -> Self::EdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,
@@ -92,6 +92,24 @@ impl<G: Graph> Graph for SharedGraph<G> {
         Self::EdgeAttributes: 'a
     {
         self.graph.edges_from_vertex(key)
+    }
+
+    type LazyEdgeIter<'a> = G::LazyEdgeIter<'a>
+    where
+        G: 'a;
+
+    fn lazy_edges_between<'a>(
+        &'a self,
+        from_key: &Self::Key,
+        to_key: &Self::Key
+    ) -> Self::LazyEdgeIter<'a>
+    where
+        Self: 'a,
+        Self::Vertex: 'a,
+        Self::Key: 'a,
+        Self::EdgeAttributes: 'a,
+    {
+        self.graph.lazy_edges_between(from_key, to_key)
     }
 }
 

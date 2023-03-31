@@ -66,7 +66,7 @@ where
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
-    G::EdgeAttributes: SpeedLimiter + Clone + 'static,
+    G::EdgeAttributes: SpeedLimiter + Clone,
 {
     planner: QuickestPathPlanner<G, W, R>,
 }
@@ -108,6 +108,10 @@ where
                 )
             )
         })
+    }
+
+    pub fn planner(&self) -> &QuickestPathPlanner<G, W, R> {
+        &self.planner
     }
 }
 

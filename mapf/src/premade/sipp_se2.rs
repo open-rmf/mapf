@@ -33,11 +33,15 @@ const DEFAULT_RES: u32 = 360;
 /// Planning (SIPP) through the SE(2) space (Special Euclidean Group, dimension
 /// 2), e.g. the x-y plane with rigid body rotations.
 ///
+/// The graph used to calculate the heuristic can be a different type from the
+/// one used to guide the activity. This allows the heuristic to use faster or
+/// simplified graph representations to calculate cost estimates.
+///
 /// WARNING: To have a final orientation in the goal conditions, this domain
 /// needs to be given to a [`crate::algorithm::AStarConnect`] instead of
 /// [`crate::algorithm::AStar`], otherwise the planner will fail to reach the
 /// goal.
-pub type SippSE2<G> = InformedSearch<
+pub type SippSE2<G, H=G> = InformedSearch<
     GraphMotion<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
         SharedGraph<G>,
@@ -47,32 +51,36 @@ pub type SippSE2<G> = InformedSearch<
         >
     >,
     TravelTimeCost,
-    QuickestPathHeuristic<SharedGraph<G>, TravelTimeCost, DEFAULT_RES>,
+    QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, DEFAULT_RES>,
     TimeVariantKeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
     InitializeSE2<SharedGraph<G>>,
     SatisfySE2,
     SafeMergeIntoGoal<DEFAULT_RES>,
 >;
 
-pub type NewSippSE2Error<G> = <QuickestPathSearch<SharedGraph<G>, TravelTimeCost, DEFAULT_RES> as Reversible>::ReversalError;
+pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelTimeCost, DEFAULT_RES> as Reversible>::ReversalError;
 
-impl<G> SippSE2<G>
+impl<G, H> SippSE2<G, H>
 where
-    G: Graph + Reversible,
+    G: Graph,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
+    H: Graph<Key=G::Key> + Reversible,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
 {
     pub fn new_sipp_se2(
-        graph: SharedGraph<G>,
+        activity_graph: SharedGraph<G>,
+        heuristic_graph: SharedGraph<H>,
         motion: DifferentialDriveLineFollow,
         environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
-    ) -> Result<Self, NewSippSE2Error<G>> {
+    ) -> Result<Self, NewSippSE2Error<H>> {
         Ok(
             InformedSearch::new(
                 GraphMotion {
                     space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
-                    graph: graph.clone(),
+                    graph: activity_graph.clone(),
                     extrapolator: ConflictAvoidance {
                         avoider: motion,
                         environment: environment.clone(),
@@ -80,26 +88,27 @@ where
                 },
                 TravelTimeCost(1.0),
                 QuickestPathHeuristic::new(
-                        graph.clone(),
+                        heuristic_graph.clone(),
                         TravelTimeCost(1.0),
                         motion,
                     )?,
                 TimeVariantKeyedCloser::new(DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new()),
             )
-            .with_initializer(InitializeSE2(graph))
+            .with_initializer(InitializeSE2(activity_graph))
             .with_satisfier(SatisfySE2::from(motion))
             .with_connector(SafeMergeIntoGoal::new(motion, environment))
         )
     }
 }
 
-pub struct SippSE2Configuration<G> {
-    pub graph: SharedGraph<G>,
+pub struct SippSE2Configuration<G, H> {
+    pub activity_graph: SharedGraph<G>,
+    pub heuristic_graph: SharedGraph<H>,
     pub motion: DifferentialDriveLineFollow,
     pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
 }
 
-impl<G> SippSE2Configuration<G> {
+impl<G, H> SippSE2Configuration<G, H> {
     pub fn modify_environment<F>(mut self, f: F) -> Self
     where
         F: FnOnce(OverlayedDynamicEnvironment<WaypointSE2>) -> OverlayedDynamicEnvironment<WaypointSE2>,
@@ -116,15 +125,18 @@ impl<G> SippSE2Configuration<G> {
     }
 }
 
-impl<G> Configurable for SippSE2<G>
+impl<G, H> Configurable for SippSE2<G, H>
 where
-    G: Graph + Reversible,
+    G: Graph,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
+    H: Graph<Key=G::Key> + Reversible,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
 {
-    type Configuration = SippSE2Configuration<G>;
-    type ConfigurationError = NewSippSE2Error<G>;
+    type Configuration = SippSE2Configuration<G, H>;
+    type ConfigurationError = NewSippSE2Error<H>;
     fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
     where
         F: FnOnce(Self::Configuration) -> Self::Configuration,
@@ -135,14 +147,20 @@ where
             // data ownership into the config.
             let scoped_self = self;
             SippSE2Configuration {
-                graph: scoped_self.activity.graph,
+                activity_graph: scoped_self.activity.graph,
+                heuristic_graph: scoped_self.heuristic.planner().algorithm().backward().domain().activity.graph.clone(),
                 motion: scoped_self.activity.extrapolator.avoider,
                 environment: scoped_self.activity.extrapolator.environment,
             }
         };
 
         let config = f(config);
-        Self::new_sipp_se2(config.graph, config.motion, config.environment)
+        Self::new_sipp_se2(
+            config.activity_graph,
+            config.heuristic_graph,
+            config.motion,
+            config.environment
+        )
     }
 
 }
@@ -214,8 +232,10 @@ mod tests {
             )
         );
 
+        let graph = SharedGraph::new(graph);
         InformedSearch::new_sipp_se2(
-            SharedGraph::new(graph),
+            graph.clone(),
+            graph.clone(),
             DifferentialDriveLineFollow::new(2.0, 1.0).unwrap(),
             environment,
         ).unwrap()

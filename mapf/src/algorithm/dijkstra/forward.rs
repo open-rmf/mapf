@@ -19,7 +19,7 @@ use crate::{
     domain::{
         Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
         ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
-        Configurable,
+        Configurable, Connectable,
     },
     algorithm::{Algorithm, Coherent, Solvable, SearchStatus, Path, tree::*},
     error::ThisError,
@@ -152,13 +152,15 @@ where
     + Keyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+    + Closable<D::State>
+    + Connectable<D::State, D::ActivityAction, D::Key>,
     D::State: Clone,
     D::ActivityAction: Clone,
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
+    D::ConnectionError: Into<D::Error>,
 {
     type Solution = Path<D::State, D::ActivityAction, D::Cost>;
     type StepError = DijkstraSearchError<D::Error>;
@@ -276,7 +278,6 @@ where
 
                     let top_key_ref = self.domain.key_for(top.state());
                     let top_key: &D::Key = top_key_ref.borrow();
-                    // TODO(@mxgrey): Why don't we use a hash set here?
                     for goal_key in &memory.goal_keys {
                         if *top_key == *goal_key {
                             // We have found a solution.
@@ -284,6 +285,25 @@ where
                                 .map_err(Self::algo_err)?;
                             tree_solution = Some(path);
                             break 'grow;
+                        } else {
+                            // TODO(@mxgrey): De-duplicate this with the above
+                            // iteration through the activity
+                            for next in self.domain.connect(top.state.clone(), goal_key) {
+                                let (action, child_state) = next.map_err(Self::domain_err)?;
+                                let child_cost = match self.domain
+                                    .cost(&top.state, &action, &child_state)
+                                    .map_err(Self::domain_err)?
+                                {
+                                    Some(c) => c,
+                                    None => continue,
+                                } + top.cost.clone();
+
+                                tree.push_node(Node {
+                                    state: child_state,
+                                    cost: child_cost,
+                                    parent: Some((top_id, action)),
+                                }).map_err(Self::algo_err)?;
+                            }
                         }
                     }
 

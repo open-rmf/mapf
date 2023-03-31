@@ -18,7 +18,7 @@
 use crate::{
     domain::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
-        Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring,
+        Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring, Connectable,
     },
     algorithm::{
         Algorithm, Coherent, Solvable, SearchStatus, Path,
@@ -51,6 +51,10 @@ where
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
         Ok(Self { backward: Dijkstra::new(domain.reversed()?) })
+    }
+
+    pub fn backward(&self) -> &Dijkstra<D> {
+        &self.backward
     }
 }
 
@@ -116,6 +120,7 @@ where
     + Weighted<D::State, D::ActivityAction>
     + Keyring<D::State>
     + Closable<D::State>
+    + Connectable<D::State, D::ActivityAction, D::Key>
     + Backtrack<
         D::State,
         D::ActivityAction,
@@ -126,6 +131,7 @@ where
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
+    D::ConnectionError: Into<D::Error>,
     D::BacktrackError: Into<D::Error>,
 {
     type Solution = Path<D::State, D::ActivityAction, D::Cost>;

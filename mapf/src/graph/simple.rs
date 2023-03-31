@@ -20,7 +20,6 @@ use crate::{
     domain::Reversible,
     error::NoError,
 };
-use std::fmt::Debug;
 
 #[derive(Debug, Clone, Default)]
 pub struct SimpleGraph<V, E> {
@@ -113,11 +112,11 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         V: 'a,
         E: 'a;
 
-    fn vertex<'a, 'b>(&'a self, key: &'b usize) -> Option<&'a V> {
+    fn vertex<'a>(&'a self, key: &usize) -> Option<&'a V> {
         self.vertices.get(*key)
     }
 
-    fn edges_from_vertex<'a, 'b>(&'a self, from_key: &'b usize) -> Self::EdgeIter<'a>
+    fn edges_from_vertex<'a>(&'a self, from_key: &usize) -> Self::EdgeIter<'a>
     where
         V: 'a,
         E: 'a,
@@ -129,5 +128,22 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         .into_iter()
         .flat_map(|outgoing| outgoing.iter())
         .map(move |(to_key, attr)| (from_key, *to_key, attr))
+    }
+
+    type LazyEdgeIter<'a> = [(usize, usize, &'a E); 0]
+    where
+        V: 'a,
+        E: 'a;
+
+    fn lazy_edges_between<'a>(
+        &'a self,
+        _: &Self::Key,
+        _: &Self::Key
+    ) -> Self::LazyEdgeIter<'a>
+    where
+        V: 'a,
+        E: 'a,
+    {
+        []
     }
 }
