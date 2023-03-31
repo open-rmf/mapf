@@ -26,3 +26,24 @@ pub trait Waypoint:
     /// How does the waypoint represent the time derivative of its position
     type Velocity;
 }
+
+pub trait IntegrateWaypoints<W> {
+    type WaypointIntegrationError;
+
+    type IntegratedWaypointIter<'a>: IntoIterator<
+        Item=Result<W, Self::WaypointIntegrationError>
+    > + 'a
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a;
+
+    fn integrated_waypoints<'a>(
+        &'a self,
+        initial_waypoint: Option<W>,
+    ) -> Self::IntegratedWaypointIter<'a>
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a;
+}

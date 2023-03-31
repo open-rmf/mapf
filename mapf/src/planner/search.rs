@@ -19,7 +19,7 @@ use anyhow;
 use std::cell::RefCell;
 
 use crate::{
-    algorithm::{Algorithm, Solvable, Status},
+    algorithm::{Algorithm, Solvable, SearchStatus},
     planner::Halt,
     error::Anyhow,
 };
@@ -60,14 +60,14 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
     /// to solve.
     pub fn solve(
         &mut self,
-    ) -> Result<Status<Algo::Solution>, Algo::StepError>
+    ) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
     where
         Algo: Solvable<Goal>,
         Halting: Halt<Algo::Memory>,
     {
         loop {
             if self.halting.halt(&self.memory) {
-                return Ok(Status::Incomplete);
+                return Ok(SearchStatus::Incomplete);
             }
 
             let result = self.step()?;
@@ -81,7 +81,7 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
 
     pub fn step(
         &mut self,
-    ) -> Result<Status<Algo::Solution>, Algo::StepError>
+    ) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
     where
         Algo: Solvable<Goal>,
     {
@@ -117,9 +117,9 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
 }
 
 pub trait SearchInterface<Solution> {
-    fn solve(&mut self) -> anyhow::Result<Status<Solution>>;
+    fn solve(&mut self) -> anyhow::Result<SearchStatus<Solution>>;
 
-    fn step(&mut self) -> anyhow::Result<Status<Solution>>;
+    fn step(&mut self) -> anyhow::Result<SearchStatus<Solution>>;
 }
 
 impl<A, G, H> SearchInterface<A::Solution> for Search<A, G, H>
@@ -128,11 +128,11 @@ where
     H: Halt<A::Memory>,
     A::StepError: Into<Anyhow>,
 {
-    fn solve(&mut self) -> anyhow::Result<Status<A::Solution>> {
+    fn solve(&mut self) -> anyhow::Result<SearchStatus<A::Solution>> {
         Search::solve(self).map_err(Into::into)
     }
 
-    fn step(&mut self) -> anyhow::Result<Status<A::Solution>> {
+    fn step(&mut self) -> anyhow::Result<SearchStatus<A::Solution>> {
         Search::step(self).map_err(Into::into)
     }
 }
@@ -208,11 +208,11 @@ where
 }
 
 impl<Solution> SearchInterface<Solution> for AbstractSearch<Solution> {
-    fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
+    fn solve(&mut self) -> anyhow::Result<SearchStatus<Solution>> {
         self.implementation.borrow_mut().solve()
     }
 
-    fn step(&mut self) -> anyhow::Result<Status<Solution>> {
+    fn step(&mut self) -> anyhow::Result<SearchStatus<Solution>> {
         self.implementation.borrow_mut().step()
     }
 }
@@ -234,11 +234,11 @@ where
 }
 
 impl<Solution, Halting> SearchInterface<Solution> for AbstractSearchWithHalting<Solution, Halting> {
-    fn solve(&mut self) -> anyhow::Result<Status<Solution>> {
+    fn solve(&mut self) -> anyhow::Result<SearchStatus<Solution>> {
         self.implementation.borrow_mut().solve()
     }
 
-    fn step(&mut self) -> anyhow::Result<Status<Solution>> {
+    fn step(&mut self) -> anyhow::Result<SearchStatus<Solution>> {
         self.implementation.borrow_mut().step()
     }
 }

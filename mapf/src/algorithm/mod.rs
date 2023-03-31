@@ -23,24 +23,28 @@ pub use dijkstra::{Dijkstra, BackwardDijkstra};
 
 pub mod tree;
 
+pub mod path;
+pub use path::Path;
+
+// TODO(@mxgrey): Consider whether this should be in the planner::search module
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status<Solution> {
+pub enum SearchStatus<Solution> {
     Incomplete,
     Impossible,
     Solved(Solution),
 }
 
-impl<S> Status<S> {
+impl<S> SearchStatus<S> {
     pub fn incomplete(&self) -> bool {
-        matches!(self, Status::Incomplete)
+        matches!(self, SearchStatus::Incomplete)
     }
 
     pub fn impossible(&self) -> bool {
-        matches!(self, Status::Impossible)
+        matches!(self, SearchStatus::Impossible)
     }
 
     pub fn solved(&self) -> bool {
-        matches!(self, Status::Solved(_))
+        matches!(self, SearchStatus::Solved(_))
     }
 
     pub fn solution(self) -> Option<S> {
@@ -51,26 +55,26 @@ impl<S> Status<S> {
     }
 
     /// If the status contains a solution, apply a function to that solution.
-    pub fn map<U, F: FnOnce(S) -> U>(self, op: F) -> Status<U> {
+    pub fn map<U, F: FnOnce(S) -> U>(self, op: F) -> SearchStatus<U> {
         match self {
-            Status::Solved(solution) => Status::Solved(op(solution)),
-            Status::Incomplete => Status::Incomplete,
-            Status::Impossible => Status::Impossible,
+            SearchStatus::Solved(solution) => SearchStatus::Solved(op(solution)),
+            SearchStatus::Incomplete => SearchStatus::Incomplete,
+            SearchStatus::Impossible => SearchStatus::Impossible,
         }
     }
 
-    pub fn and_then<U, E, F: FnOnce(S) -> Result<U, E>>(self, op: F) -> Result<Status<U>, E> {
+    pub fn and_then<U, E, F: FnOnce(S) -> Result<U, E>>(self, op: F) -> Result<SearchStatus<U>, E> {
         match self {
-            Status::Solved(solution) => Ok(Status::Solved(op(solution)?)),
-            Status::Incomplete => Ok(Status::Incomplete),
-            Status::Impossible => Ok(Status::Impossible),
+            SearchStatus::Solved(solution) => Ok(SearchStatus::Solved(op(solution)?)),
+            SearchStatus::Incomplete => Ok(SearchStatus::Incomplete),
+            SearchStatus::Impossible => Ok(SearchStatus::Impossible),
         }
     }
 }
 
-impl<S> From<S> for Status<S> {
+impl<S> From<S> for SearchStatus<S> {
     fn from(value: S) -> Self {
-        Status::Solved(value)
+        SearchStatus::Solved(value)
     }
 }
 
@@ -110,7 +114,7 @@ pub trait Solvable<Goal>: Algorithm + Sized {
         &self,
         memory: &mut Self::Memory,
         goal: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError>;
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError>;
 }
 
 // Implement the Algorithm traits for Arc<Algo> so that planners can always
@@ -140,7 +144,7 @@ impl<Goal, Algo: Solvable<Goal>> Solvable<Goal> for Arc<Algo> {
         &self,
         memory: &mut Self::Memory,
         goal: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError> {
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         self.as_ref().step(memory, goal)
     }
 }

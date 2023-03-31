@@ -18,9 +18,13 @@
 use crate::{
     domain::{
         Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
-        Satisfiable, ArrivalKeyring, Reversible
+        Satisfiable, ArrivalKeyring, Reversible,
     },
-    motion::{Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, se2::*, r2::{Positioned, MaybePositioned}},
+    motion::{
+        Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, IntegrateWaypoints,
+        se2::*,
+        r2::{Positioned, MaybePositioned}
+    },
     graph::{Graph, Edge},
     error::{NoError, ThisError},
     util::{FlatResultMapTrait, wrap_to_pi},
@@ -107,6 +111,31 @@ impl<K, const R: u32> Reversible for DiscreteSpaceTimeSE2<K, R> {
 pub struct StateSE2<K, const R: u32> {
     pub key: KeySE2<K, R>,
     pub waypoint: WaypointSE2,
+}
+
+impl<W: From<WaypointSE2>, K, const R: u32> IntegrateWaypoints<W> for StateSE2<K, R> {
+    type IntegratedWaypointIter<'a> = Option<Result<W, NoError>>
+    where
+        W: 'a,
+        K: 'a;
+
+    type WaypointIntegrationError = NoError;
+
+    fn integrated_waypoints<'a>(
+        &'a self,
+        _initial_waypoint: Option<W>,
+    ) -> Self::IntegratedWaypointIter<'a>
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a,
+    {
+        // TODO(@mxgrey): Should it be an error if _initial_waypoint is Some?
+        // States are only supposed to be integrated into waypoints at the start
+        // of a trajectory, so it would be suspicious if we're given an initial
+        // waypoint.
+        Some(Ok(self.waypoint.into()))
+    }
 }
 
 impl<K, const R: u32> StateSE2<K, R> {
@@ -501,6 +530,12 @@ impl<K> MaybeOriented for GoalSE2<K> {
 impl<K> MaybePositioned for GoalSE2<K> {
     fn maybe_point(&self) -> Option<crate::motion::r2::Point> {
         None
+    }
+}
+
+impl<K> Borrow<K> for GoalSE2<K> {
+    fn borrow(&self) -> &K {
+        &self.key
     }
 }
 

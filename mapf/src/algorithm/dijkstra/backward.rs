@@ -21,8 +21,7 @@ use crate::{
         Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring,
     },
     algorithm::{
-        Algorithm, Coherent, Solvable, Status,
-        tree::Path,
+        Algorithm, Coherent, Solvable, SearchStatus, Path,
         dijkstra::{
             Dijkstra,
             forward::{Memory, DijkstraSearchError},
@@ -136,7 +135,7 @@ where
         &self,
         memory: &mut Self::Memory,
         _: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError> {
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         // Note: Passing in the goal doesn't matter because the Dijkstra
         // algorithm memory saves the goal information anyway.
         self.backward.step(&mut memory.backward, &())

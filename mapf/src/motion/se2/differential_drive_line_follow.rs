@@ -655,7 +655,7 @@ mod tests {
             p_target.rotation.angle()
         );
 
-        let mut trajectory = motion::se2::LinearTrajectory::from_iter(waypoints.into_iter())
+        let mut trajectory = motion::se2::LinearTrajectorySE2::from_iter(waypoints.into_iter())
             .expect("Failed to create trajectory");
         trajectory.insert(wp0).expect("Waypoint insertion failed");
         assert_eq!(trajectory.len(), 4);

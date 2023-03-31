@@ -28,27 +28,37 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    trace::NoTrace,
-    planner::make_planner,
-    node::{Weighted, Informed, PartialKeyed, Agent},
-    expander::{Constrain, Constrainable, Solvable, SolutionOf},
-    search::{Search, BasicOptions},
-    algorithm::Status as PlanningStatus,
-    a_star,
+    // trace::NoTrace,
+    // planner::make_planner,
+    // node::{Weighted, Informed, PartialKeyed, Agent},
+    // expander::{Constrain, Constrainable, Solvable, SolutionOf},
+    // search::{Search, BasicOptions},
+    // algorithm::Status as PlanningStatus,
+    // a_star,
+    // motion::{
+    //     Trajectory, Motion,
+    //     collide::CircleCollisionConstraint,
+    //     se2::{
+    //         self, Rotation,
+    //         timed_position::{Waypoint, DifferentialDriveLineFollow},
+    //         graph_search::{
+    //             DirectedTimeVariantExpander, DirectedTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy,
+    //             FreeSpaceTimeInvariantExpander, FreeSpaceTimeVariantExpander,
+    //         },
+    //     },
+    // },
+    // directed::simple::SimpleGraph,
+    // occupancy::{Grid, SparseGrid, Cell, Point, Vector}
+    graph::occupancy::{
+        Visibility, SparseGrid, Cell, NeighborhoodGraph, Grid,
+    },
     motion::{
         Trajectory, Motion,
-        collide::CircleCollisionConstraint,
-        se2::{
-            self, Rotation,
-            timed_position::{Waypoint, DifferentialDriveLineFollow},
-            graph_search::{
-                DirectedTimeVariantExpander, DirectedTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy,
-                FreeSpaceTimeInvariantExpander, FreeSpaceTimeVariantExpander,
-            },
-        },
+        se2::{Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2},
     },
-    directed::simple::SimpleGraph,
-    occupancy::{Grid, SparseGrid, Cell, Point, Vector}
+    planner::{Planner, Search},
+    premade::SippSE2,
+    algorithm::{AStarConnect, Algorithm, SearchStatus},
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -59,8 +69,7 @@ use mapf_viz::spatial_layers;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-type Visibility = mapf::occupancy::Visibility<SparseGrid>;
-type SearchNode = se2::graph_search::Node<GraphKey, 100>;
+type SparseVisibility = Visibility<SparseGrid>;
 
 pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
     value: Option<T>,
@@ -153,7 +162,7 @@ fn draw_agent(
 
 fn draw_trajectory(
     frame: &mut canvas::Frame,
-    trajectory: &se2::LinearTrajectory,
+    trajectory: &LinearTrajectorySE2,
     color: iced::Color,
 ) {
     for [wp0, wp1] in trajectory.array_windows() {
@@ -260,7 +269,7 @@ impl<Message> EndpointSelector<Message> {
         }
     }
 
-    pub fn calculate_visibility(&mut self, visibility: &Visibility) {
+    pub fn calculate_visibility(&mut self, visibility: &SparseVisibility) {
         self.start_visibility = self.calculate_endpoint_visibility(
             self.start_cell, self.start_valid, visibility
         );
@@ -285,7 +294,7 @@ impl<Message> EndpointSelector<Message> {
         &self,
         cell_opt: Option<Cell>,
         valid: bool,
-        visibility: &Visibility,
+        visibility: &SparseVisibility,
     ) -> Vec<Cell> {
         if valid {
             if let Some(cell) = cell_opt {
@@ -456,8 +465,8 @@ struct SolutionVisual<Message> {
     pub cell_size: f64,
     pub agent_radius: f32,
     pub path_color: iced::Color,
-    pub solution: Option<Trajectory<Waypoint>>,
-    pub obstacles: Vec<(f64, se2::LinearTrajectory)>,
+    pub solution: Option<LinearTrajectorySE2>,
+    pub obstacles: Vec<(f64, LinearTrajectorySE2)>,
     pub vertex_lookup: HashMap<Cell, usize>,
     tick_start: Option<TimePoint>,
     now: Option<Duration>,
@@ -468,11 +477,11 @@ impl SolutionVisual<Message> {
     fn new(cell_size: f64, agent_radius: f32, path_color: iced::Color) -> Self {
 
         let t_obs = Trajectory::from_iter([
-            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(0.0), 10.0, 0.0, 180_f64.to_radians()),
-            // se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(10.0), -5.0, 0.0, 180_f64.to_radians()),
-            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(5.0), 0.0, 0.0, 180_f64.to_radians()),
-            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(8.0), 0.0, 0.0, -90_f64.to_radians()),
-            se2::timed_position::Waypoint::new(TimePoint::from_secs_f64(18.0), 0.0, -10.0, -90_f64.to_radians()),
+            WaypointSE2::new(TimePoint::from_secs_f64(0.0), 10.0, 0.0, 180_f64.to_radians()),
+            // WaypointSE2::new_f64(10.0, -5.0, 0.0, 180_f64.to_radians()),
+            WaypointSE2::new_f64(5.0, 0.0, 0.0, 180_f64.to_radians()),
+            WaypointSE2::new_f64(8.0, 0.0, 0.0, -90_f64.to_radians()),
+            WaypointSE2::new_f64(18.0, 0.0, -10.0, -90_f64.to_radians()),
         ]).unwrap();
 
         Self{
@@ -495,14 +504,14 @@ impl SolutionVisual<Message> {
 
     fn time_range(&self) -> Option<(TimePoint, TimePoint)> {
         if let Some(solution) = &self.solution {
-            return Some((solution.initial_time(), solution.finish_time()));
+            return Some((solution.initial_motion_time(), solution.finish_motion_time()));
         } else {
             let mut earliest = Minimum::new(|l: &TimePoint, r: &TimePoint| l.cmp(r));
             let mut latest = Minimum::new(|l: &TimePoint, r: &TimePoint| r.cmp(l));
 
             for (_, obs) in &self.obstacles {
-                earliest.consider(&obs.initial_time());
-                latest.consider(&obs.finish_time());
+                earliest.consider(&obs.initial_motion_time());
+                latest.consider(&obs.finish_motion_time());
             }
 
             if let (Some(earliest), Some(latest)) = (earliest.result(), latest.result()) {
@@ -640,9 +649,8 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
-// type ObsAvoidance = Constrain<DirectedTimeInvariantExpander, CircleCollisionConstraint>;
-type ObsAvoidance = Constrain<FreeSpaceTimeInvariantExpander, CircleCollisionConstraint>;
 type GraphKey = Cell;
+type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>>>;
 
 struct App {
     robot_size_slider: slider::State,
@@ -654,11 +662,11 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    progress: Option<Search<ObsAvoidance, a_star::Algorithm, BasicOptions, GoalSE2<GraphKey>, NoTrace>>,
+    search: Option<Search<MyAlgo, GoalSE2<Cell>, ()>>,
     step_progress: button::State,
-    expander: Option<Arc<ObsAvoidance>>,
+    expander: Planner<MyAlgo, ()>,
     debug_on: bool,
-    debug_nodes: Vec<Arc<SearchNode>>,
+    memory: <MyAlgo as Algorithm>::Memory,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
 }
@@ -681,7 +689,7 @@ impl App {
         iced::Color::from_rgb(1.0, 0.1, 1.0)
     }
 
-    fn visibility(&self) -> &Visibility {
+    fn visibility(&self) -> &SparseVisibility {
         self.canvas.program.layers.1.visibility()
     }
 
@@ -731,22 +739,22 @@ impl App {
     }
 
     fn step_progress(&mut self) {
-        if let Some(progress) = &mut self.progress {
+        if let Some(search) = &mut self.search {
             self.debug_step_count += 1;
-            if let PlanningStatus::Solved(solution) = progress.step().unwrap() {
+            if let SearchStatus::Solved(solution) = search.step().unwrap() {
                 println!("Solution: {:#?}", solution);
                 self.canvas.program.layers.3.solution = solution.motion().clone();
                 self.debug_node_selected = None;
-                self.progress = None;
+                self.search = None;
                 self.expander = None;
-                self.debug_nodes.clear();
+                self.memory.clear();
             } else {
-                self.debug_nodes = self.progress.as_ref().unwrap().memory()
+                self.memory = self.search.as_ref().unwrap().memory()
                     .queue().clone().into_iter_sorted()
                     .map(|n| n.0.0.clone()).collect();
 
                 if let Some(selection) = self.debug_node_selected {
-                    if let Some(node) = self.debug_nodes.get(selection) {
+                    if let Some(node) = self.memory.get(selection) {
                         if let Some(expander) = &self.expander {
                             self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
                         }
@@ -860,8 +868,8 @@ impl App {
 
                 self.debug_step_count = 0;
                 if self.debug_on {
-                    self.progress = Some(progress);
-                    self.debug_nodes = self.progress.as_ref().unwrap().memory()
+                    self.search = Some(progress);
+                    self.memory = self.search.as_ref().unwrap().memory()
                         .queue().clone().into_iter_sorted()
                         .map(|n| n.0.0.clone()).collect();
 
@@ -888,8 +896,8 @@ impl App {
         }
 
         // If the attempt to plan falls through, then clear out all these fields.
-        self.debug_nodes.clear();
-        self.progress = None;
+        self.memory.clear();
+        self.search = None;
         self.expander = None;
         self.canvas.program.layers.3.solution = None;
         self.canvas.cache.clear();
@@ -939,11 +947,11 @@ impl Application for App {
                 node_list_scroll: scrollable::State::new(),
                 debug_text_scroll: scrollable::State::new(),
                 show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
-                progress: None,
+                search: None,
                 step_progress: button::State::new(),
                 expander: None,
                 debug_on: false,
-                debug_nodes: Default::default(),
+                memory: Default::default(),
                 debug_step_count: 0,
                 debug_node_selected: None,
             },
@@ -1047,7 +1055,7 @@ impl Application for App {
             },
             Message::DebugNodeSelected(value) => {
                 self.debug_node_selected = Some(value);
-                if let (Some(node), Some(expander)) = (self.debug_nodes.get(value), &self.expander) {
+                if let (Some(node), Some(expander)) = (self.memory.get(value), &self.expander) {
                     self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
                     self.canvas.cache.clear();
                 }
@@ -1140,12 +1148,12 @@ impl Application for App {
                         .push(iced::Space::with_width(Length::Units(16)))
                         .push(Text::new(format!("Steps: {}", self.debug_step_count)))
                         .push(iced::Space::with_width(Length::Units(16)))
-                        .push(Text::new(format!("Queue size: {}", self.debug_nodes.len())))
+                        .push(Text::new(format!("Queue size: {}", self.memory.len())))
                         .align_items(Alignment::Center)
                     )
                     .push({
                         let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
-                        for (i, node) in self.debug_nodes.iter().enumerate() {
+                        for (i, node) in self.memory.iter().enumerate() {
                             scroll = scroll.push(Radio::new(
                                 i, format!(
                                     "{i}: {:?} + {:?} = {:?}",
@@ -1164,7 +1172,7 @@ impl Application for App {
                         .push(
                             Text::new({
                                 if let Some(selection) = self.debug_node_selected {
-                                    if let Some(node) = self.debug_nodes.get(selection) {
+                                    if let Some(node) = self.memory.get(selection) {
                                         format!("{node:#?}")
                                     } else {
                                         String::new()

@@ -19,8 +19,10 @@ use crate::{
     motion::{
         Trajectory, Waypoint, TimePoint, Interpolation, Motion, Timed, Duration,
         Environment, CircularProfile, DynamicCircularObstacle, BoundingBox,
+        IntegrateWaypoints,
         r2::{WaypointR2 as WaypointR2, Point},
     },
+    error::ThisError,
 };
 use smallvec::SmallVec;
 use arrayvec::ArrayVec;
@@ -64,6 +66,55 @@ impl<Movement, WaitFor> From<Movement> for SafeAction<Movement, WaitFor> {
     fn from(value: Movement) -> Self {
         SafeAction::Move(value)
     }
+}
+
+// TODO(@mxgrey): Generalize this beyond WaitForObstacle, e.g. come up with a
+// trait to describe waiting actions.
+impl<W, M> IntegrateWaypoints<W> for SmallVec<[SafeAction<M, WaitForObstacle>; 5]>
+where
+    W: Timed + Clone,
+    M: Into<W> + Clone,
+{
+    type IntegratedWaypointIter<'a> = SmallVec<[Result<W, SafeActionIntegrateWaypointError>; 5]>
+    where
+        W: 'a,
+        M: 'a;
+    type WaypointIntegrationError = SafeActionIntegrateWaypointError;
+    fn integrated_waypoints<'a>(
+        &'a self,
+        initial_waypoint: Option<W>,
+    ) -> Self::IntegratedWaypointIter<'a>
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a,
+    {
+        let mut initial_waypoint = match initial_waypoint {
+            Some(wp) => wp,
+            None => return SmallVec::from_iter([
+                Err(SafeActionIntegrateWaypointError::MissingInitialWaypoint)
+            ]),
+        };
+
+        let mut waypoints = SmallVec::new();
+        for action in self {
+            let wp: W = match action {
+                SafeAction::Move(wp) => wp.clone().into(),
+                SafeAction::Wait(wait) => initial_waypoint.with_time(wait.time_estimate),
+            };
+
+            waypoints.push(Ok(wp.clone()));
+            initial_waypoint = wp;
+        }
+
+        waypoints
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum SafeActionIntegrateWaypointError {
+    #[error("An initial waypoint is needed to integrate SafeAction waypoints")]
+    MissingInitialWaypoint,
 }
 
 #[derive(Clone, Copy)]

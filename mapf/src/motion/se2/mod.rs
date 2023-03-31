@@ -36,7 +36,7 @@ pub use space::*;
 pub mod oriented;
 pub use oriented::*;
 
-pub type LinearTrajectory = super::Trajectory<WaypointSE2>;
+pub type LinearTrajectorySE2 = super::Trajectory<WaypointSE2>;
 
 pub mod quickest_path;
 pub use quickest_path::QuickestPathHeuristic;

@@ -21,7 +21,7 @@ use crate::{
         ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
         Configurable,
     },
-    algorithm::{Algorithm, Coherent, Solvable, Status, tree::*},
+    algorithm::{Algorithm, Coherent, Solvable, SearchStatus, Path, tree::*},
     error::ThisError,
 };
 use std::{
@@ -167,12 +167,12 @@ where
         &self,
         memory: &mut Self::Memory,
         _: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError> {
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         if memory.exhausted {
             if let Some((s, _)) = memory.best_solution {
                 let solution = memory.trees.get(s).map(|t| t.solution.clone()).flatten();
                 if let Some(solution) = solution {
-                    return Ok(Status::Solved(solution));
+                    return Ok(SearchStatus::Solved(solution));
                 } else {
                     return Err(Self::algo_err(DijkstraImplError::MissingSolutionReference(s)));
                 }
@@ -180,7 +180,7 @@ where
 
             // If the search is exhausted then simply return that the problem
             // is impossible.
-            return Ok(Status::Impossible);
+            return Ok(SearchStatus::Impossible);
         }
 
         let mut exhausted = true;
@@ -329,7 +329,7 @@ where
             memory.exhausted = exhausted;
         }
 
-        return Ok(Status::Incomplete);
+        return Ok(SearchStatus::Incomplete);
     }
 }
 

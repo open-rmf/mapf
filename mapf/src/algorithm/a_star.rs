@@ -18,8 +18,8 @@
 use crate::{
     error::{Anyhow, ThisError},
     algorithm::{
-        Algorithm, Coherent, Solvable, Status, MinimumCostBound, Measure,
-        tree::*,
+        Algorithm, Coherent, Solvable, SearchStatus, MinimumCostBound, Measure,
+        Path, tree::*,
     },
     domain::{
         Domain, Activity, Weighted, Initializable, Informed, Satisfiable,
@@ -161,7 +161,7 @@ where
     {
         let top_id = match queue.pop() {
             Some(top) => top.0.node_id,
-            None => return Ok(Flow::Return(Status::Impossible)),
+            None => return Ok(Flow::Return(SearchStatus::Impossible)),
         };
 
         let top = arena.get_node(top_id).map_err(Self::algo_err)?;
@@ -169,7 +169,7 @@ where
             let solution = arena
                 .retrace(top_id)
                 .map_err(Self::algo_err)?;
-            return Ok(Flow::Return(Status::Solved(solution)));
+            return Ok(Flow::Return(SearchStatus::Solved(solution)));
         }
 
         if let CloseResult::Rejected { prior, .. } = closed_set.close(&top.state, top_id) {
@@ -178,7 +178,7 @@ where
                 // The state we are attempting to expand has already been closed
                 // in the past by a lower cost node, so we will not expand from
                 // this top node. Instead we will finish this iteration.
-                return Ok(Flow::Return(Status::Incomplete));
+                return Ok(Flow::Return(SearchStatus::Incomplete));
             }
 
             // The top node has a lower cost so it should replace the node that
@@ -317,7 +317,7 @@ where
         &self,
         memory: &mut Self::Memory,
         goal: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError> {
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         let (top_id, top) = match AStar::<D>::choose_top(
             &self.0,
             &mut memory.0.closed_set,
@@ -331,7 +331,7 @@ where
 
         AStar::<D>::expand_from_parent(&self.0, memory, top_id, &top, goal)?;
 
-        Ok(Status::Incomplete)
+        Ok(SearchStatus::Incomplete)
     }
 }
 
@@ -407,7 +407,7 @@ where
         &self,
         memory: &mut Self::Memory,
         goal: &Goal,
-    ) -> Result<Status<Self::Solution>, Self::StepError> {
+    ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         let (top_id, top) = match AStar::<D>::choose_top(
             &self.0,
             &mut memory.0.closed_set,
@@ -431,7 +431,7 @@ where
             )?;
         }
 
-        Ok(Status::Incomplete)
+        Ok(SearchStatus::Incomplete)
     }
 }
 
@@ -486,5 +486,5 @@ where
     // D::Error: StdError,
 {
     Proceed(T),
-    Return(Status<Path<D::State, D::ActivityAction, D::Cost>>),
+    Return(SearchStatus<Path<D::State, D::ActivityAction, D::Cost>>),
 }

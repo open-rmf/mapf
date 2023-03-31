@@ -218,7 +218,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        algorithm::{Algorithm, Status, MinimumCostBound},
+        algorithm::{Algorithm, SearchStatus, MinimumCostBound},
         error::NoError,
     };
     use std::sync::Arc;
@@ -274,18 +274,18 @@ mod tests {
             &self,
             memory: &mut Self::Memory,
             goal: &u64,
-        ) -> Result<Status<Self::Solution>, Self::StepError> {
+        ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
             let top = match memory.queue.pop() {
                 Some(top) => top,
-                None => return Ok(Status::Impossible),
+                None => return Ok(SearchStatus::Impossible),
             };
 
             if top.value == *goal {
-                return Ok(Status::Solved(top.into()));
+                return Ok(SearchStatus::Solved(top.into()));
             }
 
             if top.value > *goal {
-                return Ok(Status::Impossible);
+                return Ok(SearchStatus::Impossible);
             }
 
             memory.queue.push(Arc::new(CountingNode {
@@ -293,7 +293,7 @@ mod tests {
                 cost: top.cost + 1,
                 parent: Some(top),
             }));
-            Ok(Status::Incomplete)
+            Ok(SearchStatus::Incomplete)
         }
     }
 
@@ -325,8 +325,8 @@ mod tests {
             .unwrap()
             .solve()
             .unwrap();
-        assert!(matches!(result, Status::Solved(_)));
-        if let Status::Solved(solution) = result {
+        assert!(matches!(result, SearchStatus::Solved(_)));
+        if let SearchStatus::Solved(solution) = result {
             assert!(solution.sequence.len() == (goal - start + 1) as usize);
             assert!(solution.sequence.first() == Some(&start));
             assert!(solution.sequence.last() == Some(&goal));
@@ -343,7 +343,7 @@ mod tests {
             .unwrap()
             .solve()
             .unwrap();
-        assert!(matches!(result, Status::Impossible));
+        assert!(matches!(result, SearchStatus::Impossible));
     }
 
     #[test]
@@ -352,11 +352,11 @@ mod tests {
         let start = 5;
         let goal = 10;
         let mut progress = planner.plan(start, goal).unwrap();
-        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
-        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
-        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
-        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
-        assert!(matches!(progress.step().unwrap(), Status::Incomplete));
-        assert!(matches!(progress.step().unwrap(), Status::Solved(_)));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Incomplete));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Incomplete));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Incomplete));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Incomplete));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Incomplete));
+        assert!(matches!(progress.step().unwrap(), SearchStatus::Solved(_)));
     }
 }

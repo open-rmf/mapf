@@ -25,7 +25,7 @@ pub mod r2;
 pub mod se2;
 
 pub mod waypoint;
-pub use waypoint::Waypoint;
+pub use waypoint::*;
 
 pub mod trajectory;
 pub use trajectory::{Trajectory, FindWaypoint};

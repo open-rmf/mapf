@@ -17,9 +17,9 @@
 
 use crate::{
     domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable},
-    motion::{Timed, TimePoint, r2::*, se2::StateSE2},
+    motion::{Timed, TimePoint, IntegrateWaypoints, r2::*, se2::StateSE2},
     graph::Graph,
-    error::ThisError,
+    error::{ThisError, NoError},
 };
 use std::borrow::Borrow;
 
@@ -96,6 +96,30 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
 pub struct StateR2<K> {
     pub key: K,
     pub waypoint: timed_position::WaypointR2,
+}
+
+impl<W: From<WaypointR2>, K> IntegrateWaypoints<W> for StateR2<K> {
+    type IntegratedWaypointIter<'a> = Option<Result<W, NoError>>
+    where
+        W: 'a,
+        K: 'a;
+
+    type WaypointIntegrationError = NoError;
+    fn integrated_waypoints<'a>(
+        &'a self,
+        _initial_waypoint: Option<W>,
+    ) -> Self::IntegratedWaypointIter<'a>
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a,
+    {
+        // TODO(@mxgrey): Should it be an error if _initial_waypoint is Some?
+        // States are only supposed to be integrated into waypoints at the start
+        // of a trajectory, so it would be suspicious if we're given an initial
+        // waypoint.
+        Some(Ok(self.waypoint.into()))
+    }
 }
 
 impl<K> Borrow<K> for StateR2<K> {

@@ -233,6 +233,9 @@ mod tests {
         // Note: Vertex 4 is blocked until 10s.
         let expected_cost = 10.2 + (135_f64 + 2.0*90.0).to_radians() + 3.0/2.0;
         assert_relative_eq!(solution.total_cost.0, expected_cost, max_relative=0.1);
+
+        let trajectory: Trajectory<WaypointSE2> = solution.make_trajectory().unwrap().unwrap();
+        assert!(trajectory.len() >= 11);
     }
 
     #[test]

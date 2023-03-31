@@ -16,8 +16,8 @@
 */
 
 use crate::{
-    domain::{Domain, Backtrack, ClosedSet, ClosedStatus},
-    algorithm::{MinimumCostBound, Measure},
+    domain::{ClosedSet, ClosedStatus},
+    algorithm::{MinimumCostBound, Measure, Path},
     error::ThisError,
 };
 use std::{
@@ -169,52 +169,6 @@ where
 
         let initial_state = self.get_node(initial_node_id)?.state().clone();
         Ok(Path { initial_state, sequence, total_cost })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Path<State, Action, Cost> {
-    pub initial_state: State,
-    pub sequence: Vec<(Action, State)>,
-    pub total_cost: Cost,
-}
-
-impl<S, A, C> Path<S, A, C> {
-    pub fn backtrack<ReverseDomain>(
-        self,
-        reverse_domain: &ReverseDomain,
-    ) -> Result<Path<S, A, C>, ReverseDomain::Error>
-    where
-        ReverseDomain: Domain + Backtrack<S, A>,
-        ReverseDomain::BacktrackError: Into<ReverseDomain::Error>,
-    {
-        let (_, mut parent_forward_state) = reverse_domain.flip_endpoints(
-            &self.initial_state,
-            self.sequence.last().map(|s| &s.1).unwrap_or(&self.initial_state),
-        ).map_err(Into::into)?;
-        let mut parent_reverse_state = self.initial_state;
-
-        let mut sequence = Vec::new();
-        for (reverse_action, child_reverse_state) in self.sequence {
-            let (forward_action, child_forward_state) = reverse_domain.backtrack(
-                &parent_forward_state,
-                &parent_reverse_state,
-                &reverse_action,
-                &child_reverse_state,
-            ).map_err(Into::into)?;
-
-            sequence.push((forward_action, parent_forward_state));
-            parent_forward_state = child_forward_state;
-            parent_reverse_state = child_reverse_state;
-        }
-
-        sequence.reverse();
-
-        Ok(Path {
-            initial_state: parent_forward_state,
-            sequence,
-            total_cost: self.total_cost,
-        })
     }
 }
 

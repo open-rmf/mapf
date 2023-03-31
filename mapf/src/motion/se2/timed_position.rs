@@ -16,7 +16,13 @@
 */
 
 use super::{Position, Vector, Velocity};
-use crate::motion::{self, timed, InterpError, Interpolation, TimePoint};
+use crate::{
+    motion::{
+        self, timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
+    },
+    error::NoError,
+};
+use arrayvec::ArrayVec;
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct WaypointSE2 {
@@ -133,6 +139,35 @@ impl Interpolation<Position, Velocity> for WaypointSE2 {
     }
 }
 
+impl<W, const N: usize> IntegrateWaypoints<W> for ArrayVec<WaypointSE2, N>
+where
+    WaypointSE2: Into<W>,
+{
+    type IntegratedWaypointIter<'a> = ArrayVec<Result<W, NoError>, N>
+    where
+        W: 'a;
+
+    type WaypointIntegrationError = NoError;
+    fn integrated_waypoints<'a>(
+        &'a self,
+        _initial_waypoint: Option<W>,
+    ) -> Self::IntegratedWaypointIter<'a>
+    where
+        Self: 'a,
+        Self::WaypointIntegrationError: 'a,
+        W: 'a
+    {
+        // TODO(@mxgrey): Should it be an error if _initial_waypoint is None?
+        // We do not store the initial waypoint for the trajectory in the action
+        // so it would be wrong to initiate a trajectory with an action. However
+        // we also don't need that initial waypoint information to produce the
+        // correct waypoints, so it's unclear whether that needs to be an error.
+        self
+        .into_iter()
+        .map(|w| Ok(w.clone().into()))
+        .collect()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
