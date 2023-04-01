@@ -15,7 +15,10 @@
  *
 */
 
-use crate::error::NoError;
+use crate::{
+    domain::SelfKey,
+    error::NoError,
+};
 use std::borrow::Borrow;
 
 /// The `Satisfiable` trait allows search algorithms to recognize when a state
@@ -47,12 +50,14 @@ where
     }
 }
 
-/// As an alternative (or complement) to [`Satisfiable`], `ArrivalKeyring`
+/// As an alternative (or complement) to [`Satisfiable`], [`ArrivalKeyring`]
 /// provides a set of keys, each of which indicates a goal has been reached.
 /// This can be used by algorithms to pursue goal states more directly.
 // TODO(@mxgrey): Think about whether there's a more general name for this.
 // MultiKeyring? Or maybe the normal Keyring class should return an iterator?
-pub trait ArrivalKeyring<Key, Goal> {
+// TODO(@mxgrey): Consider changing the params to <Start, Goal, Key> so this
+// resembles Initialize more closely.
+pub trait ArrivalKeyring<Key, Start, Goal> {
     type ArrivalKeyError;
 
     type ArrivalKeys<'a>: IntoIterator<Item=Result<Key, Self::ArrivalKeyError>> + 'a
@@ -60,39 +65,47 @@ pub trait ArrivalKeyring<Key, Goal> {
         Self: 'a,
         Self::ArrivalKeyError: 'a,
         Key: 'a,
+        Start: 'a,
         Goal: 'a;
 
     fn get_arrival_keys<'a>(
         &'a self,
-        goal: &'a Goal,
+        start: &Start,
+        goal: &Goal,
     ) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
         Key: 'a,
+        Start: 'a,
         Goal: 'a;
 }
 
-impl<Key, Goal> ArrivalKeyring<Key, Goal> for ()
+impl<Key, Start, Goal> ArrivalKeyring<Key, Start, Goal> for ()
 where
-    Goal: Into<Key> + Clone,
+    Goal: SelfKey,
+    Goal::Key: Borrow<Key>,
+    Key: Clone,
 {
     type ArrivalKeyError = NoError;
     type ArrivalKeys<'a> = [Result<Key, NoError>; 1]
     where
         Key: 'a,
+        Start: 'a,
         Goal: 'a;
 
     fn get_arrival_keys<'a>(
         &'a self,
-        goal: &'a Goal,
+        _: &Start,
+        goal: &Goal,
     ) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
         Key: 'a,
-        Goal: 'a
+        Start: 'a,
+        Goal: 'a,
     {
-        [Ok(goal.clone().into())]
+        [Ok(goal.key().borrow().borrow().clone())]
     }
 }

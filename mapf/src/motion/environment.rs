@@ -273,6 +273,10 @@ impl CircularProfile {
         Ok(self)
     }
 
+    pub fn footprint_radius(&self) -> f64 {
+        self.footprint_radius
+    }
+
     pub fn with_safety_distance(mut self, safety_distance: f64) -> Result<Self, ()> {
         if safety_distance < 0.0 {
             return Err(());
@@ -281,12 +285,20 @@ impl CircularProfile {
         Ok(self)
     }
 
+    pub fn safety_buffer(&self) -> f64 {
+        self.safety_buffer
+    }
+
     pub fn with_follow_distance(mut self, follow_distance: f64) -> Result<Self, ()> {
         if follow_distance < 0.0 {
             return Err(());
         }
         self.follow_buffer = follow_distance;
         Ok(self)
+    }
+
+    pub fn follow_buffer(&self) -> f64 {
+        self.follow_buffer
     }
 
     /// The critical distance is the distance between two traffic participants

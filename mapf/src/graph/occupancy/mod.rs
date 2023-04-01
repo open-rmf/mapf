@@ -378,7 +378,6 @@ impl<G: Grid> Visibility<G> {
     }
 
     pub fn neighbors(&self, of_cell: Cell) -> impl Iterator<Item = Cell> + '_ {
-        // dbg!("neighbors");
         [of_cell]
             .into_iter()
             .filter(|of_cell| {
@@ -390,14 +389,11 @@ impl<G: Grid> Visibility<G> {
                     .is_none()
             })
             .flat_map(move |of_cell| {
-                // dbg!(of_cell);
                 [-1, 0, 1].into_iter().flat_map(move |i| {
-                    // dbg!(i);
                     [-1, 0, 1]
                         .into_iter()
                         .filter(move |j| !(i == 0 && *j == 0))
                         .filter_map(move |j| {
-                            // dbg!(j);
                             let cell_size = self.grid().cell_size();
                             let neighbor = of_cell.shifted(i, j);
                             if self

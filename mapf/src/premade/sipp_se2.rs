@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    templates::{InformedSearch, ConflictAvoidance, GraphMotion},
+    templates::{InformedSearch, ConflictAvoidance, GraphMotion, LazyGraphMotion},
     motion::{
         TravelTimeCost, SpeedLimiter, OverlayedDynamicEnvironment,
         se2::{*, quickest_path::QuickestPathSearch},
@@ -53,9 +53,18 @@ pub type SippSE2<G, H=G> = InformedSearch<
     TravelTimeCost,
     QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, DEFAULT_RES>,
     TimeVariantKeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
-    InitializeSE2<SharedGraph<G>>,
+    InitializeSE2<SharedGraph<G>, DEFAULT_RES>,
     SatisfySE2,
-    SafeMergeIntoGoal<DEFAULT_RES>,
+    LazyGraphMotion<
+        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
+        SharedGraph<G>,
+        ConflictAvoidance<
+            DifferentialDriveLineFollow,
+            Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+        >,
+        (),
+        SafeMergeIntoGoal<DEFAULT_RES>,
+    >,
 >;
 
 pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelTimeCost, DEFAULT_RES> as Reversible>::ReversalError;
@@ -73,30 +82,36 @@ where
     pub fn new_sipp_se2(
         activity_graph: SharedGraph<G>,
         heuristic_graph: SharedGraph<H>,
-        motion: DifferentialDriveLineFollow,
+        extrapolator: DifferentialDriveLineFollow,
         environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
     ) -> Result<Self, NewSippSE2Error<H>> {
+        let motion = GraphMotion {
+            space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+            graph: activity_graph.clone(),
+            extrapolator: ConflictAvoidance {
+                avoider: extrapolator,
+                environment: environment.clone(),
+            },
+        };
+
         Ok(
             InformedSearch::new(
-                GraphMotion {
-                    space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
-                    graph: activity_graph.clone(),
-                    extrapolator: ConflictAvoidance {
-                        avoider: motion,
-                        environment: environment.clone(),
-                    },
-                },
+                motion.clone(),
                 TravelTimeCost(1.0),
                 QuickestPathHeuristic::new(
                         heuristic_graph.clone(),
                         TravelTimeCost(1.0),
-                        motion,
+                        extrapolator,
                     )?,
                 TimeVariantKeyedCloser::new(DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new()),
             )
             .with_initializer(InitializeSE2(activity_graph))
-            .with_satisfier(SatisfySE2::from(motion))
-            .with_connector(SafeMergeIntoGoal::new(motion, environment))
+            .with_satisfier(SatisfySE2::from(extrapolator))
+            .with_connector(LazyGraphMotion {
+                motion,
+                keyring: (),
+                chain: SafeMergeIntoGoal::new(extrapolator, environment),
+            })
         )
     }
 }
@@ -116,8 +131,8 @@ impl<G, H> SippSE2Configuration<G, H> {
         // Attempt to reclaim the data held by the Arc, as long as it's not
         // being shared anywhere else. Otherwise we have to make a clone of it.
         let env = match Arc::try_unwrap(self.environment) {
-            Ok(env) => { dbg!(); env},
-            Err(arc_env) => { dbg!(); (*arc_env).clone() },
+            Ok(env) => env,
+            Err(arc_env) => (*arc_env).clone(),
         };
 
         self.environment = Arc::new(f(env));
@@ -170,10 +185,15 @@ mod tests {
     use super::*;
     use crate::{
         algorithm::AStarConnect, Planner,
-        graph::SimpleGraph,
+        graph::{
+            SimpleGraph,
+            occupancy::{
+                Cell, Visibility, VisibilityGraph, NeighborhoodGraph, SparseGrid
+            },
+        },
         motion::{
             DynamicEnvironment, DynamicCircularObstacle, Trajectory,
-            CircularProfile
+            CircularProfile, TimePoint,
         },
     };
     use std::sync::Arc;
@@ -326,5 +346,83 @@ mod tests {
         let expected_cost = expected_cost + expected_delay;
         // TODO(@mxgrey): Make a more specific expectation.
         assert!(solution.total_cost.0 >= expected_cost);
+    }
+
+    #[test]
+    fn test_sipp_se2_open_freespace() {
+        let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
+        let visibility = Arc::new(Visibility::new(
+            SparseGrid::new(1.0),
+            profile.footprint_radius(),
+        ));
+
+        let planner = Planner::new(AStarConnect(
+            InformedSearch::new_sipp_se2(
+                SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
+                SharedGraph::new(VisibilityGraph::new(visibility, [])),
+                DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
+                Arc::new(OverlayedDynamicEnvironment::new(
+                    Arc::new(DynamicEnvironment::new(profile))
+                ))
+            ).unwrap()
+        ));
+
+        let solution = planner.plan(
+            StartSE2 {
+                time: TimePoint::from_secs_f64(0.0),
+                key: Cell::new(0, 0),
+                orientation: Orientation::new(0.0),
+            },
+            GoalSE2 {
+                key: Cell::new(10, 0),
+                orientation: None,
+            },
+        ).unwrap()
+        .solve().unwrap()
+        .solution().unwrap();
+
+        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
+        assert_eq!(2, trajectory.len());
+    }
+
+    #[test]
+    fn test_sipp_se2_obstructed_freespace() {
+        let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
+        let visibility = Arc::new({
+            let mut vis = Visibility::new(
+                SparseGrid::new(1.0),
+                profile.footprint_radius(),
+            );
+            vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
+            vis
+        });
+
+        let planner = Planner::new(AStarConnect(
+            InformedSearch::new_sipp_se2(
+                SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
+                SharedGraph::new(VisibilityGraph::new(visibility, [])),
+                DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
+                Arc::new(OverlayedDynamicEnvironment::new(
+                    Arc::new(DynamicEnvironment::new(profile))
+                ))
+            ).unwrap()
+        ));
+
+        let solution = planner.plan(
+            StartSE2 {
+                time: TimePoint::from_secs_f64(0.0),
+                key: Cell::new(0, 0),
+                orientation: Orientation::new(0.0),
+            },
+            GoalSE2 {
+                key: Cell::new(10, 0),
+                orientation: None,
+            },
+        ).unwrap()
+        .solve().unwrap()
+        .solution().unwrap();
+
+        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
+        assert_eq!(5, trajectory.len());
     }
 }

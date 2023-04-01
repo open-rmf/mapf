@@ -29,11 +29,21 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone)]
-pub struct  VisibilityGraph<G: Grid> {
+#[derive(Debug)]
+pub struct VisibilityGraph<G: Grid> {
     visibility: Arc<Visibility<G>>,
     visibility_of_interest: HashMap<Cell, HashSet<Cell>>,
     points_of_interest: HashSet<Cell>,
+}
+
+impl<G: Grid> Clone for VisibilityGraph<G> {
+    fn clone(&self) -> Self {
+        Self {
+            visibility: self.visibility.clone(),
+            visibility_of_interest: self.visibility_of_interest.clone(),
+            points_of_interest: self.points_of_interest.clone(),
+        }
+    }
 }
 
 fn gather_points_of_interest<G: Grid>(
@@ -132,7 +142,6 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         [from_cell]
             .into_iter()
             .filter(|from_cell| {
-                // dbg!(from_cell);
                 self.visibility
                     .grid()
                     .is_square_occupied(
@@ -142,11 +151,9 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
                     .is_none()
             })
             .flat_map(|from_cell| {
-                // dbg!(from_cell);
                 self.visibility
                     .calculate_visibility(from_cell)
                     .map(move |to_cell| {
-                        // dbg!((from_cell, to_cell))
                         (from_cell, to_cell)
                     })
                     .filter(|(from_cell, to_cell)| from_cell != to_cell)
@@ -224,6 +231,15 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         }
 
         return Some((*from_key, *to_key));
+    }
+}
+
+impl<G: Grid> Reversible for VisibilityGraph<G> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        // Visibility graphs are always bidirectional, so the reverse is the
+        // same as the forward.
+        Ok(self.clone())
     }
 }
 

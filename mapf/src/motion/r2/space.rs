@@ -188,7 +188,7 @@ impl<K> From<K> for StartR2<K> {
 #[derive(Debug, Clone)]
 pub struct InitializeR2<G>(pub G);
 
-impl<G, Start> Initializable<Start, StateR2<G::Key>> for InitializeR2<G>
+impl<G, Start, Goal> Initializable<Start, Goal, StateR2<G::Key>> for InitializeR2<G>
 where
     G: Graph,
     G::Key: Clone,
@@ -199,16 +199,19 @@ where
     type InitialStates<'a> = [Result<StateR2<G::Key>, InitializeR2Error<G::Key>>; 1]
     where
         Self: 'a,
-        Start: 'a;
+        Start: 'a,
+        Goal: 'a;
 
     fn initialize<'a>(
         &'a self,
         from_start: Start,
+        _to_goal: &Goal,
     ) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
         Start: 'a,
+        Goal: 'a,
     {
         let start: StartR2<G::Key> = from_start.into();
         [

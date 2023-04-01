@@ -28,37 +28,24 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    // trace::NoTrace,
-    // planner::make_planner,
-    // node::{Weighted, Informed, PartialKeyed, Agent},
-    // expander::{Constrain, Constrainable, Solvable, SolutionOf},
-    // search::{Search, BasicOptions},
-    // algorithm::Status as PlanningStatus,
-    // a_star,
-    // motion::{
-    //     Trajectory, Motion,
-    //     collide::CircleCollisionConstraint,
-    //     se2::{
-    //         self, Rotation,
-    //         timed_position::{Waypoint, DifferentialDriveLineFollow},
-    //         graph_search::{
-    //             DirectedTimeVariantExpander, DirectedTimeInvariantExpander, StartSE2, GoalSE2, LinearSE2Policy,
-    //             FreeSpaceTimeInvariantExpander, FreeSpaceTimeVariantExpander,
-    //         },
-    //     },
-    // },
-    // directed::simple::SimpleGraph,
-    // occupancy::{Grid, SparseGrid, Cell, Point, Vector}
-    graph::occupancy::{
-        Visibility, SparseGrid, Cell, NeighborhoodGraph, Grid,
+    graph::{
+        SharedGraph,
+        occupancy::{
+            Visibility, VisibilityGraph, SparseGrid, Cell, NeighborhoodGraph, Grid
+        },
     },
     motion::{
-        Trajectory, Motion,
-        se2::{Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2},
+        Trajectory, Motion, OverlayedDynamicEnvironment, DynamicEnvironment,
+        CircularProfile, DynamicCircularObstacle,
+        se2::{
+            Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
+            DifferentialDriveLineFollow, StartSE2, Orientation,
+        },
     },
+    templates::InformedSearch,
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, Algorithm, SearchStatus, tree::NodeContainer},
+    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer},
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -650,7 +637,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
 type GraphKey = Cell;
-type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>>>;
+type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
 type TreeTicket = mapf::algorithm::tree::TreeQueueTicket<mapf::domain::Cost<f64>>;
 
 struct App {
@@ -665,7 +652,6 @@ struct App {
     show_details: KeyToggler,
     search: Option<Search<MyAlgo, GoalSE2<Cell>, ()>>,
     step_progress: button::State,
-    expander: Planner<MyAlgo, ()>,
     debug_on: bool,
     memory: Vec<TreeTicket>,
     debug_step_count: u64,
@@ -774,7 +760,6 @@ impl App {
         self.canvas.program.layers.3.solution = None;
         let endpoints = &self.canvas.program.layers.2;
         let visibility = self.canvas.program.layers.1.visibility();
-        let cell_size = endpoints.cell_size;
         if let (Some(start_cell), Some(goal_cell)) = (endpoints.start_cell, endpoints.goal_cell) {
             if start_cell == goal_cell {
                 // No plan is needed
@@ -782,116 +767,73 @@ impl App {
             }
 
             if endpoints.start_valid && endpoints.goal_valid {
-                let mut vertices = Vec::new();
-                let mut edges: Vec<Vec<usize>> = Vec::new();
                 self.canvas.program.layers.3.vertex_lookup.clear();
-                vertices.push(start_cell.to_center_point(cell_size));
-                vertices.push(goal_cell.to_center_point(cell_size));
-                let mut get_vertex_index =
-                    |cell: &Cell| {
-                        *self.canvas.program.layers.3.vertex_lookup.entry(*cell).or_insert_with(
-                            || {
-                                let index = vertices.len();
-                                vertices.push(cell.to_center_point(cell_size));
-                                index
+
+                let shared_visibility = Arc::new(visibility.clone());
+                let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
+                    shared_visibility.clone(), [],
+                ));
+
+                let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
+                    shared_visibility, [],
+                ));
+
+                let extrapolator = DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds");
+                let agent_radius = self.canvas.program.layers.2.agent_radius;
+                let profile = CircularProfile::new(
+                    agent_radius, agent_radius, agent_radius,
+                ).expect("Bad profile sizes");
+
+                let environment = Arc::new(
+                    OverlayedDynamicEnvironment::new(
+                        Arc::new({
+                            let mut env = DynamicEnvironment::new(profile);
+                            for (obs_size, obs_traj) in &self.canvas.program.layers.3.obstacles {
+                                env.obstacles.push(
+                                    DynamicCircularObstacle::new(
+                                        CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
+                                    ).with_trajectory(Some(obs_traj.clone()))
+                                );
                             }
-                        )
-                    };
-
-                let mut create_edge =
-                    |i: usize, j: usize| {
-                        let min_size = i.max(j) + 1;
-                        if edges.len() < min_size {
-                            edges.resize(min_size, Vec::new());
-                        }
-
-                        edges.get_mut(i).unwrap().push(j);
-                        edges.get_mut(j).unwrap().push(i);
-                    };
-
-                if endpoints.start_sees_goal {
-                    create_edge(0, 1);
-                }
-
-                let start_vis = &endpoints.start_visibility;
-                let goal_vis = &endpoints.goal_visibility;
-                for (i, v_cell) in [
-                    (0_usize, start_vis),
-                    (1_usize, goal_vis),
-                ] {
-                    for cell_j in v_cell {
-                        let j = get_vertex_index(cell_j);
-                        create_edge(i, j);
-                    }
-                }
-
-                for (cell_i, cell_j) in visibility.iter_edges() {
-                    let [i, j] = [get_vertex_index(cell_i), get_vertex_index(cell_j)];
-                    create_edge(i, j);
-                }
-
-                let graph = Arc::new(SimpleGraph::new(vertices, edges));
-                let extrapolator = Arc::new(DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds"));
-                // let expander = se2::graph_search::make_directed_time_invariant_expander(graph, extrapolator);
-                let expander = se2::graph_search::make_free_space_time_invariant_expander(
-                    Arc::new(self.canvas.program.layers.1.visibility().clone()),
-                    extrapolator,
-                    vec![start_cell, goal_cell],
-                );
-
-                let expander = Arc::new(
-                    expander.constrain(
-                        CircleCollisionConstraint{
-                            obstacles: self.canvas.program.layers.3.obstacles.clone(),
-                            agent_radius: self.canvas.program.layers.2.agent_radius,
-                        }
+                            env
+                        })
                     )
                 );
 
-                let planner = make_planner(expander.clone(), Arc::new(a_star::Algorithm));
-                // let mut progress = planner.plan(
-                //     &StartSE2{
-                //         vertex: 0,
-                //         orientation: Rotation::new(0_f64),
-                //     },
-                //     GoalSE2{
-                //         vertex: 1,
-                //         orientation: None,
-                //     },
-                // ).unwrap();
-                let mut progress = planner.plan(
-                    &StartSE2{
-                        vertex: start_cell,
-                        orientation: Rotation::new(0_f64),
+                let domain = InformedSearch::new_sipp_se2(
+                    activity_graph, heuristic_graph, extrapolator, environment,
+                ).unwrap();
+
+                let planner = Planner::new(AStarConnect(domain));
+                let mut search = planner.plan(
+                    StartSE2 {
+                        time: TimePoint::from_secs_f64(0.0),
+                        key: start_cell,
+                        orientation: Orientation::new(0_f64),
                     },
-                    GoalSE2{
-                        vertex: goal_cell,
+                    GoalSE2 {
+                        key: goal_cell,
                         orientation: None,
                     },
                 ).unwrap();
 
-
-
-
                 self.debug_step_count = 0;
                 if self.debug_on {
-                    self.search = Some(progress);
-                    self.memory = self.search.as_ref().unwrap().memory()
-                        .queue().clone().into_iter_sorted()
-                        .map(|n| n.0.0.clone()).collect();
-
-                    self.expander = Some(expander);
+                    self.search = Some(search);
+                    self.memory = self.search.as_ref().unwrap().memory().0
+                        .queue.clone().into_iter_sorted()
+                        .map(|n| n.0.clone()).collect();
                 } else {
-                    match progress.solve().unwrap() {
-                        PlanningStatus::Solved(solution) => {
+                    match search.solve().unwrap() {
+                        SearchStatus::Solved(solution) => {
                             println!("Solution: {:#?}", solution);
-                            self.canvas.program.layers.3.solution = solution.motion().clone();
+                            self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap();
                             self.canvas.cache.clear();
                         },
-                        PlanningStatus::Impossible => {
+                        SearchStatus::Impossible => {
                             println!("Impossible to solve!");
                         },
-                        PlanningStatus::Incomplete => {
+                        SearchStatus::Incomplete => {
                             println!("Planning is incomplete..?");
                         }
                     }
@@ -905,7 +847,6 @@ impl App {
         // If the attempt to plan falls through, then clear out all these fields.
         self.memory.clear();
         self.search = None;
-        self.expander = None;
         self.canvas.program.layers.3.solution = None;
         self.canvas.cache.clear();
     }
@@ -956,7 +897,6 @@ impl Application for App {
                 show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
                 search: None,
                 step_progress: button::State::new(),
-                expander: None,
                 debug_on: false,
                 memory: Default::default(),
                 debug_step_count: 0,
@@ -1062,9 +1002,16 @@ impl Application for App {
             },
             Message::DebugNodeSelected(value) => {
                 self.debug_node_selected = Some(value);
-                if let (Some(node), Some(expander)) = (self.memory.get(value), &self.expander) {
-                    self.canvas.program.layers.3.solution = expander.make_solution(node).unwrap().motion().clone();
-                    self.canvas.cache.clear();
+                if let Some(node) = self.memory.get(value) {
+                    if let Some(search) = &self.search {
+                        self.canvas.program.layers.3.solution = search
+                            .memory().0.arena
+                            .retrace(node.node_id)
+                            .unwrap()
+                            .make_trajectory()
+                            .unwrap();
+                        self.canvas.cache.clear();
+                    }
                 }
             },
             Message::StepProgress => {
@@ -1160,18 +1107,20 @@ impl Application for App {
                     )
                     .push({
                         let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
-                        for (i, node) in self.memory.iter().enumerate() {
-                            scroll = scroll.push(Radio::new(
-                                i, format!(
-                                    "{i}: {:?} + {:?} = {:?}",
-                                    node.cost() as f64 / 1e9,
-                                    node.remaining_cost_estimate() as f64 / 1e9,
-                                    node.total_cost_estimate() as f64 / 1e9,
-                                ), self.debug_node_selected,
-                                Message::DebugNodeSelected
-                            ));
+                        if let Some(search) = &self.search {
+                            for (i, ticket) in self.memory.iter().enumerate() {
+                                let node = search.memory().0.arena.get(ticket.node_id).unwrap();
+                                scroll = scroll.push(Radio::new(
+                                    i, format!(
+                                        "{i}: {:?} + {:?} = {:?}",
+                                        node.cost().0,
+                                        node.remaining_cost_estimate().0,
+                                        ticket.evaluation.0,
+                                    ), self.debug_node_selected,
+                                    Message::DebugNodeSelected
+                                ));
+                            }
                         }
-
                         scroll
                     }.height(Length::Fill))
                     .push({

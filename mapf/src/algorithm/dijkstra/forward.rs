@@ -86,11 +86,11 @@ impl<D, Start, Goal> Coherent<Start, Goal> for Dijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
-    + Initializable<Start, D::State>
+    + Initializable<Start, Goal, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
-    + ArrivalKeyring<D::Key, Goal>,
+    + ArrivalKeyring<D::Key, Start, Goal>,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -106,8 +106,14 @@ where
         start: Start,
         goal: &Goal,
     ) -> Result<Self::Memory, Self::InitError> {
+
+        let goal_keys: Result<Vec<_>, _> = self.domain.get_arrival_keys(&start, goal)
+            .into_iter()
+            .map(|r| r.map_err(Self::domain_err))
+            .collect();
+
         let mut trees = Vec::new();
-        for state in self.domain.initialize(start) {
+        for state in self.domain.initialize(start, goal) {
             let state = state.map_err(Self::domain_err)?;
             let key_ref = self.domain.key_for(&state);
             let tree = match self.cache.lock() {
@@ -136,11 +142,6 @@ where
 
             trees.push(TreeMemory::new(tree));
         }
-
-        let goal_keys: Result<Vec<_>, _> = self.domain.get_arrival_keys(goal)
-            .into_iter()
-            .map(|r| r.map_err(Self::domain_err))
-            .collect();
 
         Ok(Memory::new(trees, goal_keys?))
     }
@@ -185,7 +186,7 @@ where
             return Ok(SearchStatus::Impossible);
         }
 
-        let mut exhausted = true;
+        memory.exhausted = true;
         for (tree_i, mt) in memory.trees.iter_mut().enumerate() {
             let cost_bound = memory.best_solution.as_ref().map(|(_, c)| c.clone());
 
@@ -325,7 +326,7 @@ where
                         true
                     }
                 }).is_some() {
-                    exhausted = false;
+                    memory.exhausted = false;
                 }
             }
 
@@ -345,14 +346,15 @@ where
                     mt.solution = Some(solution);
                 }
             }
-
-            memory.exhausted = exhausted;
         }
 
         return Ok(SearchStatus::Incomplete);
     }
 }
 
+/// Note that configuring a Dijkstra algorithm will clear the cache. If the
+/// underlying configuration changes then we cannot assume that any of the
+/// previous search remains valid.
 impl<D: Configurable> Configurable for Dijkstra<D>
 where
     D: Domain

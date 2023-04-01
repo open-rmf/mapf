@@ -19,6 +19,7 @@ use crate::{
     domain::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
         Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring, Connectable,
+        Configurable,
     },
     algorithm::{
         Algorithm, Coherent, Solvable, SearchStatus, Path,
@@ -27,6 +28,7 @@ use crate::{
             forward::{Memory, DijkstraSearchError},
         },
     },
+    error::ThisError,
 };
 use std::ops::Add;
 
@@ -84,11 +86,11 @@ impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
-    + Initializable<Goal, D::State>
+    + Initializable<Goal, Start, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
-    + ArrivalKeyring<D::Key, Start>,
+    + ArrivalKeyring<D::Key, Goal, Start>,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -154,6 +156,41 @@ where
     }
 }
 
+/// Note that configuring a Dijkstra algorithm will clear the cache. If the
+/// underlying configuration changes then we cannot assume that any of the
+/// previous search remains valid.
+impl<D: Configurable> Configurable for BackwardDijkstra<D>
+where
+    D: Domain
+    + Reversible
+    + Keyed
+    + Activity<D::State>
+    + Weighted<D::State, D::ActivityAction>
+    + Closable<D::State>
+{
+    type Configuration = D::Configuration;
+    type ConfigurationError = BackwardConfigurationError<D::ReversalError, D::ConfigurationError>;
+    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    where
+        F: FnOnce(Self::Configuration) -> Self::Configuration,
+    {
+        let configured = self.backward.domain().reversed()
+            .map_err(BackwardConfigurationError::Reverse)?
+            .configure(f)
+            .map_err(BackwardConfigurationError::Configure)?;
+
+        Self::new(&configured).map_err(BackwardConfigurationError::Reverse)
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum BackwardConfigurationError<R, C> {
+    #[error("An error occurred while reversing the domain:\n{0:?}")]
+    Reverse(R),
+    #[error("An error occured while configuring the forward domain:\n{0:?}")]
+    Configure(C),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,7 +200,7 @@ mod tests {
             se2::*,
             TravelTimeCost,
         },
-        templates::{UninformedSearch, IncrementalGraphMotion},
+        templates::{UninformedSearch, GraphMotion, LazyGraphMotion},
         domain::KeyedCloser,
     };
     use std::sync::Arc;
@@ -204,23 +241,31 @@ mod tests {
             ]
         ));
 
-        let motion = DifferentialDriveLineFollow::new(1.0, 1.0).unwrap();
+        let extrapolator = DifferentialDriveLineFollow::new(1.0, 1.0).unwrap();
         let weight = TravelTimeCost(1.0);
+        let motion = GraphMotion {
+            space: DiscreteSpaceTimeSE2::<usize, 100>::new(),
+            graph: graph.clone(),
+            extrapolator,
+        };
 
         let planner = quickest_path::QuickestPathPlanner::new(
             Arc::new(
                 BackwardDijkstra::new(
                     &UninformedSearch::new_uninformed(
-                        IncrementalGraphMotion {
-                            space: DiscreteSpaceTimeSE2::<usize, 100>::new(),
-                            graph: graph.clone(),
-                            extrapolator: motion,
-                        },
+                        motion.clone(),
                         weight,
                         KeyedCloser(DiscreteSpaceTimeSE2::new()),
                     )
                     .with_initializer(StarburstSE2::for_start(graph.clone()))
                     .with_satisfier(StarburstSE2::for_goal(graph).unwrap())
+                    .with_connector(
+                        LazyGraphMotion {
+                            motion,
+                            keyring: (),
+                            chain: ()
+                        }
+                    )
                 ).unwrap()
             )
         );

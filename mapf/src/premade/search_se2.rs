@@ -46,7 +46,7 @@ pub type SearchSE2<G> = InformedSearch<
         DirectTravelHeuristic<SharedGraph<G>, TravelTimeCost>,
     >,
     KeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
-    InitializeSE2<SharedGraph<G>>,
+    InitializeSE2<SharedGraph<G>, DEFAULT_RES>,
     SatisfySE2,
     MergeIntoGoal<DEFAULT_RES>,
 >;

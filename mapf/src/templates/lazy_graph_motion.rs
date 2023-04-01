@@ -17,8 +17,8 @@
 
 use crate::{
     graph::{Graph, Edge},
-    domain::{KeyedSpace, Connectable, ArrivalKeyring, Extrapolator},
-    templates::GraphMotion,
+    domain::{KeyedSpace, Connectable, ArrivalKeyring, Extrapolator, Reversible},
+    templates::{GraphMotion},
     error::ThisError,
     util::FlatResultMapTrait,
 };
@@ -27,6 +27,7 @@ use std::borrow::Borrow;
 /// [`LazyGraphMotion`] implements the [`Connectable`] trait for graphs that
 /// perform lazy evaluation. This allows the domain to find connections to goal
 /// states that would otherwise not show up in normal graph traversal.
+#[derive(Debug, Clone)]
 pub struct LazyGraphMotion<S, G, E, R, C> {
     /// Describe how the agent through the graph. The graph should have a useful
     /// implementation of [`Graph::lazy_edges_between`] in order for this struct
@@ -43,14 +44,14 @@ where
     S: KeyedSpace<G::Key>,
     S::Key: Borrow<G::Key>,
     S::State: Into<State> + Clone,
-    State: Into<S::State> + Clone,
+    State: Borrow<S::State> + Clone,
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
     E::Extrapolation: Into<Action>,
     Action: Into<E::Extrapolation>,
-    R: ArrivalKeyring<G::Key, Goal>,
+    R: ArrivalKeyring<G::Key, G::Key, Goal>,
     C: Connectable<State, Action, Goal>,
 {
     type Connections<'a> = impl Iterator<Item=Result<(Action, State), Self::ConnectionError>> + 'a
@@ -74,9 +75,9 @@ where
         Action: 'a,
         Goal: 'a,
     {
-        let from_spatial_state: S::State = from_state.clone().into();
+        let from_spatial_state: S::State = from_state.clone().borrow().clone();
         let from_key: G::Key = self.motion.space.key_for(&from_spatial_state).borrow().borrow().clone();
-        self.keyring.get_arrival_keys(to_target)
+        self.keyring.get_arrival_keys(&from_key, to_target)
         .into_iter()
         .flat_map(move |r: Result<G::Key, R::ArrivalKeyError>| {
             let from_spatial_state = from_spatial_state.clone();
@@ -130,6 +131,29 @@ where
     }
 }
 
+impl<S, G, E, R, C> Reversible for LazyGraphMotion<S, G, E, R, C>
+where
+    S: Reversible,
+    G: Reversible,
+    E: Reversible,
+    R: Reversible,
+    C: Reversible,
+{
+    type ReversalError = LazyGraphMotionReversalError<
+        <GraphMotion<S, G, E> as Reversible>::ReversalError,
+        R::ReversalError,
+        C::ReversalError,
+    >;
+
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(LazyGraphMotion {
+            motion: self.motion.reversed().map_err(LazyGraphMotionReversalError::GraphMotion)?,
+            keyring: self.keyring.reversed().map_err(LazyGraphMotionReversalError::Keyring)?,
+            chain: self.chain.reversed().map_err(LazyGraphMotionReversalError::Chain)?
+        })
+    }
+}
+
 #[derive(Debug, ThisError)]
 pub enum LazyGraphMotionError<K, R, E, C> {
     #[error("The graph is missing the requested vertex [{0:?}]")]
@@ -139,6 +163,16 @@ pub enum LazyGraphMotionError<K, R, E, C> {
     #[error("The extrapolator experienced an error:\n{0:?}")]
     Extrapolator(E),
     #[error("The chained connector experienced an error:\n{0:?}")]
+    Chain(C),
+}
+
+#[derive(Debug, ThisError)]
+pub enum LazyGraphMotionReversalError<M, R, C> {
+    #[error("The graph motion had a reversal error:\n{0:?}")]
+    GraphMotion(M),
+    #[error("The keyring had a reversal error:\n{0:?}")]
+    Keyring(R),
+    #[error("The chained connector had a reversal error:\n{0:?}")]
     Chain(C),
 }
 

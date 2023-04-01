@@ -246,10 +246,10 @@ impl<A: Domain, W, H, X, I, S, C> Domain for InformedSearch<A, W, H, X, I, S, C>
     type Error = anyhow::Error;
 }
 
-impl<A, W, H, X, I, S, C, Start> Initializable<Start, A::State> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Start, Goal> Initializable<Start, Goal, A::State> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain,
-    I: Initializable<Start, A::State>,
+    I: Initializable<Start, Goal, A::State>,
 {
     type InitialError = I::InitialError;
     type InitialStates<'a> = I::InitialStates<'a>
@@ -257,20 +257,23 @@ where
         Self: 'a,
         Self::InitialError: 'a,
         Start: 'a,
+        Goal: 'a,
         A::State: 'a,
         A: 'a;
 
     fn initialize<'a>(
         &'a self,
         from_start: Start,
+        to_goal: &Goal,
     ) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
         Start: 'a,
+        Goal: 'a,
         A::State: 'a,
     {
-        self.initializer.initialize(from_start)
+        self.initializer.initialize(from_start, to_goal)
     }
 }
 
@@ -428,36 +431,33 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C, Goal> ArrivalKeyring<A::Key, Goal> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Start, Goal> ArrivalKeyring<A::Key, Start, Goal> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Keyed,
-    S: ArrivalKeyring<A::Key, Goal>,
+    S: ArrivalKeyring<A::Key, Start, Goal>,
 {
     type ArrivalKeyError = S::ArrivalKeyError;
     type ArrivalKeys<'a> = S::ArrivalKeys<'a>
     where
-        A: 'a,
-        W: 'a,
-        H: 'a,
-        X: 'a,
-        I: 'a,
-        S: 'a,
-        C: 'a,
+        Self: 'a,
+        Start: 'a,
         Goal: 'a,
         S::ArrivalKeyError: 'a,
         A::Key: 'a;
 
     fn get_arrival_keys<'a>(
         &'a self,
-        goal: &'a Goal,
+        start: &Start,
+        goal: &Goal,
     ) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
         A::Key: 'a,
+        Start: 'a,
         Goal: 'a
     {
-        self.satisfier.get_arrival_keys(goal)
+        self.satisfier.get_arrival_keys(start, goal)
     }
 }
 

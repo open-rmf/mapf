@@ -105,7 +105,6 @@ where
     + Weighted<D::State, D::ActivityAction>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    // D::Error: StdError,
     D::WeightedError: Into<D::Error>,
     D::Cost: Ord + Add<Output=D::Cost> + Clone,
 {
@@ -116,14 +115,14 @@ where
         goal: &Goal,
     ) -> Result<<Self as Algorithm>::Memory, AStarSearchError<D::Error>>
     where
-        D: Initializable<Start, D::State>
+        D: Initializable<Start, Goal, D::State>
         + Informed<D::State, Goal, CostEstimate=D::Cost>,
         D::InitialError: Into<D::Error>,
         D::InformedError: Into<D::Error>,
     {
         let mut memory = Memory(Tree::new(domain.new_closed_set()));
 
-        for state in domain.initialize(start) {
+        for state in domain.initialize(start, goal) {
             let state = state.map_err(Self::domain_err)?;
             let cost = match domain.initial_cost(&state).map_err(Self::domain_err)? {
                 Some(c) => c,
@@ -270,7 +269,7 @@ where
 impl<D, Start, Goal> Coherent<Start, Goal> for AStar<D>
 where
     D: Domain
-    + Initializable<Start, D::State>
+    + Initializable<Start, Goal, D::State>
     + Closable<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
@@ -359,7 +358,7 @@ where
 impl<D, Start, Goal> Coherent<Start, Goal> for AStarConnect<D>
 where
     D: Domain
-    + Initializable<Start, D::State>
+    + Initializable<Start, Goal, D::State>
     + Closable<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
@@ -452,6 +451,16 @@ pub struct Node<State, Action, Cost> {
     cost: Cost,
     remaining_cost_estimate: Cost,
     parent: Option<(usize, Action)>,
+}
+
+impl<State, Action, Cost> Node<State, Action, Cost> {
+    pub fn cost(&self) -> &Cost {
+        &self.cost
+    }
+
+    pub fn remaining_cost_estimate(&self) -> &Cost {
+        &self.remaining_cost_estimate
+    }
 }
 
 impl<State, Action, Cost> TreeNode for Node<State, Action, Cost>

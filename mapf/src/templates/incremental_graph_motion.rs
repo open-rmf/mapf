@@ -437,7 +437,7 @@ mod tests {
 
         const R: u32 = 100;
         let init = StarburstSE2::for_start(graph);
-        let states: Result<Vec<IncrementalState<StateSE2<usize, R>, SimpleGraph<Point, ()>>>, _> = init.initialize(1).collect();
+        let states: Result<Vec<IncrementalState<StateSE2<usize, R>, SimpleGraph<Point, ()>>>, _> = init.initialize(1, &4).collect();
         let states = states.unwrap();
         assert!(states.len() == 5);
     }

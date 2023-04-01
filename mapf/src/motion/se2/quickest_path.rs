@@ -28,8 +28,7 @@ use crate::{
     domain::{Informed, Weighted, KeyedCloser, Reversible, Key},
     algorithm::BackwardDijkstra,
     templates::{
-        IncrementalGraphMotion, UninformedSearch,
-        incremental_graph_motion::IncrementalState,
+        GraphMotion, LazyGraphMotion, UninformedSearch,
         informed_search::InformedSearchReversalError,
     },
     error::{Anyhow, ThisError},
@@ -43,7 +42,7 @@ use std::{
 
 pub type QuickestPathSearch<G, W, const R: u32> =
     UninformedSearch<
-        IncrementalGraphMotion<
+        GraphMotion<
             DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
             G,
             DifferentialDriveLineFollow,
@@ -52,7 +51,13 @@ pub type QuickestPathSearch<G, W, const R: u32> =
         KeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, R>>,
         StarburstSE2<G, R>,
         StarburstSE2<G, R>,
-        (),
+        LazyGraphMotion<
+            DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
+            G,
+            DifferentialDriveLineFollow,
+            (),
+            (),
+        >,
     >;
 
 pub type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W, R>>>>;
@@ -61,7 +66,7 @@ pub type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<
 pub struct QuickestPathHeuristic<G, W, const R: u32>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
+    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
@@ -74,7 +79,7 @@ where
 impl<G, W, const R: u32> QuickestPathHeuristic<G, W, R>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
+    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
@@ -84,26 +89,33 @@ where
     pub fn new(
         graph: G,
         weight: W,
-        motion: DifferentialDriveLineFollow,
+        extrapolator: DifferentialDriveLineFollow,
     ) -> Result<Self, <QuickestPathSearch<G, W, R> as Reversible>::ReversalError> {
+        let motion = GraphMotion {
+            space: DiscreteSpaceTimeSE2::new(),
+            graph: graph.clone(),
+            extrapolator,
+        };
+
         Ok(Self {
             planner: Planner::new(
                 Arc::new(
                     BackwardDijkstra::new(
                         &UninformedSearch::new_uninformed(
-                            IncrementalGraphMotion {
-                                space: DiscreteSpaceTimeSE2::new(),
-                                graph: graph.clone(),
-                                extrapolator: motion,
-                            },
+                            motion.clone(),
                             weight,
                             KeyedCloser(DiscreteSpaceTimeSE2::new()),
                         )
                         .with_initializer(StarburstSE2::for_start(graph.clone()))
                         .with_satisfier(
-                            StarburstSE2::for_goal(graph)
+                            StarburstSE2::for_goal(graph.clone())
                             .map_err(InformedSearchReversalError::Satisfier)?
                         )
+                        .with_connector(LazyGraphMotion {
+                            motion,
+                            keyring: (),
+                            chain: (),
+                        })
                     )?
                 )
             )
@@ -118,7 +130,8 @@ where
 impl<G, W, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeuristic<G, W, R>
 where
     W: Reversible,
-    W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
+    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    // W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
     W::Cost: Clone + Ord + Add<W::Cost, Output=W::Cost>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
@@ -158,8 +171,14 @@ pub enum QuickestPathHeuristicError {
 mod tests {
     use super::*;
     use crate::{
-        graph::{SimpleGraph, SharedGraph},
-        motion::{TravelTimeCost, se2::Point, TimePoint},
+        graph::{
+            SimpleGraph, SharedGraph,
+            occupancy::{Cell, Visibility, VisibilityGraph, SparseGrid},
+        },
+        motion::{
+            TravelTimeCost, TimePoint, CircularProfile,
+            se2::{Point, GoalSE2},
+        },
     };
     use approx::assert_relative_eq;
 
@@ -212,5 +231,45 @@ mod tests {
 
         let expected_estimate = 5.0 + 2_f64.sqrt() + 135_f64.to_radians() * 2.0 + 90_f64.to_radians() * 2.0;
         assert_relative_eq!(estimate.0, expected_estimate, max_relative = 0.0001);
+    }
+
+    #[test]
+    fn test_freespace_quickest_path() {
+        let cell_size = 1.0;
+        let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
+        let visibility = Arc::new(Visibility::new(
+            SparseGrid::new(cell_size),
+            profile.footprint_radius(),
+        ));
+
+        let drive = DifferentialDriveLineFollow::new(3.0, 1.0).unwrap();
+        let heuristic: QuickestPathHeuristic<_, _, 100> = QuickestPathHeuristic::new(
+            SharedGraph::new(VisibilityGraph::new(visibility, [])),
+            TravelTimeCost(1.0),
+            drive,
+        ).unwrap();
+
+        let state_cell = Cell::new(0, 0);
+        let state_p = state_cell.to_center_point(cell_size);
+        let goal_cell = Cell::new(10, 0);
+        let goal_p = goal_cell.to_center_point(cell_size);
+        let from_state = StateSE2::new(
+            state_cell,
+            WaypointSE2::new_f64(0.0, state_p.x, state_p.y, 0.0),
+        );
+
+        let goal = GoalSE2 {
+            key: goal_cell,
+            orientation: None,
+        };
+
+        let remaining_cost_estimate = heuristic.estimate_remaining_cost(
+            &from_state, &goal
+        ).unwrap().unwrap();
+        assert_relative_eq!(
+            (goal_p - state_p).norm()/drive.translational_speed(),
+            remaining_cost_estimate.0,
+            max_relative = 0.01,
+        );
     }
 }

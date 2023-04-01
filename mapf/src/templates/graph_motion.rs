@@ -19,7 +19,7 @@ use crate::{
     graph::{Graph, Edge},
     domain::{
         Domain, Extrapolator, Activity, Reversible,
-        KeyedSpace, Keyed, PartialKeyed, Keyring,
+        KeyedSpace, Keyed, PartialKeyed, Keyring, Backtrack,
     },
     util::FlatResultMapTrait,
     error::{StdError, ThisError},
@@ -31,6 +31,24 @@ pub struct GraphMotion<S, G, E> {
     pub space: S,
     pub graph: G,
     pub extrapolator: E,
+}
+
+impl<S, G, E> GraphMotion<S, G, E> {
+    fn update_state_waypoint(
+        &self,
+        waypoint: S::Waypoint,
+        original_state: &S::State,
+    ) -> S::State
+    where
+        S: KeyedSpace<G::Key>,
+        G: Graph,
+        G::Key: Clone,
+    {
+        let vertex = self.space.vertex_of(
+            self.space.key_for(&original_state).borrow()
+        ).clone();
+        self.space.make_keyed_state(vertex, waypoint)
+    }
 }
 
 /// [`GraphMotion`] defines a domain and activity that efficiently moves over a
@@ -139,7 +157,8 @@ where
 
 impl<S, G, E> Keyring<S::State> for GraphMotion<S, G, E>
 where
-    S: Domain + Keyring<S::State>,
+    S: KeyedSpace<G::Key>,
+    G: Graph,
 {
     type KeyRef<'a> = S::KeyRef<'a>
     where
@@ -171,6 +190,55 @@ where
     }
 }
 
+impl<S, G, E> Backtrack<S::State, E::Extrapolation> for GraphMotion<S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    G: Graph,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + Backtrack<S::Waypoint, E::Extrapolation>,
+{
+    type BacktrackError = E::BacktrackError;
+    fn flip_endpoints(
+        &self,
+        initial_reverse_state: &S::State,
+        final_reverse_state: &S::State,
+    ) -> Result<(S::State, S::State), Self::BacktrackError> {
+        self
+        .extrapolator
+        .flip_endpoints(
+            self.space.waypoint(&initial_reverse_state).borrow(),
+            self.space.waypoint(&final_reverse_state).borrow()
+        )
+        .map(|(initial_forward_waypoint, final_forward_waypoint)| {
+            (
+                self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
+                self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+            )
+        })
+    }
+
+    fn backtrack(
+        &self,
+        parent_forward_state: &S::State,
+        parent_reverse_state: &S::State,
+        reverse_action: &E::Extrapolation,
+        child_reverse_state: &S::State,
+    ) -> Result<(E::Extrapolation, S::State), Self::BacktrackError> {
+        self.extrapolator.backtrack(
+            self.space.waypoint(&parent_forward_state).borrow(),
+            self.space.waypoint(&parent_reverse_state).borrow(),
+            reverse_action,
+            self.space.waypoint(&child_reverse_state).borrow()
+        )
+        .map(|(action, waypoint)| {
+            let state = self.update_state_waypoint(waypoint, child_reverse_state);
+            (action, state)
+        })
+    }
+}
+
+
 #[derive(ThisError, Debug)]
 pub enum GraphMotionError<K, E> {
     #[error("The graph is missing the requested vertex [{0:?}]")]
@@ -181,11 +249,11 @@ pub enum GraphMotionError<K, E> {
 
 #[derive(ThisError, Debug)]
 pub enum GraphMotionReversalError<S, G, E> {
-    #[error("The space had a reversal error:\n{0}")]
+    #[error("The space had a reversal error:\n{0:?}")]
     Space(S),
-    #[error("The graph had a reversal error:\n{0}")]
+    #[error("The graph had a reversal error:\n{0:?}")]
     Graph(G),
-    #[error("The extrapolator had a reversal error:\n{0}")]
+    #[error("The extrapolator had a reversal error:\n{0:?}")]
     Extrapolator(E),
 }
 
