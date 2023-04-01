@@ -21,6 +21,9 @@ pub use conflict_avoidance::ConflictAvoidance;
 pub mod graph_motion;
 pub use graph_motion::GraphMotion;
 
+pub mod lazy_graph_motion;
+pub use lazy_graph_motion::LazyGraphMotion;
+
 pub mod incremental_graph_motion;
 pub use incremental_graph_motion::IncrementalGraphMotion;
 

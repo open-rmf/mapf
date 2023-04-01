@@ -50,6 +50,8 @@ where
 /// As an alternative (or complement) to [`Satisfiable`], `ArrivalKeyring`
 /// provides a set of keys, each of which indicates a goal has been reached.
 /// This can be used by algorithms to pursue goal states more directly.
+// TODO(@mxgrey): Think about whether there's a more general name for this.
+// MultiKeyring? Or maybe the normal Keyring class should return an iterator?
 pub trait ArrivalKeyring<Key, Goal> {
     type ArrivalKeyError;
 

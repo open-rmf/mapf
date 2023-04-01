@@ -33,7 +33,7 @@ pub struct GraphMotion<S, G, E> {
     pub extrapolator: E,
 }
 
-/// `GraphMotion` defines a domain and activity that efficiently moves over a
+/// [`GraphMotion`] defines a domain and activity that efficiently moves over a
 /// spatial graph. This is generally used for single-shot motion planning
 /// problems.
 ///

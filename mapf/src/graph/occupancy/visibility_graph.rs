@@ -29,8 +29,8 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug)]
-pub struct VisibilityGraph<G: Grid> {
+#[derive(Debug, Clone)]
+pub struct  VisibilityGraph<G: Grid> {
     visibility: Arc<Visibility<G>>,
     visibility_of_interest: HashMap<Cell, HashSet<Cell>>,
     points_of_interest: HashSet<Cell>,
@@ -94,7 +94,7 @@ fn gather_points_of_interest<G: Grid>(
 impl<G: Grid> VisibilityGraph<G> {
     pub fn new(
         visibility: Arc<Visibility<G>>,
-        points_of_interest: impl Iterator<Item = Cell>,
+        points_of_interest: impl IntoIterator<Item = Cell>,
     ) -> Self {
         let (points_of_interest, visibility_of_interest) =
             gather_points_of_interest(visibility.as_ref(), points_of_interest);
