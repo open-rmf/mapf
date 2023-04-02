@@ -20,7 +20,7 @@ use crate::{
         Domain, Informed, Activity, Weighted, Keyed, PartialKeyed, Keyring,
         Satisfiable, Closable, Initializable, Reversible,
         Connectable, Chained, AsTimeInvariant, AsTimeVariant, Backtrack,
-        ArrivalKeyring,
+        ArrivalKeyring, HierarchicalKeyring,
     },
     error::{Anyhow, ThisError},
 };
@@ -428,6 +428,19 @@ where
         A::State: 'a
     {
         self.activity.key_for(state)
+    }
+}
+
+impl<A, W, H, X, I, S, C, State> HierarchicalKeyring<State> for InformedSearch<A, W, H, X, I, S, C>
+where
+    A: HierarchicalKeyring<State>,
+{
+    type HierarchicalKey = A::HierarchicalKey;
+    fn hierarchical_key_for(&self, state: &State) -> Self::HierarchicalKey {
+        self.activity.hierarchical_key_for(state)
+    }
+    fn parent_key_of(&self, key: &Self::HierarchicalKey) -> Option<Self::HierarchicalKey> {
+        self.activity.parent_key_of(key)
     }
 }
 

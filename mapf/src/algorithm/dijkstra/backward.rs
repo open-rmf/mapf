@@ -19,7 +19,7 @@ use crate::{
     domain::{
         Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
         Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring, Connectable,
-        Configurable,
+        Configurable, HierarchicalKeyring,
     },
     algorithm::{
         Algorithm, Coherent, Solvable, SearchStatus, Path,
@@ -35,7 +35,7 @@ use std::ops::Add;
 pub struct BackwardDijkstra<D: Reversible>
 where
     D: Domain
-    + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
@@ -47,6 +47,7 @@ impl<D: Reversible> BackwardDijkstra<D>
 where
     D: Domain
     + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
@@ -64,6 +65,7 @@ impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
     D: Domain
     + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
@@ -86,6 +88,7 @@ impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
+    + HierarchicalKeyring<D::State>
     + Initializable<Goal, Start, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
@@ -125,6 +128,7 @@ where
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Keyring<D::State>
+    + HierarchicalKeyring<D::State>
     + Closable<D::State>
     + Connectable<D::State, D::ActivityAction, D::Key>
     + Backtrack<
@@ -168,6 +172,7 @@ where
     D: Domain
     + Reversible
     + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>

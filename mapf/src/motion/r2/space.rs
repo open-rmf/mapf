@@ -16,7 +16,10 @@
 */
 
 use crate::{
-    domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable},
+    domain::{
+        Key, Keyed, Keyring, SelfKey, HierarchicalKeyring, Space, KeyedSpace,
+        Initializable,
+    },
     motion::{Timed, TimePoint, IntegrateWaypoints, r2::*, se2::StateSE2},
     graph::Graph,
     error::{ThisError, NoError},
@@ -69,6 +72,21 @@ impl<K: Key + Clone> Keyring<StateR2<K>> for DiscreteSpaceTimeR2<K> {
         K: 'a,
     {
         &state.key
+    }
+}
+
+impl<K: Key + Clone, State> HierarchicalKeyring<State> for DiscreteSpaceTimeR2<K>
+where
+    State: Borrow<StateR2<K>>,
+{
+    type HierarchicalKey = K;
+    fn hierarchical_key_for(&self, state: &State) -> Self::HierarchicalKey {
+        let state_r2: &StateR2<K> = state.borrow();
+        state_r2.key.clone()
+    }
+
+    fn parent_key_of(&self, _: &Self::HierarchicalKey) -> Option<Self::HierarchicalKey> {
+        None
     }
 }
 

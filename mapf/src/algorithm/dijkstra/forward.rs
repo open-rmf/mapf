@@ -17,9 +17,9 @@
 
 use crate::{
     domain::{
-        Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
-        ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
-        Configurable, Connectable,
+        Domain, Keyed, Closable, Activity, Weighted, Initializable,
+        ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult,
+        Keyring, ArrivalKeyring, HierarchicalKeyring, Configurable, Connectable,
     },
     algorithm::{Algorithm, Coherent, Solvable, SearchStatus, Path, tree::*},
     error::ThisError,
@@ -34,7 +34,7 @@ use std::{
 pub struct Dijkstra<D>
 where
     D: Domain
-    + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
@@ -47,6 +47,7 @@ impl<D> Algorithm for Dijkstra<D>
 where
     D: Domain
     + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
@@ -57,7 +58,7 @@ where
 impl<D> Dijkstra<D>
 where
     D: Domain
-    + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
@@ -86,6 +87,7 @@ impl<D, Start, Goal> Coherent<Start, Goal> for Dijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
+    + HierarchicalKeyring<D::State>
     + Initializable<Start, Goal, D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
@@ -120,10 +122,14 @@ where
         let mut trees = Vec::new();
         for state in self.domain.initialize(start, goal) {
             let state = state.map_err(Self::domain_err)?;
-            let key_ref = self.domain.key_for(&state);
+            let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
+                Some(c) => c,
+                None => continue,
+            };
+
             let tree = match self.cache.lock() {
                 Ok(mut r) => {
-                    match r.trees.entry(key_ref.borrow().clone()) {
+                    match r.trees.entry(self.domain.top_level_key_of(&state)) {
                         Entry::Occupied(mut entry) => {
                             {
                                 let mut mt = match entry.get_mut().write() {
@@ -132,6 +138,12 @@ where
                                 };
 
                                 let tree = &mut mt.tree;
+                                tree.push_node(Node {
+                                    cost,
+                                    state: state.clone(),
+                                    parent: None,
+                                }).map_err(Self::algo_err)?;
+
                                 for goal_key in &goal_keys {
                                     if tree.closed_set.status_for_key(goal_key).is_open() {
                                         // This goal has never been reached. It is possible that
@@ -181,11 +193,6 @@ where
                         },
                         Entry::Vacant(entry) => {
                             let mut ct = CachedTree::new(self.domain.new_closed_set());
-                            let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
-                                Some(c) => c,
-                                None => continue,
-                            };
-
                             ct.tree.push_node(Node {
                                 cost,
                                 state: state.clone(),
@@ -210,6 +217,7 @@ impl<D, Goal> Solvable<Goal> for Dijkstra<D>
 where
     D: Domain
     + Keyring<D::State>
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
@@ -247,22 +255,27 @@ where
 
         memory.exhausted = true;
         for (tree_i, mt) in memory.trees.iter_mut().enumerate() {
+            // dbg!(tree_i);
             let cost_bound = memory.best_solution.as_ref().map(|(_, c)| c.clone());
 
             let mut tree_solution = match mt.tree.read() {
                 Ok(cache) => {
                     let tree = &cache.tree;
                     let closed_set_len = tree.closed_set.closed_keys_len();
+                    // dbg!((closed_set_len, mt.last_known_closed_len));
                     if Some(closed_set_len) != mt.last_known_closed_len {
                         // The tree was grown by another search, so let's check
                         // if we already found a solution.
                         let mut best_solution: Option<Path<D::State, D::ActivityAction, D::Cost>> = None;
                         for goal_key in &memory.goal_keys {
+                            // dbg!(goal_key);
                             match tree.closed_set.status_for_key(goal_key) {
                                 ClosedStatus::Open => {
                                     // The goal was never reached
+                                    // dbg!();
                                 }
                                 ClosedStatus::Closed(node_id) => {
+                                    // dbg!(node_id);
                                     let node = tree.arena.get_node(*node_id)
                                         .map_err(Self::algo_err)?;
 
@@ -294,6 +307,7 @@ where
             };
 
             if tree_solution.is_none() {
+                // dbg!();
                 // A solution does not already exist in the cached stree, so we
                 // will get write access to the tree and grow it.
                 let mut cache = mt.tree.write()
@@ -349,6 +363,7 @@ where
                             // TODO(@mxgrey): De-duplicate this with the above
                             // iteration through the activity
                             for next in self.domain.connect(top.state.clone(), goal_key) {
+                                // dbg!();
                                 let (action, child_state) = next.map_err(Self::domain_err)?;
                                 let child_cost = match self.domain
                                     .cost(&top.state, &action, &child_state)
@@ -369,6 +384,7 @@ where
 
                     if let Some(cost_bound) = &cost_bound {
                         if *cost_bound < top.cost {
+                            // dbg!();
                             // There is no point growing the tree further
                             // because it cannot produce a solution better than
                             // the current best.
@@ -418,6 +434,7 @@ impl<D: Configurable> Configurable for Dijkstra<D>
 where
     D: Domain
     + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
@@ -462,18 +479,18 @@ impl From<TreeError> for DijkstraImplError {
 struct Cache<D>
 where
     D: Domain
-    + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
 {
-    trees: HashMap<D::Key, SharedCachedTree<D>>,
+    trees: HashMap<D::HierarchicalKey, SharedCachedTree<D>>,
 }
 
 impl<D> Default for Cache<D>
 where
     D: Domain
-    + Keyed
+    + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>

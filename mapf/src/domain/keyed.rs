@@ -51,6 +51,24 @@ pub trait Keyring<State>: Keyed {
         State: 'a;
 }
 
+pub trait HierarchicalKeyring<State> {
+    type HierarchicalKey: Key;
+    fn hierarchical_key_for(&self, state: &State) -> Self::HierarchicalKey;
+    fn parent_key_of(&self, key: &Self::HierarchicalKey) -> Option<Self::HierarchicalKey>;
+
+    fn top_level_key_of(&self, state: &State) -> Self::HierarchicalKey {
+        let mut key = self.hierarchical_key_for(state);
+        loop {
+            match self.parent_key_of(&key) {
+                Some(child) => key = child,
+                None => break,
+            }
+        }
+
+        key
+    }
+}
+
 /// If a State contains its own key, it can implement SelfKey so that its key
 /// can be obtained without a [`Keyring`].
 pub trait SelfKey: Keyed {

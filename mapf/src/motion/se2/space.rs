@@ -18,7 +18,7 @@
 use crate::{
     domain::{
         Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
-        Satisfiable, ArrivalKeyring, Reversible,
+        Satisfiable, ArrivalKeyring, Reversible, HierarchicalKeyring,
     },
     motion::{
         Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, IntegrateWaypoints,
@@ -78,6 +78,30 @@ where
         State: 'a,
     {
         &state.borrow().key
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HierarchicalKeySE2<K, const R: u32> {
+    Spatial(KeySE2<K, R>),
+    Vertex(K),
+}
+
+impl<State, K: Key + Clone, const R: u32> HierarchicalKeyring<State> for DiscreteSpaceTimeSE2<K, R>
+where
+    State: Borrow<StateSE2<K, R>>,
+{
+    type HierarchicalKey = HierarchicalKeySE2<K, R>;
+    fn hierarchical_key_for(&self, state: &State) -> Self::HierarchicalKey {
+        let state_se2: &StateSE2<K, R> = state.borrow();
+        HierarchicalKeySE2::Spatial(state_se2.key.clone())
+    }
+
+    fn parent_key_of(&self, key: &Self::HierarchicalKey) -> Option<Self::HierarchicalKey> {
+        match key {
+            HierarchicalKeySE2::Spatial(spatial) => Some(HierarchicalKeySE2::Vertex(spatial.vertex.clone())),
+            HierarchicalKeySE2::Vertex(_) => None,
+        }
     }
 }
 

@@ -18,7 +18,7 @@
 use crate::{
     graph::{Graph, Edge},
     domain::{
-        Domain, Extrapolator, Activity, Reversible,
+        Domain, Extrapolator, Activity, Reversible, HierarchicalKeyring,
         KeyedSpace, Keyed, PartialKeyed, Keyring, Backtrack,
     },
     util::FlatResultMapTrait,
@@ -171,6 +171,19 @@ where
         S::State: 'a
     {
         self.space.key_for(state)
+    }
+}
+
+impl<S, G, E, State> HierarchicalKeyring<State> for GraphMotion<S, G, E>
+where
+    S: HierarchicalKeyring<State>,
+{
+    type HierarchicalKey = S::HierarchicalKey;
+    fn hierarchical_key_for(&self, state: &State) -> Self::HierarchicalKey {
+        self.space.hierarchical_key_for(state)
+    }
+    fn parent_key_of(&self, key: &Self::HierarchicalKey) -> Option<Self::HierarchicalKey> {
+        self.space.parent_key_of(key)
     }
 }
 
