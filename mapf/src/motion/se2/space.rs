@@ -639,7 +639,6 @@ where
         }
 
         if has_preferred_key {
-            dbg!(goal);
             all_keys.retain(|r| r.as_ref().ok().filter(|k| **k == *goal).is_some());
         }
 
