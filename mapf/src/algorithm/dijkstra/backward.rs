@@ -90,12 +90,16 @@ where
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
+    + Connectable<D::State, D::ActivityAction, D::Key>
     + ArrivalKeyring<D::Key, Goal, Start>,
+    D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
+    D::ActivityAction: Clone,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
+    D::ConnectionError: Into<D::Error>,
     D::State: Clone,
-    D::Cost: Clone + Ord,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::Key: Clone,
     Start: Clone,
     Goal: Clone,

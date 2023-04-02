@@ -21,7 +21,7 @@ use crate::{
     error::ThisError,
 };
 use std::{
-    cmp::Reverse,
+    cmp::{Reverse, Ordering},
     collections::BinaryHeap,
 };
 
@@ -73,8 +73,9 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
 
         let node_id = self.arena.len();
         let evaluation = node.queue_evaluation();
+        let bias = node.queue_bias();
         self.arena.push(node);
-        self.queue.push(Reverse(TreeQueueTicket { node_id, evaluation }));
+        self.queue.push(Reverse(TreeQueueTicket { node_id, bias, evaluation }));
         Ok(())
     }
 }
@@ -105,11 +106,18 @@ pub trait TreeNode {
     /// informed node this would return its aggregated cost plus its remaining
     /// cost estimate.
     fn queue_evaluation(&self) -> Self::Cost;
+
+    /// Give a bias to this node. When queue_evaluation is exactly equal, the
+    /// node will be ordered by this bias instead. Higher bias will push it
+    /// later in the queue. For an informed node this could be its remaining
+    /// cost estimate.
+    fn queue_bias(&self) -> Option<Self::Cost>;
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct TreeQueueTicket<Cost> {
     pub evaluation: Cost,
+    pub bias: Option<Cost>,
     pub node_id: usize,
 }
 
@@ -124,14 +132,32 @@ impl<Cost: PartialEq> PartialEq for TreeQueueTicket<Cost> {
 impl<Cost: Eq> Eq for TreeQueueTicket<Cost> {}
 
 impl<Cost: PartialOrd> PartialOrd for TreeQueueTicket<Cost> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.evaluation.partial_cmp(&other.evaluation)
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.evaluation.partial_cmp(&other.evaluation) {
+            Some(Ordering::Equal) => {
+                if let (Some(l), Some(r)) = (&self.bias, &other.bias) {
+                    l.partial_cmp(r)
+                } else {
+                    Some(Ordering::Equal)
+                }
+            }
+            value => value,
+        }
     }
 }
 
 impl<Cost: Ord> Ord for TreeQueueTicket<Cost> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.evaluation.cmp(&other.evaluation)
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.evaluation.cmp(&other.evaluation) {
+            Ordering::Equal => {
+                if let (Some(l), Some(r)) = (&self.bias, &other.bias) {
+                    l.cmp(r)
+                } else {
+                    Ordering::Equal
+                }
+            }
+            value => value,
+        }
     }
 }
 

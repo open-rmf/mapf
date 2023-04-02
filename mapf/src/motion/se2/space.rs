@@ -525,6 +525,7 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct GoalSE2<K> {
     pub key: K,
     pub orientation: Option<Orientation>,

@@ -68,7 +68,17 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
     ) -> Self {
         Self {
-            occupancy: Visibility::new(grid, robot_radius as f64),
+            occupancy: {
+                let mut vis = Visibility::new(grid, robot_radius as f64);
+                // vis.change_cells(
+                //     &(-10..=-1_i64)
+                //     .into_iter()
+                //     .map(|y| (Cell::new(3, y), true))
+                //     .collect()
+                // );
+                vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
+                vis
+            },
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
             default_visibility_color: iced::Color::from_rgb8(230, 166, 33),
             special_visibility_color: Default::default(),

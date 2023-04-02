@@ -90,12 +90,16 @@ where
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>
+    + Connectable<D::State, D::ActivityAction, D::Key>
     + ArrivalKeyring<D::Key, Start, Goal>,
+    D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
+    D::ActivityAction: Clone,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
+    D::ConnectionError: Into<D::Error>,
     D::State: Clone,
-    D::Cost: Clone + Ord,
+    D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::Key: Clone,
     Goal: Clone,
 {
@@ -111,6 +115,7 @@ where
             .into_iter()
             .map(|r| r.map_err(Self::domain_err))
             .collect();
+        let goal_keys = goal_keys?;
 
         let mut trees = Vec::new();
         for state in self.domain.initialize(start, goal) {
@@ -119,7 +124,56 @@ where
             let tree = match self.cache.lock() {
                 Ok(mut r) => {
                     match r.trees.entry(key_ref.borrow().clone()) {
-                        Entry::Occupied(entry) => entry.get().clone(),
+                        Entry::Occupied(mut entry) => {
+                            {
+                                let mut mt = match entry.get_mut().write() {
+                                    Ok(mt) => mt,
+                                    Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
+                                };
+
+                                let tree = &mut mt.tree;
+                                for goal_key in &goal_keys {
+                                    if tree.closed_set.status_for_key(goal_key).is_open() {
+                                        // This goal has never been reached. It is possible that
+                                        // optimally reaching this goal will require a lazy connection
+                                        // from a node that has already been closed. Therefore
+                                        // we will go through the entire closed set and attempt a
+                                        // lazy connection to this goal.
+
+                                        // We need to temporarily store the new nodes in a separate
+                                        // vector because we cannot push new items into the closed
+                                        // set while we iterate through the closed set.
+                                        let mut new_nodes = Vec::new();
+                                        for parent_id in tree.closed_set.iter_closed() {
+                                            let node = tree.arena.get_node(*parent_id)
+                                                .map_err(Self::algo_err)?;
+                                            for next in self.domain.connect(node.state.clone(), goal_key) {
+                                                let (action, child_state) = next.map_err(Self::domain_err)?;
+                                                let child_cost = match self.domain
+                                                    .cost(&node.state, &action, &child_state)
+                                                    .map_err(Self::domain_err)?
+                                                {
+                                                    Some(c) => c,
+                                                    None => continue,
+                                                } + node.cost.clone();
+
+                                                new_nodes.push(Node {
+                                                    state: child_state,
+                                                    cost: child_cost,
+                                                    parent: Some((*parent_id, action)),
+                                                });
+                                            }
+                                        }
+
+                                        for node in new_nodes {
+                                            tree.push_node(node).map_err(Self::algo_err)?;
+                                        }
+                                    }
+                                }
+                            }
+
+                            entry.get().clone()
+                        },
                         Entry::Vacant(entry) => {
                             let mut ct = CachedTree::new(self.domain.new_closed_set());
                             let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
@@ -143,7 +197,7 @@ where
             trees.push(TreeMemory::new(tree));
         }
 
-        Ok(Memory::new(trees, goal_keys?))
+        Ok(Memory::new(trees, goal_keys))
     }
 }
 
@@ -507,6 +561,7 @@ where
 pub struct TreeMemory<D>
 where
     D: Domain
+    + Keyed
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
@@ -524,6 +579,7 @@ where
 impl<D> TreeMemory<D>
 where
     D: Domain
+    + Keyed
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
     + Closable<D::State>,
@@ -563,5 +619,9 @@ impl<State, Action, Cost: Clone> TreeNode for Node<State, Action, Cost> {
 
     fn queue_evaluation(&self) -> Self::Cost {
         self.cost.clone()
+    }
+
+    fn queue_bias(&self) -> Option<Self::Cost> {
+        None
     }
 }

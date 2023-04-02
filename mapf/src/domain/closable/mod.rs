@@ -108,6 +108,18 @@ pub trait ClosedSet<State, T> {
 
     /// Get the status of the specified state.
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T>;
+
+    type ClosedSetIter<'a>: IntoIterator<Item=&'a T> + 'a
+    where
+        Self: 'a,
+        State: 'a,
+        T: 'a;
+
+    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
+    where
+        Self: 'a,
+        State: 'a,
+        T: 'a;
 }
 
 /// This trait can supplement [`ClosedSet`] by allowing the closed items to be

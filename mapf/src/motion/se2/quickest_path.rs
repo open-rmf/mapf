@@ -131,15 +131,14 @@ impl<G, W, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeur
 where
     W: Reversible,
     W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    // W: Weighted<IncrementalState<StateSE2<G::Key, R>, G>, ArrayVec<WaypointSE2, 1>>,
     W::Cost: Clone + Ord + Add<W::Cost, Output=W::Cost>,
     W::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
-    State: Borrow<StateSE2<G::Key, R>>,
-    Goal: Borrow<G::Key>,
+    State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
+    Goal: Borrow<G::Key> + std::fmt::Debug,
 {
     type CostEstimate = W::Cost;
     type InformedError = QuickestPathHeuristicError;
@@ -234,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn test_freespace_quickest_path() {
+    fn test_open_freespace_quickest_path() {
         let cell_size = 1.0;
         let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
         let visibility = Arc::new(Visibility::new(
@@ -271,5 +270,46 @@ mod tests {
             remaining_cost_estimate.0,
             max_relative = 0.01,
         );
+    }
+
+    #[test]
+    fn test_obstructed_freespace_quickest_path() {
+        let cell_size = 1.0;
+        let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
+        let visibility = Arc::new({
+            let mut vis = Visibility::new(
+                SparseGrid::new(cell_size),
+                profile.footprint_radius(),
+            );
+            vis.change_cells(
+                &(-10..=-1_i64)
+                .into_iter()
+                .map(|y| (Cell::new(3, y), true))
+                .collect()
+            );
+            vis
+        });
+
+        let drive = DifferentialDriveLineFollow::new(3.0, 1.0).unwrap();
+        let heuristic: QuickestPathHeuristic<_, _, 360> = QuickestPathHeuristic::new(
+            SharedGraph::new(VisibilityGraph::new(visibility, [])),
+            TravelTimeCost(1.0),
+            drive,
+        ).unwrap();
+
+        let from_state = StateSE2::new(
+            Cell::new(-6, -3),
+            WaypointSE2::new_f64(1.256802684, -5.5, -2.5, 45_f64.to_radians()),
+        );
+
+        let goal = GoalSE2 {
+            key: Cell::new(18, 3),
+            orientation: None,
+        };
+
+        let remaining_cost_estimate = heuristic.estimate_remaining_cost(
+            &from_state, &goal
+        ).unwrap().unwrap();
+        dbg!(remaining_cost_estimate);
     }
 }

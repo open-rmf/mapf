@@ -99,7 +99,7 @@ where
                 motion.clone(),
                 TravelTimeCost(1.0),
                 QuickestPathHeuristic::new(
-                        heuristic_graph.clone(),
+                        heuristic_graph,
                         TravelTimeCost(1.0),
                         extrapolator,
                     )?,
@@ -374,7 +374,7 @@ mod tests {
                 orientation: Orientation::new(0.0),
             },
             GoalSE2 {
-                key: Cell::new(10, 0),
+                key: Cell::new(10, 1),
                 orientation: None,
             },
         ).unwrap()
@@ -382,7 +382,8 @@ mod tests {
         .solution().unwrap();
 
         let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
-        assert_eq!(2, trajectory.len());
+        dbg!(&trajectory);
+        assert_eq!(3, trajectory.len());
     }
 
     #[test]

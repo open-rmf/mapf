@@ -486,6 +486,10 @@ where
     fn queue_evaluation(&self) -> Self::Cost {
         self.cost.clone() + self.remaining_cost_estimate.clone()
     }
+
+    fn queue_bias(&self) -> Option<Self::Cost> {
+        Some(self.remaining_cost_estimate.clone())
+    }
 }
 
 /// Control flow return value for functions that constitute step()
