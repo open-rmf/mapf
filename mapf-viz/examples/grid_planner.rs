@@ -504,26 +504,27 @@ impl SolutionVisual<Message> {
     }
 
     fn time_range(&self) -> Option<(TimePoint, TimePoint)> {
-        // if let Some(solution) = &self.solution {
-        //     return Some((solution.initial_motion_time(), solution.finish_motion_time()));
-        // } else
-        {
-            let mut earliest = Minimum::new(|l: &TimePoint, r: &TimePoint| l.cmp(r));
-            let mut latest = Minimum::new(|l: &TimePoint, r: &TimePoint| r.cmp(l));
+        let mut earliest = Minimum::new(|l: &TimePoint, r: &TimePoint| l.cmp(r));
+        let mut latest = Minimum::new(|l: &TimePoint, r: &TimePoint| r.cmp(l));
+
+        for traj in &self.searches {
+            earliest.consider(&traj.initial_motion_time());
+            latest.consider(&traj.finish_motion_time());
+        }
+
+        if !earliest.has_value() || !latest.has_value() {
+            if let Some(solution) = &self.solution {
+                return Some((solution.initial_motion_time(), solution.finish_motion_time()));
+            }
 
             for (_, obs) in &self.obstacles {
                 earliest.consider(&obs.initial_motion_time());
                 latest.consider(&obs.finish_motion_time());
             }
+        }
 
-            for traj in &self.searches {
-                earliest.consider(&traj.initial_motion_time());
-                latest.consider(&traj.finish_motion_time());
-            }
-
-            if let (Some(earliest), Some(latest)) = (earliest.result(), latest.result()) {
-                return Some((earliest, latest));
-            }
+        if let (Some(earliest), Some(latest)) = (earliest.result(), latest.result()) {
+            return Some((earliest, latest));
         }
 
         return None;
@@ -850,18 +851,22 @@ impl App {
                     activity_graph, heuristic_graph, extrapolator, environment,
                 ).unwrap();
 
+                let start = StartSE2 {
+                    time: TimePoint::from_secs_f64(0.0),
+                    key: start_cell,
+                    orientation: Orientation::new(0_f64),
+                };
+
+                let goal = GoalSE2 {
+                    key: goal_cell,
+                    orientation: None,
+                };
+
+                println!("About to plan:\nStart: {start:#?}\nGoal: {goal:#?}");
+
+                let start_time = std::time::Instant::now();
                 let planner = Planner::new(AStarConnect(domain));
-                let mut search = planner.plan(
-                    StartSE2 {
-                        time: TimePoint::from_secs_f64(0.0),
-                        key: start_cell,
-                        orientation: Orientation::new(0_f64),
-                    },
-                    GoalSE2 {
-                        key: goal_cell,
-                        orientation: None,
-                    },
-                ).unwrap();
+                let mut search = planner.plan(start, goal).unwrap();
 
                 self.canvas.program.layers.3.searches.clear();
                 self.debug_step_count = 0;
@@ -871,8 +876,11 @@ impl App {
                         .queue.clone().into_iter_sorted()
                         .map(|n| n.0.clone()).collect();
                 } else {
-                    match search.solve().unwrap() {
+                    let result = search.solve().unwrap();
+                    let elapsed_time = start_time.elapsed();
+                    match result {
                         SearchStatus::Solved(solution) => {
+
                             println!("Solution: {:#?}", solution);
                             self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap();
                             self.canvas.cache.clear();
@@ -884,6 +892,7 @@ impl App {
                             println!("Planning is incomplete..?");
                         }
                     }
+                    println!("Planning took {:?}s", elapsed_time.as_secs_f64());
                 }
                 self.debug_node_selected = None;
 

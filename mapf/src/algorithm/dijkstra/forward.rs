@@ -138,12 +138,9 @@ where
                                         // optimally reaching this goal will require a lazy connection
                                         // from a node that has already been closed. Therefore
                                         // we will go through the entire closed set and attempt a
-                                        // lazy connection to this goal.
-
-                                        // We need to temporarily store the new nodes in a separate
-                                        // vector because we cannot push new items into the closed
-                                        // set while we iterate through the closed set.
-                                        let mut new_nodes = Vec::new();
+                                        // lazy connection to this goal, finding the one that gives
+                                        // the best cost.
+                                        let mut best_node: Option<Node<_, _, _>> = None;
                                         for parent_id in tree.closed_set.iter_closed() {
                                             let node = tree.arena.get_node(*parent_id)
                                                 .map_err(Self::algo_err)?;
@@ -157,15 +154,23 @@ where
                                                     None => continue,
                                                 } + node.cost.clone();
 
-                                                new_nodes.push(Node {
+                                                let new_node = Node {
                                                     state: child_state,
                                                     cost: child_cost,
                                                     parent: Some((*parent_id, action)),
-                                                });
+                                                };
+
+                                                if let Some(best_node) = &mut best_node {
+                                                    if new_node.cost < best_node.cost {
+                                                        *best_node = new_node;
+                                                    }
+                                                } else {
+                                                    best_node = Some(new_node);
+                                                }
                                             }
                                         }
 
-                                        for node in new_nodes {
+                                        if let Some(node) = best_node {
                                             tree.push_node(node).map_err(Self::algo_err)?;
                                         }
                                     }
