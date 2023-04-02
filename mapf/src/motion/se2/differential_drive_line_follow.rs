@@ -27,7 +27,7 @@ use crate::{
         },
     },
     domain::{
-        Extrapolator, IncrementalExtrapolator, SelfKey, Connectable, Reversible,
+        Extrapolator, IncrementalExtrapolator, Connectable, Reversible,
         ExtrapolationProgress, Backtrack, flip_endpoint_times, backtrack_times,
         ConflictAvoider,
     },
@@ -492,7 +492,7 @@ pub struct MergeIntoGoal<const R: u32>(pub DifferentialDriveLineFollow);
 impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target> for MergeIntoGoal<R>
 where
     Action: FromIterator<WaypointSE2>,
-    Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
+    Target: MaybePositioned + MaybeOriented + Borrow<K>,
     K: PartialEq,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
@@ -514,7 +514,7 @@ where
         Action: 'a,
         Target: 'a,
     {
-        let goal_key = to_target.key();
+        let goal_key: &K = to_target.borrow();
         if from_state.key.vertex != *goal_key.borrow() {
             return None;
         }
@@ -545,6 +545,13 @@ where
     }
 }
 
+impl<const R: u32> Reversible for MergeIntoGoal<R> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(Self(self.0.reversed()?))
+    }
+}
+
 #[derive(Clone)]
 pub struct SafeMergeIntoGoal<const R: u32> {
     pub motion: DifferentialDriveLineFollow,
@@ -564,7 +571,7 @@ impl<const R: u32> SafeMergeIntoGoal<R> {
 impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target> for SafeMergeIntoGoal<R>
 where
     Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>>,
-    Target: MaybePositioned + MaybeOriented + SelfKey<Key=K>,
+    Target: MaybePositioned + MaybeOriented + Borrow<K>,
     K: PartialEq,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
@@ -588,8 +595,9 @@ where
     {
         let mut prev_wp = from_state.waypoint;
         let (action, finish_state): (ArrayVec<WaypointSE2, 3>, _) = match MergeIntoGoal(
-            self.motion).connect(from_state, to_target
-        )? {
+            self.motion
+        ).connect(from_state, to_target)?
+        {
             Ok(connection) => connection,
             Err(err) => return Some(Err(err)),
         };

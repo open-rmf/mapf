@@ -20,8 +20,8 @@ use crate::{
     motion::{
         SpeedLimiter,
         se2::{
-            DiscreteSpaceTimeSE2, StarburstSE2, StateSE2,
-            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2,
+            DiscreteSpaceTimeSE2, StateSE2, PreferentialStarburstSE2,
+            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2, MergeIntoGoal,
         },
         r2::Positioned,
     },
@@ -49,14 +49,14 @@ pub type QuickestPathSearch<G, W, const R: u32> =
         >,
         W,
         KeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, R>>,
-        StarburstSE2<G, R>,
-        StarburstSE2<G, R>,
+        PreferentialStarburstSE2<G, R>,
+        PreferentialStarburstSE2<G, R>,
         LazyGraphMotion<
             DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
             G,
             DifferentialDriveLineFollow,
             (),
-            (),
+            MergeIntoGoal<R>,
         >,
     >;
 
@@ -106,15 +106,17 @@ where
                             weight,
                             KeyedCloser(DiscreteSpaceTimeSE2::new()),
                         )
-                        .with_initializer(StarburstSE2::for_start(graph.clone()))
+                        .with_initializer(
+                            PreferentialStarburstSE2::for_start(graph.clone())
+                        )
                         .with_satisfier(
-                            StarburstSE2::for_goal(graph.clone())
+                            PreferentialStarburstSE2::for_goal(graph.clone())
                             .map_err(InformedSearchReversalError::Satisfier)?
                         )
                         .with_connector(LazyGraphMotion {
                             motion,
                             keyring: (),
-                            chain: (),
+                            chain: MergeIntoGoal(extrapolator),
                         })
                     )?
                 )
@@ -137,8 +139,8 @@ where
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
-    State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
-    Goal: Borrow<G::Key> + std::fmt::Debug,
+    State: Borrow<StateSE2<G::Key, R>>,
+    Goal: Borrow<G::Key>,
 {
     type CostEstimate = W::Cost;
     type InformedError = QuickestPathHeuristicError;
@@ -149,8 +151,9 @@ where
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
         let start: &StateSE2<G::Key, R> = from_state.borrow();
         let goal: &G::Key = to_goal.borrow();
+
         self.planner
-            .plan(start.key.vertex.clone(), goal.clone())
+            .plan(start.key.clone(), goal.clone())
             .map_err(|_| QuickestPathHeuristicError::PlannerError)?
             .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)
             .map(|status| status.solution().map(|s| {

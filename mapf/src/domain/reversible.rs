@@ -106,7 +106,7 @@ pub fn flip_endpoint_times<State: Clone + Timed>(
     Ok((initial_forward_state, final_forward_state))
 }
 
-pub fn backtrack_times<State: Clone + Timed + std::fmt::Debug, const N: usize>(
+pub fn backtrack_times<State: Clone + Timed, const N: usize>(
     parent_forward_state: &State,
     parent_reverse_state: &State,
     reverse_action: &ArrayVec<State, N>,

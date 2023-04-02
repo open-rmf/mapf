@@ -61,8 +61,27 @@ impl std::fmt::Debug for WaypointSE2 {
         f
             .debug_struct("WaypointSE2")
             .field("time", &self.time.as_secs_f64())
-            .field("position", &self.position)
+            .field("position", &DebugPositionSE2::from(self.position))
             .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DebugPositionSE2 {
+    pub x: f64,
+    pub y: f64,
+    pub yaw_degrees: f64,
+}
+
+impl DebugPositionSE2 {
+    pub fn new(x: f64, y: f64, yaw_degrees: f64) -> Self {
+        Self { x, y, yaw_degrees }
+    }
+}
+
+impl From<Position> for DebugPositionSE2 {
+    fn from(p: Position) -> Self {
+        Self::new(p.translation.x, p.translation.y, p.rotation.angle().to_degrees())
     }
 }
 

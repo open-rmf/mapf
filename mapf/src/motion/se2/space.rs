@@ -30,6 +30,7 @@ use crate::{
     util::{FlatResultMapTrait, wrap_to_pi},
 };
 use std::borrow::Borrow;
+use smallvec::SmallVec;
 
 #[derive(Debug)]
 pub struct DiscreteSpaceTimeSE2<Key, const R: u32>(std::marker::PhantomData<Key>);
@@ -200,11 +201,27 @@ impl<K, const R: u32> KeySE2<K, R> {
         }
         Self { vertex, orientation }
     }
+
+    pub fn orientation(&self) -> Orientation {
+        Orientation::from_angle(self.orientation as f64 / R as f64)
+    }
 }
 
 impl<K, const R: u32> Borrow<K> for KeySE2<K, R> {
     fn borrow(&self) -> &K {
         &self.vertex
+    }
+}
+
+impl<K, const R: u32> MaybeOriented for KeySE2<K, R> {
+    fn maybe_oriented(&self) -> Option<Orientation> {
+        Some(self.orientation())
+    }
+}
+
+impl<K, const R: u32> MaybePositioned for KeySE2<K, R> {
+    fn maybe_point(&self) -> Option<crate::motion::r2::Point> {
+        None
     }
 }
 
@@ -332,7 +349,7 @@ impl<G, const R: u32> StarburstSE2<G, R> {
     ) -> impl Iterator<Item=Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
     where
         G: Graph,
-        G::Key: Clone + std::fmt::Debug,
+        G::Key: Clone,
         G::Vertex: Positioned,
     {
         let from_start_clone = from_vertex.clone();
@@ -367,7 +384,7 @@ impl<G, const R: u32> StarburstSE2<G, R> {
     ) -> impl Iterator<Item=Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
     where
         G: Graph,
-        G::Key: Clone + std::fmt::Debug,
+        G::Key: Clone,
         G::Vertex: Positioned,
     {
         Self::starburst_impl(from_vertex.clone(), to_vertex.clone(), &self.graph, self.direction)
@@ -381,77 +398,85 @@ impl<G, const R: u32> StarburstSE2<G, R> {
     }
 }
 
-impl<G, const R: u32, State> Initializable<G::Key, G::Key, State> for StarburstSE2<G, R>
+impl<G, const R: u32, Start, Goal, State> Initializable<Start, Goal, State> for StarburstSE2<G, R>
 where
     G: Graph,
-    G::Key: Clone + std::fmt::Debug,
+    G::Key: Clone,
     G::Vertex: Positioned,
-    StateSE2<G::Key, R>: Into<State>
+    Start: Borrow<G::Key>,
+    Goal: Borrow<G::Key>,
+    StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
     type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
         G: 'a,
+        Start: 'a,
+        Goal: 'a,
         State: 'a;
 
     fn initialize<'a>(
         &'a self,
-        from_start: G::Key,
-        to_goal: &G::Key,
+        from_start: Start,
+        to_goal: &Goal,
     ) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
         G::Key: 'a,
-        StateSE2<G::Key, R>: 'a
+        Start: 'a,
+        Goal: 'a,
+        State: 'a
     {
+        let from_start = from_start.borrow().clone();
         self
-        .starburst(from_start.clone(), to_goal.clone())
+        .starburst(from_start.clone(), to_goal.borrow().clone())
         .map(move |r| {
             let from_start = from_start.clone();
             r
             .map(move |(p, angle)|
                 StateSE2::new(
                     from_start.clone(),
-                    WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle)
+                    WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
                 )
             )
         })
         .map(|r| r.map(Into::into))
-        // .chain(
-
-        // )
     }
 }
 
-impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, G::Key> for StarburstSE2<G, R>
+impl<G: Graph, const R: u32, Start, Goal> ArrivalKeyring<KeySE2<G::Key, R>, Start, Goal> for StarburstSE2<G, R>
 where
-    G::Key: Clone + std::fmt::Debug,
+    G::Key: Clone,
     G::Vertex: Positioned,
+    Start: Borrow<G::Key>,
+    Goal: Borrow<G::Key>,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
     type ArrivalKeys<'a> = impl Iterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
     where
         Self: 'a,
         G: 'a,
-        G::Key: 'a;
+        G::Key: 'a,
+        Start: 'a,
+        Goal: 'a;
 
     fn get_arrival_keys<'a>(
         &'a self,
-        start: &G::Key,
-        goal: &G::Key,
+        start: &Start,
+        goal: &Goal,
     ) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
     {
-        let goal = goal.clone();
+        let goal = goal.borrow().clone();
         self
         // goal and start are intentionally swapped because Starburst::for_goal
         // reverses the graph, allowing us to query for edges that lead into the
         // goal.
-        .starburst(goal.clone(), start.clone())
+        .starburst(goal.clone(), start.borrow().clone())
         .map(move |r| {
             r.map(|(_, angle)|
                 KeySE2::new(goal.clone(), angle)
@@ -473,6 +498,159 @@ impl<G: Reversible, const R: u32> Reversible for StarburstSE2<G, R> {
             reverse,
             direction: -1.0 * self.direction,
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PreferentialStarburstSE2<G, const R: u32> {
+    pub starburst: StarburstSE2<G, R>,
+}
+
+impl<G, const R: u32> PreferentialStarburstSE2<G, R> {
+    pub fn for_start(graph: G) -> Self {
+        Self { starburst: StarburstSE2::for_start(graph) }
+    }
+
+    pub fn for_goal(graph: G) -> Result<Self, G::ReversalError>
+    where
+        G: Reversible,
+    {
+        Ok(Self { starburst: StarburstSE2::for_goal(graph)? })
+    }
+}
+
+impl<G: Graph, const R: u32, State> Initializable<G::Key, KeySE2<G::Key, R>, State> for PreferentialStarburstSE2<G, R>
+where
+    G::Key: Clone + std::cmp::PartialEq,
+    G::Vertex: Positioned,
+    StateSE2<G::Key, R>: Into<State>,
+{
+    type InitialError = InitializeSE2Error<G::Key>;
+    type InitialStates<'a> = impl IntoIterator<Item = Result<State, Self::InitialError>> + 'a
+    where
+        Self: 'a,
+        G: 'a,
+        State: 'a;
+
+    fn initialize<'a>(
+        &'a self,
+        from_start: G::Key,
+        to_goal: &KeySE2<G::Key, R>,
+    ) -> Self::InitialStates<'a>
+    where
+        Self: 'a,
+        Self::InitialError: 'a,
+        G::Key: 'a,
+        KeySE2<G::Key, R>: 'a,
+        State: 'a,
+    {
+        let from_start_clone = from_start.clone();
+        let mut all_states: SmallVec<[Result<_, _>; 16]> = self.starburst
+        .starburst(from_start.clone(), to_goal.vertex.clone())
+        .map(move |r| {
+            let from_start = from_start.clone();
+            r
+            .map(move |(p, angle)| {
+                StateSE2::new(
+                    from_start.clone(),
+                    WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
+                )
+            })
+        }).collect();
+
+        let from_start = from_start_clone;
+        if to_goal.vertex == from_start {
+            let mut has_preferred_key = false;
+            for state in &all_states {
+                if let Ok(state) = state {
+                    if state.key == *to_goal {
+                        has_preferred_key = true;
+                        break;
+                    }
+                }
+            }
+
+            if !has_preferred_key {
+                // Insert the prefered key so the planner doesn't think it needs
+                // to rotate
+                if let Some(v) = self.starburst.graph.vertex(&from_start) {
+                    let p = v.borrow().point();
+                    all_states.push(Ok(StateSE2 {
+                        key: to_goal.clone(),
+                        waypoint: WaypointSE2::new(
+                            TimePoint::zero(),
+                            p.x,
+                            p.y,
+                            to_goal.orientation().angle()
+                        )
+                    }));
+                } else {
+                    all_states.push(Err(InitializeSE2Error::MissingVertex(from_start)));
+                }
+            }
+        }
+
+        all_states
+        .into_iter()
+        .map(|r| r.map(Into::into))
+    }
+}
+
+impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, KeySE2<G::Key, R>> for PreferentialStarburstSE2<G, R>
+where
+    G::Key: Clone + std::cmp::PartialEq,
+    G::Vertex: Positioned,
+{
+    type ArrivalKeyError = InitializeSE2Error<G::Key>;
+    type ArrivalKeys<'a> = impl IntoIterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    where
+        Self: 'a,
+        G: 'a,
+        G::Key: 'a;
+
+    fn get_arrival_keys<'a>(
+        &'a self,
+        start: &G::Key,
+        goal: &KeySE2<G::Key, R>,
+    ) -> Self::ArrivalKeys<'a>
+    where
+        Self: 'a,
+        Self::ArrivalKeyError: 'a,
+        KeySE2<G::Key, R>: 'a,
+        G::Key: 'a,
+    {
+        let goal_vertex_key = &goal.vertex;
+        let mut all_keys: SmallVec<[Result<_, _>; 16]> = self.starburst.get_arrival_keys(
+            start, goal_vertex_key
+        ).into_iter().collect();
+
+        // Look through all the keys to see if one of them matches the goal
+        // exactly. If it does then we should simply use the exact goal key.
+        // This minimizes cost estimate inaccuracies that result from ignoring
+        // the rotation component.
+        let mut has_preferred_key = false;
+        for key in &all_keys {
+            if let Ok(key) = key {
+                if *key == *goal {
+                    has_preferred_key = true;
+                    break;
+                }
+            }
+        }
+
+        if has_preferred_key {
+            dbg!(goal);
+            all_keys.retain(|r| r.as_ref().ok().filter(|k| **k == *goal).is_some());
+        }
+
+        all_keys
+    }
+}
+
+impl<G: Reversible, const R: u32> Reversible for PreferentialStarburstSE2<G, R> {
+    type ReversalError = G::ReversalError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(Self { starburst: self.starburst.reversed()? })
     }
 }
 

@@ -22,7 +22,6 @@ pub struct DomainMap<StateMapImpl, ActionMapImpl> {
     action_map: ActionMapImpl,
 }
 
-
 pub struct DefineDomainMap<State=()>(std::marker::PhantomData<State>);
 
 impl<State> DefineDomainMap<State> {

@@ -261,13 +261,13 @@ mod tests {
                         weight,
                         KeyedCloser(DiscreteSpaceTimeSE2::new()),
                     )
-                    .with_initializer(StarburstSE2::for_start(graph.clone()))
-                    .with_satisfier(StarburstSE2::for_goal(graph).unwrap())
+                    .with_initializer(PreferentialStarburstSE2::for_start(graph.clone()))
+                    .with_satisfier(PreferentialStarburstSE2::for_goal(graph).unwrap())
                     .with_connector(
                         LazyGraphMotion {
                             motion,
                             keyring: (),
-                            chain: ()
+                            chain: MergeIntoGoal(extrapolator),
                         }
                     )
                 ).unwrap()
@@ -275,9 +275,12 @@ mod tests {
         );
 
         for i in 0..=8 {
-            let result = planner.plan(i, i).unwrap().solve().unwrap();
-            let solution = result.solution().unwrap();
-            assert!(solution.total_cost.0 == 0.0);
+            for angle in [0.0, 90.0, 180.0, 30.0, -140.0_f64] {
+                let start_key = KeySE2::new(i, angle.to_radians());
+                let result = planner.plan(start_key, i).unwrap().solve().unwrap();
+                let solution = result.solution().unwrap();
+                assert_eq!(solution.total_cost.0, 0.0);
+            }
         }
     }
 }
