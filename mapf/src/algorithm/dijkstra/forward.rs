@@ -25,9 +25,9 @@ use crate::{
     error::ThisError,
 };
 use std::{
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, MutexGuard},
     ops::Add,
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, hash_map::{Entry, Iter as HashMapIter}},
     borrow::Borrow,
 };
 
@@ -72,6 +72,17 @@ where
 
     pub fn domain(&self) -> &D {
         &self.domain
+    }
+
+    pub fn inspect_trees<U, F: FnMut(&D::HierarchicalKey, &CachedTree<D>) -> U>(&self, mut f: F) -> Vec<U> {
+        let mut result = Vec::new();
+        let guard = self.cache.lock().unwrap();
+        for (key, tree) in guard.trees.iter() {
+            let ct = tree.read().unwrap();
+            result.push(f(key, &ct));
+        }
+
+        return result;
     }
 
     fn domain_err(err: impl Into<D::Error>) -> DijkstraSearchError<D::Error> {
@@ -482,7 +493,7 @@ where
     + HierarchicalKeyring<D::State>
     + Activity<D::State>
     + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+    + Closable<D::State>,
 {
     trees: HashMap<D::HierarchicalKey, SharedCachedTree<D>>,
 }
@@ -506,7 +517,7 @@ where
 /// diminishes over the course of multiple searches.
 type SharedCachedTree<D> = Arc<RwLock<CachedTree<D>>>;
 
-struct CachedTree<D>
+pub struct CachedTree<D>
 where
     D: Domain
     + Activity<D::State>
@@ -531,6 +542,10 @@ where
         Self {
             tree: Tree::new(closed_set),
         }
+    }
+
+    pub fn tree(&self) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost> {
+        &self.tree
     }
 }
 
@@ -616,7 +631,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-struct Node<State, Action, Cost> {
+pub struct Node<State, Action, Cost> {
     state: State,
     cost: Cost,
     parent: Option<(usize, Action)>,

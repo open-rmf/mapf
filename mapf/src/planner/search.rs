@@ -96,6 +96,14 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
         &mut self.memory
     }
 
+    pub fn algorithm(&self) -> &Algo {
+        &self.algorithm
+    }
+
+    pub fn algorithm_mut(&mut self) -> &mut Algo {
+        &mut self.algorithm
+    }
+
     /// Change the halting behavior for this progress.
     pub fn with_halting<NewHalt>(
         self,
