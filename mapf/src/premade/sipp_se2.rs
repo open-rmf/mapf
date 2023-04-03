@@ -51,7 +51,7 @@ pub type SippSE2<G, H=G> = InformedSearch<
         >
     >,
     TravelTimeCost,
-    QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, DEFAULT_RES>,
+    QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, TravelTimeCost, DEFAULT_RES>,
     TimeVariantKeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
     InitializeSE2<SharedGraph<G>, DEFAULT_RES>,
     SatisfySE2,
@@ -67,7 +67,7 @@ pub type SippSE2<G, H=G> = InformedSearch<
     >,
 >;
 
-pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelTimeCost, DEFAULT_RES> as Reversible>::ReversalError;
+pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelTimeCost> as Reversible>::ReversalError;
 
 impl<G, H> SippSE2<G, H>
 where
@@ -100,6 +100,7 @@ where
                 TravelTimeCost(1.0),
                 QuickestPathHeuristic::new(
                         heuristic_graph,
+                        TravelTimeCost(1.0),
                         TravelTimeCost(1.0),
                         extrapolator,
                     )?,

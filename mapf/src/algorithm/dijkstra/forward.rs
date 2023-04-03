@@ -73,6 +73,17 @@ where
         &self.domain
     }
 
+    pub fn inspect_trees<U, F: FnMut(&D::Key, &CachedTree<D>) -> U>(&self, mut f: F) -> Vec<U> {
+        let mut result = Vec::new();
+        let guard = self.cache.lock().unwrap();
+        for (key, tree) in guard.trees.iter() {
+            let ct = tree.read().unwrap();
+            result.push(f(key, &ct));
+        }
+
+        return result;
+    }
+
     fn domain_err(err: impl Into<D::Error>) -> DijkstraSearchError<D::Error> {
         DijkstraSearchError::Domain(err.into())
     }
@@ -131,7 +142,9 @@ where
                                     Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
                                 };
 
-                                let tree = &mut mt.tree;
+                                // let tree = &mut mt.tree;
+                                let cache: &mut CachedTree<D> = &mut mt;
+                                let tree = &mut cache.tree;
                                 for goal_key in &goal_keys {
                                     if tree.closed_set.status_for_key(goal_key).is_open() {
                                         // This goal has never been reached. It is possible that
@@ -141,7 +154,7 @@ where
                                         // lazy connection to this goal, finding the one that gives
                                         // the best cost.
                                         let mut best_node: Option<Node<_, _, _>> = None;
-                                        for parent_id in tree.closed_set.iter_closed() {
+                                        for parent_id in &cache.decisive_closed_nodes {
                                             let node = tree.arena.get_node(*parent_id)
                                                 .map_err(Self::algo_err)?;
                                             for next in self.domain.connect(node.state.clone(), goal_key) {
@@ -158,6 +171,7 @@ where
                                                     state: child_state,
                                                     cost: child_cost,
                                                     parent: Some((*parent_id, action)),
+                                                    decisive: false,
                                                 };
 
                                                 if let Some(best_node) = &mut best_node {
@@ -190,6 +204,7 @@ where
                                 cost,
                                 state: state.clone(),
                                 parent: None,
+                                decisive: true,
                             }).map_err(Self::algo_err)?;
 
                             entry.insert(Arc::new(RwLock::new(ct))).clone()
@@ -296,19 +311,20 @@ where
             if tree_solution.is_none() {
                 // A solution does not already exist in the cached stree, so we
                 // will get write access to the tree and grow it.
-                let mut cache = mt.tree.write()
+                let mut guard = mt.tree.write()
                     .map_err(|_| Self::algo_err(DijkstraImplError::PoisonedMutex))?;
-                let tree = &mut cache.tree;
+                // let tree = &mut cache.tree;
+                let cache: &mut CachedTree<_> = &mut guard;
 
                 'grow: for _ in 0..memory.iterations_per_step {
-                    let top_id = match tree.queue.pop() {
+                    let top_id = match cache.tree.queue.pop() {
                         Some(top) => top.0.node_id,
                         None => break,
                     };
 
-                    let top = tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
-                    if let CloseResult::Rejected { prior, .. } = tree.closed_set.close(&top.state, top_id) {
-                        let prior_node = tree.arena.get_node(*prior).map_err(Self::algo_err)?;
+                    let top = cache.tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
+                    if let CloseResult::Rejected { prior, .. } = cache.tree.closed_set.close(&top.state, top_id) {
+                        let prior_node = cache.tree.arena.get_node(*prior).map_err(Self::algo_err)?;
                         if prior_node.cost <= top.cost {
                             // The state we are attempting to expand has already been
                             // closed in the past by a lower cost node, so we will not
@@ -317,6 +333,9 @@ where
                         }
 
                         *prior = top_id;
+                    }
+                    if top.decisive {
+                        cache.decisive_closed_nodes.push(top_id);
                     }
 
                     for next in self.domain.choices(top.state.clone()) {
@@ -329,10 +348,11 @@ where
                             None => continue,
                         } + top.cost.clone();
 
-                        tree.push_node(Node {
+                        cache.tree.push_node(Node {
                             state: child_state,
                             cost: child_cost,
                             parent: Some((top_id, action)),
+                            decisive: true,
                         }).map_err(Self::algo_err)?;
                     }
 
@@ -341,7 +361,7 @@ where
                     for goal_key in &memory.goal_keys {
                         if *top_key == *goal_key {
                             // We have found a solution.
-                            let path = tree.arena.retrace(top_id)
+                            let path = cache.tree.arena.retrace(top_id)
                                 .map_err(Self::algo_err)?;
                             tree_solution = Some(path);
                             break 'grow;
@@ -358,10 +378,11 @@ where
                                     None => continue,
                                 } + top.cost.clone();
 
-                                tree.push_node(Node {
+                                cache.tree.push_node(Node {
                                     state: child_state,
                                     cost: child_cost,
                                     parent: Some((top_id, action)),
+                                    decisive: false,
                                 }).map_err(Self::algo_err)?;
                             }
                         }
@@ -377,8 +398,8 @@ where
                     }
                 }
 
-                mt.last_known_closed_len = Some(tree.closed_set.closed_keys_len());
-                if tree.queue.peek().filter(|t| {
+                mt.last_known_closed_len = Some(cache.tree.closed_set.closed_keys_len());
+                if cache.tree.queue.peek().filter(|t| {
                     if let Some(cost_bound) = &cost_bound {
                         t.0.evaluation < *cost_bound
                     } else {
@@ -489,7 +510,7 @@ where
 /// diminishes over the course of multiple searches.
 type SharedCachedTree<D> = Arc<RwLock<CachedTree<D>>>;
 
-struct CachedTree<D>
+pub struct CachedTree<D>
 where
     D: Domain
     + Activity<D::State>
@@ -498,6 +519,7 @@ where
 {
     /// The tree data that has been cached
     tree: Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost>,
+    decisive_closed_nodes: Vec<usize>,
 }
 
 impl<D> CachedTree<D>
@@ -513,7 +535,12 @@ where
     {
         Self {
             tree: Tree::new(closed_set),
+            decisive_closed_nodes: Vec::new(),
         }
+    }
+
+    pub fn tree(&self) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost> {
+        &self.tree
     }
 }
 
@@ -599,9 +626,10 @@ where
 }
 
 #[derive(Debug, Clone)]
-struct Node<State, Action, Cost> {
+pub struct Node<State, Action, Cost> {
     state: State,
     cost: Cost,
+    decisive: bool,
     parent: Option<(usize, Action)>,
 }
 

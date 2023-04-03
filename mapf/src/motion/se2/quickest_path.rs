@@ -18,69 +18,77 @@
 use crate::{
     Graph, Planner,
     motion::{
-        SpeedLimiter,
+        SpeedLimiter, Trajectory,
         se2::{
-            DiscreteSpaceTimeSE2, StateSE2, PreferentialStarburstSE2,
-            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2, MergeIntoGoal,
+            KeySE2, StateSE2,
+            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2,
         },
-        r2::Positioned,
+        r2::{
+            Positioned, DiscreteSpaceTimeR2, LineFollow, InitializeR2, StateR2,
+            WaypointR2,
+        }
     },
-    domain::{Informed, Weighted, KeyedCloser, Reversible, Key},
-    algorithm::BackwardDijkstra,
-    templates::{
-        GraphMotion, LazyGraphMotion, UninformedSearch,
-        informed_search::InformedSearchReversalError,
-    },
+    domain::{Informed, Weighted, KeyedCloser, Reversible, Key, Extrapolator},
+    algorithm::{BackwardDijkstra, Path},
+    templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
     error::{Anyhow, ThisError},
 };
 use arrayvec::ArrayVec;
 use std::{
     borrow::Borrow,
     ops::Add,
-    sync::Arc,
+    sync::{Arc, RwLock},
+    collections::HashMap,
 };
 
-pub type QuickestPathSearch<G, W, const R: u32> =
+pub type QuickestPathSearch<G, W> =
     UninformedSearch<
         GraphMotion<
-            DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
+            DiscreteSpaceTimeR2<<G as Graph>::Key>,
             G,
-            DifferentialDriveLineFollow,
+            LineFollow,
         >,
         W,
-        KeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, R>>,
-        PreferentialStarburstSE2<G, R>,
-        PreferentialStarburstSE2<G, R>,
+        KeyedCloser<DiscreteSpaceTimeR2<<G as Graph>::Key>>,
+        InitializeR2<G>,
+        (),
         LazyGraphMotion<
-            DiscreteSpaceTimeSE2<<G as Graph>::Key, R>,
+            DiscreteSpaceTimeR2<<G as Graph>::Key>,
             G,
-            DifferentialDriveLineFollow,
+            LineFollow,
             (),
-            MergeIntoGoal<R>,
+            (),
         >,
     >;
 
-pub type QuickestPathPlanner<G, W, const R: u32> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W, R>>>>;
+pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>>;
 
 #[derive(Clone)]
-pub struct QuickestPathHeuristic<G, W, const R: u32>
+pub struct QuickestPathHeuristic<G, WeightR2, WeightSE2, const R: u32>
 where
-    W: Reversible,
-    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    W::WeightedError: Into<Anyhow>,
+    WeightR2: Reversible,
+    WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::WeightedError: Into<Anyhow>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
 {
-    planner: QuickestPathPlanner<G, W, R>,
+    planner: QuickestPathPlanner<G, WeightR2>,
+    extrapolator: DifferentialDriveLineFollow,
+    weight_se2: WeightSE2,
+    cost_cache: Arc<RwLock<HashMap<HeuristicKey<G::Key, R>, Option<WeightSE2::Cost>>>>,
 }
 
-impl<G, W, const R: u32> QuickestPathHeuristic<G, W, R>
+type HeuristicKey<K, const R: u32> = (KeySE2<K, R>, K);
+
+impl<G, WeightR2, WeightSE2, const R: u32> QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
 where
-    W: Reversible,
-    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    W::WeightedError: Into<Anyhow>,
+    WeightR2: Reversible,
+    WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::WeightedError: Into<Anyhow>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -88,13 +96,15 @@ where
 {
     pub fn new(
         graph: G,
-        weight: W,
+        weight_r2: WeightR2,
+        weight_se2: WeightSE2,
         extrapolator: DifferentialDriveLineFollow,
-    ) -> Result<Self, <QuickestPathSearch<G, W, R> as Reversible>::ReversalError> {
+    ) -> Result<Self, <QuickestPathSearch<G, WeightR2> as Reversible>::ReversalError> {
+        let line_follow: LineFollow = extrapolator.into();
         let motion = GraphMotion {
-            space: DiscreteSpaceTimeSE2::new(),
+            space: DiscreteSpaceTimeR2::new(),
             graph: graph.clone(),
-            extrapolator,
+            extrapolator: line_follow,
         };
 
         Ok(Self {
@@ -103,38 +113,37 @@ where
                     BackwardDijkstra::new(
                         &UninformedSearch::new_uninformed(
                             motion.clone(),
-                            weight,
-                            KeyedCloser(DiscreteSpaceTimeSE2::new()),
+                            weight_r2,
+                            KeyedCloser(DiscreteSpaceTimeR2::new()),
                         )
-                        .with_initializer(
-                            PreferentialStarburstSE2::for_start(graph.clone())
-                        )
-                        .with_satisfier(
-                            PreferentialStarburstSE2::for_goal(graph.clone())
-                            .map_err(InformedSearchReversalError::Satisfier)?
-                        )
+                        .with_initializer(InitializeR2(graph.clone()))
                         .with_connector(LazyGraphMotion {
                             motion,
                             keyring: (),
-                            chain: MergeIntoGoal(extrapolator),
+                            chain: (),
                         })
                     )?
                 )
-            )
+            ),
+            extrapolator,
+            weight_se2,
+            cost_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
-    pub fn planner(&self) -> &QuickestPathPlanner<G, W, R> {
+    pub fn planner(&self) -> &QuickestPathPlanner<G, WeightR2> {
         &self.planner
     }
 }
 
-impl<G, W, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeuristic<G, W, R>
+impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
 where
-    W: Reversible,
-    W: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    W::Cost: Clone + Ord + Add<W::Cost, Output=W::Cost>,
-    W::WeightedError: Into<Anyhow>,
+    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output=WeightR2::Cost>,
+    WeightR2::WeightedError: Into<Anyhow>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2::Cost: Clone + Add<Output=WeightSE2::Cost>,
+    WeightSE2::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -142,7 +151,7 @@ where
     State: Borrow<StateSE2<G::Key, R>>,
     Goal: Borrow<G::Key>,
 {
-    type CostEstimate = W::Cost;
+    type CostEstimate = WeightSE2::Cost;
     type InformedError = QuickestPathHeuristicError;
     fn estimate_remaining_cost(
         &self,
@@ -152,13 +161,68 @@ where
         let start: &StateSE2<G::Key, R> = from_state.borrow();
         let goal: &G::Key = to_goal.borrow();
 
-        self.planner
-            .plan(start.key.clone(), goal.clone())
-            .map_err(|_| QuickestPathHeuristicError::PlannerError)?
-            .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)
-            .map(|status| status.solution().map(|s| {
-                s.total_cost
-            }))
+        // First check if we've calculated this cost before
+        match self.cost_cache.read() {
+            Ok(cache) => {
+                match cache.get(&(start.key.clone(), goal.clone())) {
+                    Some(cost) => return Ok(cost.clone()),
+                    None => { }
+                }
+            }
+            Err(_) => return Err(QuickestPathHeuristicError::PoisonedMutex),
+        }
+
+        // The cost wasn't in the cache, so let's use the planner to find it.
+        let cost = 'cost: {
+            let solution: Path<_, _, _> = match self.planner
+                .plan(start.key.vertex.clone(), goal.clone())
+                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .solution()
+            {
+                Some(solution) => solution,
+                None => break 'cost None,
+            };
+
+            let mut cost = match self.weight_se2.initial_cost(start)
+                .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+            {
+                Some(cost) => cost,
+                None => break 'cost None,
+            };
+            let mut previous_state = start.clone();
+
+            for (_, child_state) in &solution.sequence {
+                // TODO(@mxgrey): Should we consider pulling information from
+                // the graph for the guidance argument?
+                let (action, child_wp) = match self.extrapolator.extrapolate(
+                    &previous_state.waypoint,
+                    &child_state.waypoint.position,
+                    &()
+                ) {
+                    Some(wp) => wp.map_err(|_| QuickestPathHeuristicError::Extrapolation)?,
+                    None => break 'cost None,
+                };
+
+                let child_state = StateSE2::new(child_state.key.clone(), child_wp);
+
+                let child_cost = match self.weight_se2.cost(
+                    &previous_state,
+                    &action,
+                    &child_state
+                ).map_err(|_| QuickestPathHeuristicError::BrokenWeight)? {
+                    Some(cost) => cost,
+                    None => break 'cost None,
+                };
+
+                cost = cost + child_cost;
+
+                previous_state = child_state;
+            }
+            Some(cost)
+        };
+
+        Ok(cost)
     }
 }
 
@@ -167,6 +231,12 @@ where
 pub enum QuickestPathHeuristicError {
     #[error("An error occurred in the planner")]
     PlannerError,
+    #[error("The mutex was poisoned")]
+    PoisonedMutex,
+    #[error("An error occurred during SE2 extrapolation")]
+    Extrapolation,
+    #[error("An error occurred while calculating SE2 cost")]
+    BrokenWeight,
 }
 
 #[cfg(test)]
@@ -220,8 +290,9 @@ mod tests {
             ]
         );
 
-        let heuristic: QuickestPathHeuristic<_, _, 100> = QuickestPathHeuristic::new(
+        let heuristic: QuickestPathHeuristic<_, _, _, 100> = QuickestPathHeuristic::new(
             SharedGraph::new(graph),
+            TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             DifferentialDriveLineFollow::new(1.0, 1.0).unwrap(),
         ).unwrap();
@@ -245,8 +316,9 @@ mod tests {
         ));
 
         let drive = DifferentialDriveLineFollow::new(3.0, 1.0).unwrap();
-        let heuristic: QuickestPathHeuristic<_, _, 100> = QuickestPathHeuristic::new(
+        let heuristic: QuickestPathHeuristic<_, _, _, 100> = QuickestPathHeuristic::new(
             SharedGraph::new(VisibilityGraph::new(visibility, [])),
+            TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             drive,
         ).unwrap();
@@ -294,8 +366,9 @@ mod tests {
         });
 
         let drive = DifferentialDriveLineFollow::new(3.0, 1.0).unwrap();
-        let heuristic: QuickestPathHeuristic<_, _, 360> = QuickestPathHeuristic::new(
+        let heuristic: QuickestPathHeuristic<_, _, _, 360> = QuickestPathHeuristic::new(
             SharedGraph::new(VisibilityGraph::new(visibility, [])),
+            TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             drive,
         ).unwrap();

@@ -16,7 +16,10 @@
 */
 
 use crate::{
-    domain::{Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable},
+    domain::{
+        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
+        Reversible
+    },
     motion::{Timed, TimePoint, IntegrateWaypoints, r2::*, se2::StateSE2},
     graph::Graph,
     error::{ThisError, NoError},
@@ -89,6 +92,13 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
         K: 'a
     {
         key
+    }
+}
+
+impl<K> Reversible for DiscreteSpaceTimeR2<K> {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(self.clone())
     }
 }
 
@@ -192,7 +202,7 @@ impl<G, Start, Goal> Initializable<Start, Goal, StateR2<G::Key>> for InitializeR
 where
     G: Graph,
     G::Key: Clone,
-    G::Vertex: Borrow<Position>,
+    G::Vertex: Positioned,
     Start: Into<StartR2<G::Key>>,
 {
     type InitialError = InitializeR2Error<G::Key>;
@@ -218,13 +228,20 @@ where
             self.0.vertex(&start.key)
             .ok_or_else(|| InitializeR2Error::MissingVertex(start.key.clone()))
             .map(|v| {
-                let v: &Position = v.borrow().borrow();
+                let v: Position = v.borrow().point();
                 StateR2 {
                     key: start.key,
                     waypoint: WaypointR2::new(start.time, v.x, v.y),
                 }
             })
         ]
+    }
+}
+
+impl<G: Reversible> Reversible for InitializeR2<G> {
+    type ReversalError = G::ReversalError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+        Ok(Self(self.0.reversed()?))
     }
 }
 

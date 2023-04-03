@@ -206,6 +206,7 @@ mod tests {
         },
         templates::{UninformedSearch, GraphMotion, LazyGraphMotion},
         domain::KeyedCloser,
+        Planner,
     };
     use std::sync::Arc;
 
@@ -253,7 +254,7 @@ mod tests {
             extrapolator,
         };
 
-        let planner = quickest_path::QuickestPathPlanner::new(
+        let planner = Planner::new(
             Arc::new(
                 BackwardDijkstra::new(
                     &UninformedSearch::new_uninformed(

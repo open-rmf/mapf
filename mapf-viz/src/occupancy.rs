@@ -76,7 +76,13 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
                 //     .map(|y| (Cell::new(3, y), true))
                 //     .collect()
                 // );
-                vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
+                // vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
+
+                vis.change_cells(
+                    &(-10..10).into_iter()
+                    .map(|y| (Cell::new(5, y), true))
+                    .collect()
+                );
                 vis
             },
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
