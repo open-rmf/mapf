@@ -28,7 +28,6 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    domain::KeyedCloser,
     graph::{
         SharedGraph,
         occupancy::{
@@ -37,18 +36,16 @@ use mapf::{
     },
     motion::{
         Trajectory, Motion, OverlayedDynamicEnvironment, DynamicEnvironment,
-        CircularProfile, DynamicCircularObstacle, TravelTimeCost,
+        CircularProfile, DynamicCircularObstacle,
         se2::{
             Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
             DifferentialDriveLineFollow, StartSE2, Orientation,
-            quickest_path::QuickestPathSearch, DiscreteSpaceTimeSE2,
-            PreferentialStarburstSE2, MergeIntoGoal, KeySE2,
         },
     },
-    templates::{InformedSearch, UninformedSearch, GraphMotion, LazyGraphMotion},
+    templates::InformedSearch,
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, BackwardDijkstra, SearchStatus, tree::NodeContainer},
+    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer},
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -675,8 +672,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
-// type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
-type MyAlgo = Arc<BackwardDijkstra<QuickestPathSearch<SharedGraph<VisibilityGraph<SparseGrid>>, TravelTimeCost, 360>>>;
+type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
 type TreeTicket = mapf::algorithm::tree::TreeQueueTicket<mapf::domain::Cost<f64>>;
 
 struct App {
@@ -689,8 +685,7 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    // search: Option<Search<MyAlgo, GoalSE2<Cell>, ()>>,
-    search: Option<Search<MyAlgo, Cell, ()>>,
+    search: Option<Search<MyAlgo, GoalSE2<Cell>, ()>>,
     step_progress: button::State,
     debug_on: bool,
     memory: Vec<TreeTicket>,
@@ -773,37 +768,18 @@ impl App {
         if let Some(search) = &mut self.search {
             self.debug_step_count += 1;
 
-            // self.memory = search.memory().0
-            //     .queue.clone().into_iter_sorted()
-            //     .map(|n| n.0.clone()).collect();
+            self.memory = search.memory().0
+                .queue.clone().into_iter_sorted()
+                .map(|n| n.0.clone()).collect();
 
-            // for ticket in &self.memory {
-            //     if let Some(traj) = search.memory().0
-            //         .arena.retrace(ticket.node_id).unwrap()
-            //         .make_trajectory().unwrap()
-            //     {
-            //         self.canvas.program.layers.3.searches.push(traj);
-            //     }
-            // }
-
-            let queue_sizes = search.algorithm().backward().inspect_trees(
-                |key, ct| {
-                    for ticket in &ct.tree().queue {
-                        if let Some(traj) = ct.tree().arena
-                            .retrace(ticket.0.node_id).unwrap()
-                            .make_trajectory().unwrap()
-                        {
-                            self.canvas.program.layers.3.searches.push(traj);
-                        }
-                    }
-
-                    ct.tree().queue.len()
+            for ticket in &self.memory {
+                if let Some(traj) = search.memory().0
+                    .arena.retrace(ticket.node_id).unwrap()
+                    .make_trajectory().unwrap()
+                {
+                    self.canvas.program.layers.3.searches.push(traj);
                 }
-            );
-
-            let num_trees = queue_sizes.len();
-            let queue_size = queue_sizes.iter().fold(0, |a, b| a + b);
-
+            }
 
             if let SearchStatus::Solved(solution) = search.step().unwrap() {
                 println!("Solution: {:#?}", solution);
@@ -813,18 +789,16 @@ impl App {
             } else {
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.memory.get(selection) {
-                        // self.canvas.program.layers.3.solution = search
-                        //     .memory().0.arena
-                        //     .retrace(node.node_id)
-                        //     .unwrap()
-                        //     .make_trajectory()
-                        //     .unwrap();
+                        self.canvas.program.layers.3.solution = search
+                            .memory().0.arena
+                            .retrace(node.node_id)
+                            .unwrap()
+                            .make_trajectory()
+                            .unwrap();
                     }
                 }
             }
 
-            println!("Num trees: {num_trees:?}");
-            println!("queue size: {queue_size:?}");
             self.canvas.cache.clear();
         }
     }
@@ -873,60 +847,34 @@ impl App {
                     )
                 );
 
-                // let domain = InformedSearch::new_sipp_se2(
-                //     activity_graph, heuristic_graph, extrapolator, environment,
-                // ).unwrap();
+                let domain = InformedSearch::new_sipp_se2(
+                    activity_graph, heuristic_graph, extrapolator, environment,
+                ).unwrap();
 
-                let motion = GraphMotion {
-                    space: DiscreteSpaceTimeSE2::new(),
-                    graph: heuristic_graph.clone(),
-                    extrapolator,
+                let start = StartSE2 {
+                    time: TimePoint::from_secs_f64(0.0),
+                    key: start_cell,
+                    orientation: Orientation::new(0_f64),
                 };
-                let domain = UninformedSearch::new_uninformed(
-                    motion.clone(),
-                    TravelTimeCost(1.0),
-                    KeyedCloser(DiscreteSpaceTimeSE2::new()),
-                )
-                .with_initializer(PreferentialStarburstSE2::for_start(heuristic_graph.clone()))
-                .with_satisfier(PreferentialStarburstSE2::for_goal(heuristic_graph.clone()).unwrap())
-                .with_connector(LazyGraphMotion {
-                    motion,
-                    keyring: (),
-                    chain: MergeIntoGoal(extrapolator),
-                });
 
-                // let start = StartSE2 {
-                //     time: TimePoint::from_secs_f64(0.0),
-                //     key: start_cell,
-                //     orientation: Orientation::new(0_f64),
-                // };
-
-                // let goal = GoalSE2 {
-                //     key: goal_cell,
-                //     orientation: None,
-                // };
-
-                let goal = Cell::new(20, 5);
-
-                let start = KeySE2::new(
-                    Cell::new(-6, -4),
-                    0.0,
-                );
+                let goal = GoalSE2 {
+                    key: goal_cell,
+                    orientation: None,
+                };
 
                 println!("About to plan:\nStart: {start:#?}\nGoal: {goal:#?}");
 
                 let start_time = std::time::Instant::now();
-                // let planner = Planner::new(AStarConnect(domain));
-                let planner = Planner::new(Arc::new(BackwardDijkstra::new(&domain).unwrap()));
+                let planner = Planner::new(AStarConnect(domain));
                 let mut search = planner.plan(start, goal).unwrap();
 
                 self.canvas.program.layers.3.searches.clear();
                 self.debug_step_count = 0;
                 if self.debug_on {
                     self.search = Some(search);
-                    // self.memory = self.search.as_ref().unwrap().memory().0
-                    //     .queue.clone().into_iter_sorted()
-                    //     .map(|n| n.0.clone()).collect();
+                    self.memory = self.search.as_ref().unwrap().memory().0
+                        .queue.clone().into_iter_sorted()
+                        .map(|n| n.0.clone()).collect();
                 } else {
                     let result = search.solve().unwrap();
                     let elapsed_time = start_time.elapsed();
@@ -1137,12 +1085,12 @@ impl Application for App {
 
                 if let Some(node) = self.memory.get(value) {
                     if let Some(search) = &self.search {
-                        // self.canvas.program.layers.3.solution = search
-                        //     .memory().0.arena
-                        //     .retrace(node.node_id)
-                        //     .unwrap()
-                        //     .make_trajectory()
-                        //     .unwrap();
+                        self.canvas.program.layers.3.solution = search
+                            .memory().0.arena
+                            .retrace(node.node_id)
+                            .unwrap()
+                            .make_trajectory()
+                            .unwrap();
                         self.canvas.cache.clear();
                     }
                 }
@@ -1242,16 +1190,16 @@ impl Application for App {
                         let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
                         if let Some(search) = &self.search {
                             for (i, ticket) in self.memory.iter().enumerate() {
-                                // let node = search.memory().0.arena.get(ticket.node_id).unwrap();
-                                // scroll = scroll.push(Radio::new(
-                                //     i, format!(
-                                //         "{i}: {:?} + {:?} = {:?}",
-                                //         node.cost().0,
-                                //         node.remaining_cost_estimate().0,
-                                //         ticket.evaluation.0,
-                                //     ), self.debug_node_selected,
-                                //     Message::DebugNodeSelected
-                                // ));
+                                let node = search.memory().0.arena.get(ticket.node_id).unwrap();
+                                scroll = scroll.push(Radio::new(
+                                    i, format!(
+                                        "{i}: {:?} + {:?} = {:?}",
+                                        node.cost().0,
+                                        node.remaining_cost_estimate().0,
+                                        ticket.evaluation.0,
+                                    ), self.debug_node_selected,
+                                    Message::DebugNodeSelected
+                                ));
                             }
                         }
                         scroll
@@ -1263,9 +1211,8 @@ impl Application for App {
                                 if let Some(selection) = self.debug_node_selected {
                                     if let Some(node) = self.memory.get(selection) {
                                         if let Some(search) = &self.search {
-                                            // let node = search.memory().0.arena.get(node.node_id).unwrap();
-                                            // format!("{node:#?}")
-                                            String::new()
+                                            let node = search.memory().0.arena.get(node.node_id).unwrap();
+                                            format!("{node:#?}")
                                         } else {
                                             String::new()
                                         }

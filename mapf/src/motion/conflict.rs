@@ -164,10 +164,42 @@ where
         }
     }
 
+    let ranked_hints = compute_safe_linear_path_wait_hints(
+        (&from_point, &to_point), Some(bb), in_environment
+    );
+
+    compute_safe_arrival_times(to_point, in_environment)
+        .into_iter()
+        .filter_map(|arrival_time|
+            compute_safe_arrival_path(
+                from_point,
+                to_point,
+                arrival_time,
+                &ranked_hints,
+                in_environment,
+            )
+        ).collect()
+}
+
+pub type RankedHints = SmallVec<[RankedHint; 16]>;
+
+pub fn compute_safe_linear_path_wait_hints<Env, W>(
+    (from_point, to_point): (&WaypointR2, &WaypointR2),
+    bounding_box: Option<BoundingBox>,
+    in_environment: &Env,
+) -> RankedHints
+where
+    W: Into<WaypointR2> + Waypoint,
+    Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
+{
+    let bb = bounding_box.unwrap_or_else(
+        || BoundingBox::for_line(
+            in_environment.agent_profile(), from_point, to_point
+        )
+    );
+
     let wait_hints = compute_wait_hints(
-        (&from_point, &to_point),
-        &bb,
-        in_environment
+        (&from_point, &to_point), &bb, in_environment
     );
 
     let dx = to_point.position - from_point.position;
@@ -203,30 +235,23 @@ where
         }
     });
 
-    compute_safe_arrival_times(to_point, in_environment)
-        .into_iter()
-        .filter_map(|arrival_time|
-            compute_safe_arrival_path(
-                from_point,
-                to_point,
-                arrival_time,
-                &ranked_hints,
-                in_environment,
-            )
-        ).collect()
+    ranked_hints
 }
 
+// TODO(@mxgrey): Consider making the number of entries configurable.
+pub type SafeArrivalTimes = SmallVec<[TimePoint; 5]>;
+
 #[inline]
-fn compute_safe_arrival_times<Env, W>(
+pub fn compute_safe_arrival_times<Env, W>(
     for_point: WaypointR2,
     in_environment: &Env,
-) -> SmallVec<[TimePoint; 3]>
+) -> SafeArrivalTimes
 where
     W: Into<WaypointR2> + Waypoint,
     Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
     let profile = in_environment.agent_profile();
-    let mut safe_arrival_times = SmallVec::<[TimePoint; 3]>::new();
+    let mut safe_arrival_times = SafeArrivalTimes::new();
 
     // First find every safe arrival time above from_point.time
     let mut candidate_time = for_point.time;
@@ -304,11 +329,11 @@ where
 }
 
 #[inline]
-fn compute_safe_arrival_path<Env, W>(
+pub fn compute_safe_arrival_path<Env, W>(
     from_point: WaypointR2,
     to_point: WaypointR2,
     arrival_time: TimePoint,
-    ranked_hints: &SmallVec<[RankedHint; 16]>,
+    ranked_hints: &RankedHints,
     in_environment: &Env,
 ) -> Option<SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>>
 where
@@ -485,7 +510,7 @@ where
 }
 
 #[derive(Debug)]
-struct RankedHint {
+pub struct RankedHint {
     contour: Duration,
     reach: f64,
     hint: WaitHint,

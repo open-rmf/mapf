@@ -17,13 +17,14 @@
 
 use crate::{
     templates::{InformedSearch, ConflictAvoidance, GraphMotion, LazyGraphMotion},
+    premade::{SafeIntervalMotion, SafeIntervalCloser, SafeIntervalCache},
     motion::{
         TravelTimeCost, SpeedLimiter, OverlayedDynamicEnvironment,
         se2::{*, quickest_path::QuickestPathSearch},
         r2::Positioned,
     },
     graph::{Graph, SharedGraph},
-    domain::{Key, TimeVariantKeyedCloser, Reversible, Configurable},
+    domain::{Key, Reversible, Configurable},
 };
 use std::sync::Arc;
 
@@ -42,17 +43,13 @@ const DEFAULT_RES: u32 = 360;
 /// [`crate::algorithm::AStar`], otherwise the planner will fail to reach the
 /// goal.
 pub type SippSE2<G, H=G> = InformedSearch<
-    GraphMotion<
-        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
-        SharedGraph<G>,
-        ConflictAvoidance<
-            DifferentialDriveLineFollow,
-            Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
-        >
-    >,
+    SafeIntervalMotion<SharedGraph<G>, DEFAULT_RES>,
     TravelTimeCost,
     QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, TravelTimeCost, DEFAULT_RES>,
-    TimeVariantKeyedCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>>,
+    SafeIntervalCloser<
+        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
+        SharedGraph<G>,
+    >,
     InitializeSE2<SharedGraph<G>, DEFAULT_RES>,
     SatisfySE2,
     LazyGraphMotion<
@@ -85,7 +82,17 @@ where
         extrapolator: DifferentialDriveLineFollow,
         environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
     ) -> Result<Self, NewSippSE2Error<H>> {
-        let motion = GraphMotion {
+        let cache = Arc::new(SafeIntervalCache::new(
+            environment.clone(),
+            activity_graph.clone(),
+        ));
+
+        let activity_motion = SafeIntervalMotion {
+            extrapolator,
+            safe_intervals: cache.clone(),
+        };
+
+        let connect_motion = GraphMotion {
             space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
             graph: activity_graph.clone(),
             extrapolator: ConflictAvoidance {
@@ -96,7 +103,7 @@ where
 
         Ok(
             InformedSearch::new(
-                motion.clone(),
+                activity_motion,
                 TravelTimeCost(1.0),
                 QuickestPathHeuristic::new(
                         heuristic_graph,
@@ -104,12 +111,15 @@ where
                         TravelTimeCost(1.0),
                         extrapolator,
                     )?,
-                TimeVariantKeyedCloser::new(DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new()),
+                SafeIntervalCloser::new(
+                    DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                    cache.clone(),
+                ),
             )
             .with_initializer(InitializeSE2(activity_graph))
             .with_satisfier(SatisfySE2::from(extrapolator))
             .with_connector(LazyGraphMotion {
-                motion,
+                motion: connect_motion,
                 keyring: (),
                 chain: SafeMergeIntoGoal::new(extrapolator, environment),
             })
@@ -163,10 +173,10 @@ where
             // data ownership into the config.
             let scoped_self = self;
             SippSE2Configuration {
-                activity_graph: scoped_self.activity.graph,
+                activity_graph: scoped_self.activity.safe_intervals.graph.clone(),
                 heuristic_graph: scoped_self.heuristic.planner().algorithm().backward().domain().activity.graph.clone(),
-                motion: scoped_self.activity.extrapolator.avoider,
-                environment: scoped_self.activity.extrapolator.environment,
+                motion: scoped_self.connector.motion.extrapolator.avoider,
+                environment: scoped_self.activity.safe_intervals.environment.clone(),
             }
         };
 

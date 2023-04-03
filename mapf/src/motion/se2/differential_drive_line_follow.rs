@@ -136,9 +136,13 @@ impl DifferentialDriveLineFollow {
         return self.rotational_threshold;
     }
 
+    pub fn direction(&self) -> f64 {
+        self.direction
+    }
+
     /// Helper function for the implementations of extrapolate(). Not meant for
     /// use by other functions
-    fn move_towards_target(
+    pub(crate) fn move_towards_target(
         &self,
         from_waypoint: &WaypointSE2,
         to_target: &Point,
@@ -195,10 +199,10 @@ impl DifferentialDriveLineFollow {
     }
 }
 
-struct ReachedTarget {
-    waypoints: ArrayVec<WaypointSE2, 3>,
-    time: TimePoint,
-    yaw: nalgebra::UnitComplex<f64>,
+pub(crate) struct ReachedTarget {
+    pub(crate) waypoints: ArrayVec<WaypointSE2, 3>,
+    pub(crate) time: TimePoint,
+    pub(crate) yaw: nalgebra::UnitComplex<f64>,
 }
 
 impl<Target, Guidance> Extrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow

@@ -21,5 +21,8 @@ pub use search_r2::*;
 pub mod search_se2;
 pub use search_se2::*;
 
+pub mod safe_interval_motion;
+pub use safe_interval_motion::*;
+
 pub mod sipp_se2;
 pub use sipp_se2::*;
