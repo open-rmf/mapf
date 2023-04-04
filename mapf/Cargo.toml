@@ -29,6 +29,3 @@ smallvec = "1.10"
 
 [dev-dependencies]
 approx = "*"
-
-[profile.release]
-debug = true
