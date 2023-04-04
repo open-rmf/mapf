@@ -17,10 +17,9 @@
 
 use crate::{
     domain::{
-        Domain, Informed, Activity, Weighted, Keyed, PartialKeyed, Keyring,
-        Satisfiable, Closable, Initializable, Reversible,
-        Connectable, Chained, AsTimeInvariant, AsTimeVariant, Backtrack,
-        ArrivalKeyring,
+        Activity, ArrivalKeyring, AsTimeInvariant, AsTimeVariant, Backtrack, Chained, Closable,
+        Connectable, Domain, Informed, Initializable, Keyed, Keyring, PartialKeyed, Reversible,
+        Satisfiable, Weighted,
     },
     error::{Anyhow, ThisError},
 };
@@ -71,12 +70,7 @@ pub struct InformedSearch<A, W, H, X, I, S, C> {
 impl<A, W, H, X> InformedSearch<A, W, H, X, (), (), ()> {
     /// Create a new InformedSearch domain with the minimum required
     /// components.
-    pub fn new(
-        activity: A,
-        weight: W,
-        heuristic: H,
-        closer: X,
-    ) -> Self {
+    pub fn new(activity: A, weight: W, heuristic: H, closer: X) -> Self {
         Self {
             activity,
             weight,
@@ -98,7 +92,7 @@ impl<A, W, H, X, S, C> InformedSearch<A, W, H, X, (), S, C> {
             heuristic: self.heuristic,
             closer: self.closer,
             satisfier: self.satisfier,
-            connector: self.connector
+            connector: self.connector,
         }
     }
 }
@@ -135,7 +129,10 @@ impl<A, W, H, X, I, S> InformedSearch<A, W, H, X, I, S, ()> {
 impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
     /// Consume this informed search, modify its activity, and return a new
     /// informed search with the modified activity.
-    pub fn map_activity<A2, F: FnOnce(A) -> A2>(self, f: F) -> InformedSearch<A2, W, H, X, I, S, C> {
+    pub fn map_activity<A2, F: FnOnce(A) -> A2>(
+        self,
+        f: F,
+    ) -> InformedSearch<A2, W, H, X, I, S, C> {
         InformedSearch {
             activity: f(self.activity),
             weight: self.weight,
@@ -186,7 +183,10 @@ where
 
 impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
     /// Replace the initializer of the domain
-    pub fn replace_initializer<I2>(self, new_initializer: I2) -> InformedSearch<A, W, H, X, I2, S, C> {
+    pub fn replace_initializer<I2>(
+        self,
+        new_initializer: I2,
+    ) -> InformedSearch<A, W, H, X, I2, S, C> {
         InformedSearch {
             initializer: new_initializer,
             activity: self.activity,
@@ -194,7 +194,7 @@ impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
             heuristic: self.heuristic,
             closer: self.closer,
             satisfier: self.satisfier,
-            connector: self.connector
+            connector: self.connector,
         }
     }
 
@@ -225,7 +225,10 @@ impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
     }
 
     /// Add another goal connector to the domain
-    pub fn chain_connector<C2>(self, connector2: C2) -> InformedSearch<A, W, H, X, I, S, Chained<C, C2>> {
+    pub fn chain_connector<C2>(
+        self,
+        connector2: C2,
+    ) -> InformedSearch<A, W, H, X, I, S, Chained<C, C2>> {
         InformedSearch {
             connector: Chained {
                 base: self.connector,
@@ -246,7 +249,8 @@ impl<A: Domain, W, H, X, I, S, C> Domain for InformedSearch<A, W, H, X, I, S, C>
     type Error = anyhow::Error;
 }
 
-impl<A, W, H, X, I, S, C, Start, Goal> Initializable<Start, Goal, A::State> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Start, Goal> Initializable<Start, Goal, A::State>
+    for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain,
     I: Initializable<Start, Goal, A::State>,
@@ -261,11 +265,7 @@ where
         A::State: 'a,
         A: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -312,7 +312,8 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Weighted<A::State, A::ActivityAction> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Weighted<A::State, A::ActivityAction>
+    for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
     W: Weighted<A::State, A::ActivityAction>,
@@ -370,7 +371,8 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::ActivityAction, Goal> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::ActivityAction, Goal>
+    for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
     A::State: Clone,
@@ -386,22 +388,17 @@ where
         A::ActivityAction: 'a,
         Goal: 'a;
 
-    fn connect<'a>(
-        &'a self,
-        from_state: A::State,
-        to_target: &'a Goal,
-    ) -> Self::Connections<'a>
+    fn connect<'a>(&'a self, from_state: A::State, to_target: &'a Goal) -> Self::Connections<'a>
     where
         Self::ConnectionError: 'a,
         A::State: 'a,
         A::ActivityAction: 'a,
         Goal: 'a,
     {
-        self
-        .connector
-        .connect(from_state.clone(), to_target)
-        .into_iter()
-        .map(|r| r.map_err(Into::into))
+        self.connector
+            .connect(from_state.clone(), to_target)
+            .into_iter()
+            .map(|r| r.map_err(Into::into))
     }
 }
 
@@ -425,13 +422,14 @@ where
     fn key_for<'a>(&'a self, state: &'a A::State) -> Self::KeyRef<'a>
     where
         Self: 'a,
-        A::State: 'a
+        A::State: 'a,
     {
         self.activity.key_for(state)
     }
 }
 
-impl<A, W, H, X, I, S, C, Start, Goal> ArrivalKeyring<A::Key, Start, Goal> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Start, Goal> ArrivalKeyring<A::Key, Start, Goal>
+    for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Keyed,
     S: ArrivalKeyring<A::Key, Start, Goal>,
@@ -445,17 +443,13 @@ where
         S::ArrivalKeyError: 'a,
         A::Key: 'a;
 
-    fn get_arrival_keys<'a>(
-        &'a self,
-        start: &Start,
-        goal: &Goal,
-    ) -> Self::ArrivalKeys<'a>
+    fn get_arrival_keys<'a>(&'a self, start: &Start, goal: &Goal) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
         A::Key: 'a,
         Start: 'a,
-        Goal: 'a
+        Goal: 'a,
     {
         self.satisfier.get_arrival_keys(start, goal)
     }
@@ -483,18 +477,40 @@ where
 
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(InformedSearch {
-            activity: self.activity.reversed().map_err(InformedSearchReversalError::Activity)?,
-            weight: self.weight.reversed().map_err(InformedSearchReversalError::Weight)?,
-            heuristic: self.heuristic.reversed().map_err(InformedSearchReversalError::Heuristic)?,
-            connector: self.connector.reversed().map_err(InformedSearchReversalError::Connector)?,
-            closer: self.closer.reversed().map_err(InformedSearchReversalError::Closer)?,
-            initializer: self.initializer.reversed().map_err(InformedSearchReversalError::Initializer)?,
-            satisfier: self.satisfier.reversed().map_err(InformedSearchReversalError::Satisfier)?,
+            activity: self
+                .activity
+                .reversed()
+                .map_err(InformedSearchReversalError::Activity)?,
+            weight: self
+                .weight
+                .reversed()
+                .map_err(InformedSearchReversalError::Weight)?,
+            heuristic: self
+                .heuristic
+                .reversed()
+                .map_err(InformedSearchReversalError::Heuristic)?,
+            connector: self
+                .connector
+                .reversed()
+                .map_err(InformedSearchReversalError::Connector)?,
+            closer: self
+                .closer
+                .reversed()
+                .map_err(InformedSearchReversalError::Closer)?,
+            initializer: self
+                .initializer
+                .reversed()
+                .map_err(InformedSearchReversalError::Initializer)?,
+            satisfier: self
+                .satisfier
+                .reversed()
+                .map_err(InformedSearchReversalError::Satisfier)?,
         })
     }
 }
 
-impl<A, W, H, X, I, S, C> Backtrack<A::State, A::ActivityAction> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Backtrack<A::State, A::ActivityAction>
+    for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State> + Backtrack<A::State, A::ActivityAction>,
 {
@@ -504,7 +520,8 @@ where
         initial_reverse_state: &A::State,
         final_reverse_state: &A::State,
     ) -> Result<(A::State, A::State), Self::BacktrackError> {
-        self.activity.flip_endpoints(initial_reverse_state, final_reverse_state)
+        self.activity
+            .flip_endpoints(initial_reverse_state, final_reverse_state)
     }
 
     fn backtrack(
@@ -514,7 +531,12 @@ where
         reverse_action: &A::ActivityAction,
         child_reverse_state: &A::State,
     ) -> Result<(A::ActivityAction, A::State), Self::BacktrackError> {
-        self.activity.backtrack(parent_forward_state, parent_reverse_state, reverse_action, child_reverse_state)
+        self.activity.backtrack(
+            parent_forward_state,
+            parent_reverse_state,
+            reverse_action,
+            child_reverse_state,
+        )
     }
 }
 
@@ -539,7 +561,5 @@ pub enum InformedSearchReversalError<A, W, H, X, I, S, C> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn motion_planning_se2() {
-
-    }
+    fn motion_planning_se2() {}
 }

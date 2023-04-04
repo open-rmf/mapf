@@ -20,8 +20,8 @@ use super::*;
 use anyhow::Error as AnyError;
 
 /// To begin defining a trait for a domain, use [`DefineTrait::new()`].
-pub struct DefineTrait<State, Error=AnyError> {
-    _ignore: std::marker::PhantomData<(State, Error)>
+pub struct DefineTrait<State, Error = AnyError> {
+    _ignore: std::marker::PhantomData<(State, Error)>,
 }
 
 impl<State, Error> DefineTrait<State, Error> {
@@ -36,7 +36,9 @@ impl<State, Error> DefineTrait<State, Error> {
     /// the State and Action have whatever traits are required by the domain
     /// properties that you add.
     pub fn new() -> Self {
-        DefineTrait { _ignore: Default::default() }
+        DefineTrait {
+            _ignore: Default::default(),
+        }
     }
 }
 
@@ -83,11 +85,16 @@ pub trait Incorporate {
     /// instead. Or some traits come with modifier traits that can be
     /// incorporated into a domain to modify a property's trait implementation,
     /// such as how ActionMap can modify the choices of an Activity.
-    fn with<Prop>(self, prop: Prop) -> Incorporated<Self, Prop> where Self: Sized;
+    fn with<Prop>(self, prop: Prop) -> Incorporated<Self, Prop>
+    where
+        Self: Sized;
 }
 
 impl<D: Domain> Incorporate for D {
-    fn with<Prop>(self, prop: Prop) -> Incorporated<Self, Prop> where Self: Sized {
+    fn with<Prop>(self, prop: Prop) -> Incorporated<Self, Prop>
+    where
+        Self: Sized,
+    {
         Incorporated { base: self, prop }
     }
 }
@@ -110,11 +117,16 @@ pub trait Chain {
     /// For example if you chain two properties that implement Activity then
     /// the domain's overall implementation of Activity::choices will iterate
     /// over all choices available from all of the chained activities.
-    fn chain<Prop>(self, prop: Prop) -> Chained<Self, Prop> where Self: Sized;
+    fn chain<Prop>(self, prop: Prop) -> Chained<Self, Prop>
+    where
+        Self: Sized;
 }
 
 impl<D: Domain> Chain for D {
-    fn chain<Prop>(self, prop: Prop) -> Chained<Self, Prop> where Self: Sized {
+    fn chain<Prop>(self, prop: Prop) -> Chained<Self, Prop>
+    where
+        Self: Sized,
+    {
         Chained { base: self, prop }
     }
 }
@@ -138,11 +150,16 @@ pub trait Map {
     /// Usually the modifying trait is a different trait from the one that is
     /// being modified. For example the Activity trait can be mapped by the
     /// ActionMap trait.
-    fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop> where Self: Sized;
+    fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop>
+    where
+        Self: Sized;
 }
 
 impl<D: Domain> Map for D {
-    fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop> where Self: Sized  {
+    fn map<Prop>(self, prop: Prop) -> Mapped<Self, Prop>
+    where
+        Self: Sized,
+    {
         Mapped { base: self, prop }
     }
 }
@@ -163,17 +180,15 @@ pub trait Lift {
     ///
     /// This can be used to incorporate subspace behaviors or projected domains
     /// into your domain.
-    fn lift<Lifter, Prop>(
-        self,
-        lifter: Lifter,
-        prop: Prop,
-    ) -> Lifted<Self, Lifter, Prop> where Self: Sized;
+    fn lift<Lifter, Prop>(self, lifter: Lifter, prop: Prop) -> Lifted<Self, Lifter, Prop>
+    where
+        Self: Sized;
 
     /// Chains a lifted property.
     fn chain_lift<Lifter, Prop>(
         self,
         lifter: Lifter,
-        prop: Prop
+        prop: Prop,
     ) -> ChainedLift<Self, Lifter, Prop>
     where
         Self: Sized + Domain;
@@ -181,30 +196,25 @@ pub trait Lift {
 
 type ChainedLift<Base, Lifter, Prop> = Chained<
     Base,
-    Lifted<
-        DefineTrait<<Base as Domain>::State, <Base as Domain>::Error>,
-        Lifter,
-        Prop,
-    >,
+    Lifted<DefineTrait<<Base as Domain>::State, <Base as Domain>::Error>, Lifter, Prop>,
 >;
 
 impl<D: Domain> Lift for D {
-    fn lift<Lifter, Prop>(
-        self,
-        lifter: Lifter,
-        prop: Prop,
-    ) -> Lifted<Self, Lifter, Prop> where Self: Sized {
-        Lifted { base: self, lifter, prop }
+    fn lift<Lifter, Prop>(self, lifter: Lifter, prop: Prop) -> Lifted<Self, Lifter, Prop>
+    where
+        Self: Sized,
+    {
+        Lifted {
+            base: self,
+            lifter,
+            prop,
+        }
     }
 
-    fn chain_lift<Lifter, Prop>(
-        self,
-        lifter: Lifter,
-        prop: Prop,
-    ) -> ChainedLift<Self, Lifter, Prop> where Self: Sized {
-        self.chain(
-            DefineTrait::<D::State, D::Error>::new()
-            .lift(lifter, prop)
-        )
+    fn chain_lift<Lifter, Prop>(self, lifter: Lifter, prop: Prop) -> ChainedLift<Self, Lifter, Prop>
+    where
+        Self: Sized,
+    {
+        self.chain(DefineTrait::<D::State, D::Error>::new().lift(lifter, prop))
     }
 }

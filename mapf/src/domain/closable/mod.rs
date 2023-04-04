@@ -32,11 +32,11 @@ pub enum CloseResult<'a, T> {
 
     /// The state was previously closed. See a reference to the previously
     /// closed value.
-    Rejected{
+    Rejected {
         /// The value that has been rejected is returned back to the caller
         value: T,
         /// A mutable reference to the prior value is provided
-        prior: &'a mut T
+        prior: &'a mut T,
     },
 }
 
@@ -109,7 +109,7 @@ pub trait ClosedSet<State, T> {
     /// Get the status of the specified state.
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T>;
 
-    type ClosedSetIter<'a>: IntoIterator<Item=&'a T> + 'a
+    type ClosedSetIter<'a>: IntoIterator<Item = &'a T> + 'a
     where
         Self: 'a,
         State: 'a,

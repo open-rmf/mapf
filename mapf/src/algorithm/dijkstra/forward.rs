@@ -16,28 +16,28 @@
 */
 
 use crate::{
+    algorithm::{tree::*, Algorithm, Coherent, Path, SearchStatus, Solvable},
     domain::{
-        Domain, Keyed, Closable, Activity, Weighted, Initializable, Keyring,
-        ClosedSet, ClosedStatusForKey, ClosedStatus, CloseResult, ArrivalKeyring,
-        Configurable, Connectable,
+        Activity, ArrivalKeyring, Closable, CloseResult, ClosedSet, ClosedStatus,
+        ClosedStatusForKey, Configurable, Connectable, Domain, Initializable, Keyed, Keyring,
+        Weighted,
     },
-    algorithm::{Algorithm, Coherent, Solvable, SearchStatus, Path, tree::*},
     error::ThisError,
 };
 use std::{
-    sync::{Arc, Mutex, RwLock},
-    ops::Add,
-    collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
+    ops::Add,
+    sync::{Arc, Mutex, RwLock},
 };
 
 pub struct Dijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     domain: D,
     cache: Arc<Mutex<Cache<D>>>,
@@ -46,10 +46,10 @@ where
 impl<D> Algorithm for Dijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     type Memory = Memory<D>;
 }
@@ -57,10 +57,10 @@ where
 impl<D> Dijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     pub fn new(domain: D) -> Self {
         Self {
@@ -96,13 +96,13 @@ where
 impl<D, Start, Goal> Coherent<Start, Goal> for Dijkstra<D>
 where
     D: Domain
-    + Keyring<D::State>
-    + Initializable<Start, Goal, D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
-    + Connectable<D::State, D::ActivityAction, D::Key>
-    + ArrivalKeyring<D::Key, Start, Goal>,
+        + Keyring<D::State>
+        + Initializable<Start, Goal, D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>
+        + Connectable<D::State, D::ActivityAction, D::Key>
+        + ArrivalKeyring<D::Key, Start, Goal>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityAction: Clone,
     D::InitialError: Into<D::Error>,
@@ -116,13 +116,10 @@ where
 {
     type InitError = DijkstraSearchError<D::Error>;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError> {
-
-        let goal_keys: Result<Vec<_>, _> = self.domain.get_arrival_keys(&start, goal)
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError> {
+        let goal_keys: Result<Vec<_>, _> = self
+            .domain
+            .get_arrival_keys(&start, goal)
             .into_iter()
             .map(|r| r.map_err(Self::domain_err))
             .collect();
@@ -139,7 +136,11 @@ where
                             {
                                 let mut mt = match entry.get_mut().write() {
                                     Ok(mt) => mt,
-                                    Err(_) => return Err(Self::algo_err(DijkstraImplError::PoisonedMutex)),
+                                    Err(_) => {
+                                        return Err(Self::algo_err(
+                                            DijkstraImplError::PoisonedMutex,
+                                        ))
+                                    }
                                 };
 
                                 // let tree = &mut mt.tree;
@@ -155,11 +156,17 @@ where
                                         // the best cost.
                                         let mut best_node: Option<Node<_, _, _>> = None;
                                         for parent_id in &cache.decisive_closed_nodes {
-                                            let node = tree.arena.get_node(*parent_id)
+                                            let node = tree
+                                                .arena
+                                                .get_node(*parent_id)
                                                 .map_err(Self::algo_err)?;
-                                            for next in self.domain.connect(node.state.clone(), goal_key) {
-                                                let (action, child_state) = next.map_err(Self::domain_err)?;
-                                                let child_cost = match self.domain
+                                            for next in
+                                                self.domain.connect(node.state.clone(), goal_key)
+                                            {
+                                                let (action, child_state) =
+                                                    next.map_err(Self::domain_err)?;
+                                                let child_cost = match self
+                                                    .domain
                                                     .cost(&node.state, &action, &child_state)
                                                     .map_err(Self::domain_err)?
                                                 {
@@ -192,20 +199,23 @@ where
                             }
 
                             entry.get().clone()
-                        },
+                        }
                         Entry::Vacant(entry) => {
                             let mut ct = CachedTree::new(self.domain.new_closed_set());
-                            let cost = match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
-                                Some(c) => c,
-                                None => continue,
-                            };
+                            let cost =
+                                match self.domain.initial_cost(&state).map_err(Self::domain_err)? {
+                                    Some(c) => c,
+                                    None => continue,
+                                };
 
-                            ct.tree.push_node(Node {
-                                cost,
-                                state: state.clone(),
-                                parent: None,
-                                decisive: true,
-                            }).map_err(Self::algo_err)?;
+                            ct.tree
+                                .push_node(Node {
+                                    cost,
+                                    state: state.clone(),
+                                    parent: None,
+                                    decisive: true,
+                                })
+                                .map_err(Self::algo_err)?;
 
                             entry.insert(Arc::new(RwLock::new(ct))).clone()
                         }
@@ -224,11 +234,11 @@ where
 impl<D, Goal> Solvable<Goal> for Dijkstra<D>
 where
     D: Domain
-    + Keyring<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
-    + Connectable<D::State, D::ActivityAction, D::Key>,
+        + Keyring<D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>
+        + Connectable<D::State, D::ActivityAction, D::Key>,
     D::State: Clone,
     D::ActivityAction: Clone,
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
@@ -251,7 +261,9 @@ where
                 if let Some(solution) = solution {
                     return Ok(SearchStatus::Solved(solution));
                 } else {
-                    return Err(Self::algo_err(DijkstraImplError::MissingSolutionReference(s)));
+                    return Err(Self::algo_err(DijkstraImplError::MissingSolutionReference(
+                        s,
+                    )));
                 }
             }
 
@@ -271,15 +283,16 @@ where
                     if Some(closed_set_len) != mt.last_known_closed_len {
                         // The tree was grown by another search, so let's check
                         // if we already found a solution.
-                        let mut best_solution: Option<Path<D::State, D::ActivityAction, D::Cost>> = None;
+                        let mut best_solution: Option<Path<D::State, D::ActivityAction, D::Cost>> =
+                            None;
                         for goal_key in &memory.goal_keys {
                             match tree.closed_set.status_for_key(goal_key) {
                                 ClosedStatus::Open => {
                                     // The goal was never reached
                                 }
                                 ClosedStatus::Closed(node_id) => {
-                                    let node = tree.arena.get_node(*node_id)
-                                        .map_err(Self::algo_err)?;
+                                    let node =
+                                        tree.arena.get_node(*node_id).map_err(Self::algo_err)?;
 
                                     if let Some(best_solution) = &best_solution {
                                         if best_solution.total_cost <= node.cost {
@@ -290,8 +303,8 @@ where
                                         }
                                     }
 
-                                    let path = tree.arena.retrace(*node_id)
-                                        .map_err(Self::algo_err)?;
+                                    let path =
+                                        tree.arena.retrace(*node_id).map_err(Self::algo_err)?;
                                     best_solution = Some(path);
                                 }
                             }
@@ -311,7 +324,9 @@ where
             if tree_solution.is_none() {
                 // A solution does not already exist in the cached stree, so we
                 // will get write access to the tree and grow it.
-                let mut guard = mt.tree.write()
+                let mut guard = mt
+                    .tree
+                    .write()
                     .map_err(|_| Self::algo_err(DijkstraImplError::PoisonedMutex))?;
                 // let tree = &mut cache.tree;
                 let cache: &mut CachedTree<_> = &mut guard;
@@ -322,9 +337,17 @@ where
                         None => break,
                     };
 
-                    let top = cache.tree.arena.get_node(top_id).map_err(Self::algo_err)?.clone();
-                    if let CloseResult::Rejected { prior, .. } = cache.tree.closed_set.close(&top.state, top_id) {
-                        let prior_node = cache.tree.arena.get_node(*prior).map_err(Self::algo_err)?;
+                    let top = cache
+                        .tree
+                        .arena
+                        .get_node(top_id)
+                        .map_err(Self::algo_err)?
+                        .clone();
+                    if let CloseResult::Rejected { prior, .. } =
+                        cache.tree.closed_set.close(&top.state, top_id)
+                    {
+                        let prior_node =
+                            cache.tree.arena.get_node(*prior).map_err(Self::algo_err)?;
                         if prior_node.cost <= top.cost {
                             // The state we are attempting to expand has already been
                             // closed in the past by a lower cost node, so we will not
@@ -340,7 +363,8 @@ where
 
                     for next in self.domain.choices(top.state.clone()) {
                         let (action, child_state) = next.map_err(Self::domain_err)?;
-                        let child_cost = match self.domain
+                        let child_cost = match self
+                            .domain
                             .cost(&top.state, &action, &child_state)
                             .map_err(Self::domain_err)?
                         {
@@ -348,12 +372,15 @@ where
                             None => continue,
                         } + top.cost.clone();
 
-                        cache.tree.push_node(Node {
-                            state: child_state,
-                            cost: child_cost,
-                            parent: Some((top_id, action)),
-                            decisive: true,
-                        }).map_err(Self::algo_err)?;
+                        cache
+                            .tree
+                            .push_node(Node {
+                                state: child_state,
+                                cost: child_cost,
+                                parent: Some((top_id, action)),
+                                decisive: true,
+                            })
+                            .map_err(Self::algo_err)?;
                     }
 
                     let top_key_ref = self.domain.key_for(top.state());
@@ -361,8 +388,7 @@ where
                     for goal_key in &memory.goal_keys {
                         if *top_key == *goal_key {
                             // We have found a solution.
-                            let path = cache.tree.arena.retrace(top_id)
-                                .map_err(Self::algo_err)?;
+                            let path = cache.tree.arena.retrace(top_id).map_err(Self::algo_err)?;
                             tree_solution = Some(path);
                             break 'grow;
                         } else {
@@ -370,7 +396,8 @@ where
                             // iteration through the activity
                             for next in self.domain.connect(top.state.clone(), goal_key) {
                                 let (action, child_state) = next.map_err(Self::domain_err)?;
-                                let child_cost = match self.domain
+                                let child_cost = match self
+                                    .domain
                                     .cost(&top.state, &action, &child_state)
                                     .map_err(Self::domain_err)?
                                 {
@@ -378,12 +405,15 @@ where
                                     None => continue,
                                 } + top.cost.clone();
 
-                                cache.tree.push_node(Node {
-                                    state: child_state,
-                                    cost: child_cost,
-                                    parent: Some((top_id, action)),
-                                    decisive: false,
-                                }).map_err(Self::algo_err)?;
+                                cache
+                                    .tree
+                                    .push_node(Node {
+                                        state: child_state,
+                                        cost: child_cost,
+                                        parent: Some((top_id, action)),
+                                        decisive: false,
+                                    })
+                                    .map_err(Self::algo_err)?;
                             }
                         }
                     }
@@ -399,21 +429,30 @@ where
                 }
 
                 mt.last_known_closed_len = Some(cache.tree.closed_set.closed_keys_len());
-                if cache.tree.queue.peek().filter(|t| {
-                    if let Some(cost_bound) = &cost_bound {
-                        t.0.evaluation < *cost_bound
-                    } else {
-                        true
-                    }
-                }).is_some() {
+                if cache
+                    .tree
+                    .queue
+                    .peek()
+                    .filter(|t| {
+                        if let Some(cost_bound) = &cost_bound {
+                            t.0.evaluation < *cost_bound
+                        } else {
+                            true
+                        }
+                    })
+                    .is_some()
+                {
                     memory.exhausted = false;
                 }
             }
 
             if let Some(solution) = tree_solution {
-                if mt.solution.as_ref().filter(
-                    |prior_solution| prior_solution.total_cost < solution.total_cost
-                ).is_none() {
+                if mt
+                    .solution
+                    .as_ref()
+                    .filter(|prior_solution| prior_solution.total_cost < solution.total_cost)
+                    .is_none()
+                {
                     if let Some((best, cost)) = &mut memory.best_solution {
                         if solution.total_cost < *cost {
                             *best = tree_i;
@@ -438,10 +477,10 @@ where
 impl<D: Configurable> Configurable for Dijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     type Configuration = D::Configuration;
     type ConfigurationError = D::ConfigurationError;
@@ -483,10 +522,10 @@ impl From<TreeError> for DijkstraImplError {
 struct Cache<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     trees: HashMap<D::Key, SharedCachedTree<D>>,
 }
@@ -494,13 +533,15 @@ where
 impl<D> Default for Cache<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     fn default() -> Self {
-        Self { trees: Default::default() }
+        Self {
+            trees: Default::default(),
+        }
     }
 }
 
@@ -512,10 +553,7 @@ type SharedCachedTree<D> = Arc<RwLock<CachedTree<D>>>;
 
 pub struct CachedTree<D>
 where
-    D: Domain
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+    D: Domain + Activity<D::State> + Weighted<D::State, D::ActivityAction> + Closable<D::State>,
 {
     /// The tree data that has been cached
     tree: Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost>,
@@ -524,10 +562,7 @@ where
 
 impl<D> CachedTree<D>
 where
-    D: Domain
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+    D: Domain + Activity<D::State> + Weighted<D::State, D::ActivityAction> + Closable<D::State>,
 {
     fn new(closed_set: D::ClosedSet<usize>) -> Self
     where
@@ -539,7 +574,9 @@ where
         }
     }
 
-    pub fn tree(&self) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost> {
+    pub fn tree(
+        &self,
+    ) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::ActivityAction, D::Cost>, D::Cost> {
         &self.tree
     }
 }
@@ -547,10 +584,10 @@ where
 pub struct Memory<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     /// Trees that are being grown for this search.
     // TODO(@mxgrey): Consider using a SmallVec here to avoid heap allocation
@@ -571,15 +608,12 @@ where
 impl<D> Memory<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
-    fn new(
-        trees: Vec<TreeMemory<D>>,
-        goal_keys: Vec<D::Key>,
-    ) -> Self {
+    fn new(trees: Vec<TreeMemory<D>>, goal_keys: Vec<D::Key>) -> Self {
         Self {
             trees,
             goal_keys,
@@ -593,10 +627,10 @@ where
 pub struct TreeMemory<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     /// A reference to the cache entry that is being searched.
     tree: SharedCachedTree<D>,
@@ -611,10 +645,10 @@ where
 impl<D> TreeMemory<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     fn new(tree: SharedCachedTree<D>) -> Self {
         Self {

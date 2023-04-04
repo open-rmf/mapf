@@ -16,12 +16,12 @@
 */
 
 use crate::{
+    algorithm::{Measure, MinimumCostBound, Path},
     domain::{ClosedSet, ClosedStatus},
-    algorithm::{MinimumCostBound, Measure, Path},
     error::ThisError,
 };
 use std::{
-    cmp::{Reverse, Ordering},
+    cmp::{Ordering, Reverse},
     collections::BinaryHeap,
 };
 
@@ -75,7 +75,11 @@ impl<Closed, Node: TreeNode> Tree<Closed, Node, Node::Cost> {
         let evaluation = node.queue_evaluation();
         let bias = node.queue_bias();
         self.arena.push(node);
-        self.queue.push(Reverse(TreeQueueTicket { node_id, bias, evaluation }));
+        self.queue.push(Reverse(TreeQueueTicket {
+            node_id,
+            bias,
+            evaluation,
+        }));
         Ok(())
     }
 }
@@ -172,7 +176,8 @@ where
     N::Action: Clone,
 {
     fn get_node(&self, index: usize) -> Result<&N, TreeError> {
-        self.get(index).ok_or_else(|| TreeError::BrokenReference(index))
+        self.get(index)
+            .ok_or_else(|| TreeError::BrokenReference(index))
     }
 
     fn retrace(&self, node_id: usize) -> Result<Path<N::State, N::Action, N::Cost>, TreeError> {
@@ -194,14 +199,20 @@ where
         sequence.reverse();
 
         let initial_state = self.get_node(initial_node_id)?.state().clone();
-        Ok(Path { initial_state, sequence, total_cost })
+        Ok(Path {
+            initial_state,
+            sequence,
+            total_cost,
+        })
     }
 }
 
 #[derive(ThisError, Debug)]
 pub enum TreeError {
-    #[error("A node [{0}] is referenced but does not exist in the search memory. \
-    This is a critical implementation error, please report this to the mapf developers.")]
+    #[error(
+        "A node [{0}] is referenced but does not exist in the search memory. \
+    This is a critical implementation error, please report this to the mapf developers."
+    )]
     BrokenReference(usize),
 }
 

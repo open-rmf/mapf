@@ -15,18 +15,18 @@
  *
 */
 
-use super::{Position, WaypointR2, Positioned};
+use super::{Position, Positioned, WaypointR2};
 use crate::{
-    motion::{
-        self, SpeedLimiter, se2, Duration, DynamicEnvironment,
-        conflict::{compute_safe_linear_paths, SafeAction, WaitForObstacle},
-    },
     domain::{
-        Extrapolator, IncrementalExtrapolator, ExtrapolationProgress,
-        Reversible, Backtrack, flip_endpoint_times, backtrack_times,
-        ConflictAvoider,
+        backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, ExtrapolationProgress,
+        Extrapolator, IncrementalExtrapolator, Reversible,
     },
     error::{NoError, ThisError},
+    motion::{
+        self,
+        conflict::{compute_safe_linear_paths, SafeAction, WaitForObstacle},
+        se2, Duration, DynamicEnvironment, SpeedLimiter,
+    },
     util::ForkIter,
 };
 use arrayvec::ArrayVec;
@@ -169,12 +169,13 @@ impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFoll
             parent_forward_state,
             parent_reverse_state,
             reverse_action,
-            child_reverse_state
+            child_reverse_state,
         )
     }
 }
 
-impl<Target, Guidance, W> ConflictAvoider<WaypointR2, Target, Guidance, DynamicEnvironment<W>> for LineFollow
+impl<Target, Guidance, W> ConflictAvoider<WaypointR2, Target, Guidance, DynamicEnvironment<W>>
+    for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
@@ -202,11 +203,13 @@ where
         Self::AvoidanceError: 'a,
         Target: 'a,
         Guidance: 'a,
-        DynamicEnvironment<W>: 'a
+        DynamicEnvironment<W>: 'a,
     {
         let from_point = *from_point;
         let to_point = match self.extrapolate_impl(
-            &from_point, &to_target.point(), with_guidance.speed_limit(),
+            &from_point,
+            &to_target.point(),
+            with_guidance.speed_limit(),
         ) {
             Ok(extrapolation) => extrapolation.1,
             Err(err) => return ForkIter::Left(Some(Err(err)).into_iter()),
@@ -215,31 +218,28 @@ where
         let paths = compute_safe_linear_paths(from_point, to_point, in_environment);
         ForkIter::Right(
             paths
-            .into_iter()
-            // TODO(@mxgrey): Should we pass an error if the last
-            // element in the action is not a movement? That should
-            // never happen, so being quiet about it might not be a
-            // good thing.
-            // .filter_map(move |action| {
-            //     let wp = action
-            //         .last()
-            //         .map(|m| m.movement())
-            //         .flatten()
-            //         .copied();
+                .into_iter()
+                // TODO(@mxgrey): Should we pass an error if the last
+                // element in the action is not a movement? That should
+                // never happen, so being quiet about it might not be a
+                // good thing.
+                // .filter_map(move |action| {
+                //     let wp = action
+                //         .last()
+                //         .map(|m| m.movement())
+                //         .flatten()
+                //         .copied();
+                //     wp.map(move |wp| (action, wp))
+                // })
+                .map(move |action| {
+                    // TODO(@mxgrey): Remove these unwraps before targeting
+                    // production. Either use the map technique that's commented
+                    // out above or return an error. I'm temporarily using
+                    // unwrap to violently catch internal mistakes.
+                    let wp = *action.last().unwrap().movement().unwrap();
 
-            //     wp.map(move |wp| (action, wp))
-            // })
-            .map(move |action| {
-                // TODO(@mxgrey): Remove these unwraps before targeting
-                // production. Either use the map technique that's commented
-                // out above or return an error. I'm temporarily using
-                // unwrap to violently catch internal mistakes.
-                let wp = *action
-                    .last().unwrap()
-                    .movement().unwrap();
-
-                Ok((action, wp))
-            })
+                    Ok((action, wp))
+                }),
         )
     }
 }

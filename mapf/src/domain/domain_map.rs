@@ -22,13 +22,16 @@ pub struct DomainMap<StateMapImpl, ActionMapImpl> {
     action_map: ActionMapImpl,
 }
 
-pub struct DefineDomainMap<State=()>(std::marker::PhantomData<State>);
+pub struct DefineDomainMap<State = ()>(std::marker::PhantomData<State>);
 
 impl<State> DefineDomainMap<State> {
     pub fn for_actions<ActionMapImpl>(
         action_map: ActionMapImpl,
     ) -> DomainMap<NoStateSubspace<State>, ActionMapImpl> {
-        DomainMap { state_map: NoStateSubspace::new(), action_map }
+        DomainMap {
+            state_map: NoStateSubspace::new(),
+            action_map,
+        }
     }
 }
 
@@ -37,13 +40,19 @@ impl DefineDomainMap<()> {
         state_map: StateMapImpl,
         action_map: ActionMapImpl,
     ) -> DomainMap<StateMapImpl, ActionMapImpl> {
-        DomainMap { state_map, action_map }
+        DomainMap {
+            state_map,
+            action_map,
+        }
     }
 
     pub fn for_subspace<StateMapImpl>(
         state_map: StateMapImpl,
     ) -> DomainMap<StateMapImpl, NoActionMap> {
-        DomainMap { state_map, action_map: NoActionMap }
+        DomainMap {
+            state_map,
+            action_map: NoActionMap,
+        }
     }
 }
 
@@ -55,7 +64,7 @@ impl<State, S: ProjectState<State>, A> ProjectState<State> for DomainMap<S, A> {
     type ProjectionError = S::ProjectionError;
     fn project(
         &self,
-        state: &State
+        state: &State,
     ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
         self.state_map.project(state)
     }
@@ -66,7 +75,7 @@ impl<State, S: LiftState<State>, A> LiftState<State> for DomainMap<S, A> {
     fn lift(
         &self,
         original: &State,
-        projection: Self::ProjectedState
+        projection: Self::ProjectedState,
     ) -> Result<Option<State>, Self::LiftError> {
         self.state_map.lift(original, projection)
     }
@@ -87,13 +96,9 @@ where
         State: 'a,
         FromAction: 'a;
 
-    fn map_action<'a>(
-        &'a self,
-        from_state: State,
-        from_action: FromAction,
-    ) -> Self::ToActions<'a>
+    fn map_action<'a>(&'a self, from_state: State, from_action: FromAction) -> Self::ToActions<'a>
     where
-        FromAction: 'a
+        FromAction: 'a,
     {
         self.action_map.map_action(from_state, from_action)
     }

@@ -50,7 +50,7 @@ pub trait EstimateModifier<State, Goal, Cost> {
 
 impl<State, Goal, Cost> EstimateModifier<State, Goal, Cost> for ScaleWeight<Cost>
 where
-    Cost: std::ops::Mul<Cost, Output=Cost> + Clone
+    Cost: std::ops::Mul<Cost, Output = Cost> + Clone,
 {
     type EstimateModifierError = NoError;
     fn modify_remaining_cost_estimate(
@@ -76,7 +76,8 @@ where
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        self.prop.estimate_remaining_cost(from_state, to_goal)
+        self.prop
+            .estimate_remaining_cost(from_state, to_goal)
             .map_err(Into::into)
     }
 }
@@ -85,9 +86,9 @@ impl<Base, Prop, Goal> Informed<Base::State, Goal> for Chained<Base, Prop>
 where
     Base: Domain + Informed<Base::State, Goal>,
     Base::InformedError: Into<Base::Error>,
-    Prop: Informed<Base::State, Goal, CostEstimate=Base::CostEstimate>,
+    Prop: Informed<Base::State, Goal, CostEstimate = Base::CostEstimate>,
     Prop::InformedError: Into<Base::Error>,
-    Base::CostEstimate: std::ops::Add<Base::CostEstimate, Output=Base::CostEstimate>,
+    Base::CostEstimate: std::ops::Add<Base::CostEstimate, Output = Base::CostEstimate>,
 {
     type CostEstimate = Base::CostEstimate;
     type InformedError = Base::Error;
@@ -96,12 +97,14 @@ where
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let base_cost_estimate = self.base.estimate_remaining_cost(
-            from_state, to_goal
-        ).map_err(Into::into)?;
-        let prop_cost_estimate = self.prop.estimate_remaining_cost(
-            from_state, to_goal
-        ).map_err(Into::into)?;
+        let base_cost_estimate = self
+            .base
+            .estimate_remaining_cost(from_state, to_goal)
+            .map_err(Into::into)?;
+        let prop_cost_estimate = self
+            .prop
+            .estimate_remaining_cost(from_state, to_goal)
+            .map_err(Into::into)?;
 
         let base_cost_estimate = match base_cost_estimate {
             Some(c) => c,
@@ -130,16 +133,18 @@ where
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let original_estimate = match self.base.estimate_remaining_cost(
-            from_state, to_goal
-        ).map_err(Into::into)? {
+        let original_estimate = match self
+            .base
+            .estimate_remaining_cost(from_state, to_goal)
+            .map_err(Into::into)?
+        {
             Some(c) => c,
             None => return Ok(None),
         };
 
-        self.prop.modify_remaining_cost_estimate(
-            from_state, to_goal, original_estimate
-        ).map_err(Into::into)
+        self.prop
+            .modify_remaining_cost_estimate(from_state, to_goal, original_estimate)
+            .map_err(Into::into)
     }
 }
 
@@ -151,7 +156,7 @@ where
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Informed<Lifter::ProjectedState, Goal>,
     Prop::InformedError: Into<Base::Error>,
-    Prop::CostEstimate: std::ops::Add<Prop::CostEstimate, Output=Prop::CostEstimate>,
+    Prop::CostEstimate: std::ops::Add<Prop::CostEstimate, Output = Prop::CostEstimate>,
 {
     type CostEstimate = Prop::CostEstimate;
     type InformedError = Base::Error;
@@ -160,21 +165,21 @@ where
         from_state: &Base::State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        let from_state_proj = match self.lifter.project(from_state)
-            .map_err(Into::into)? {
+        let from_state_proj = match self.lifter.project(from_state).map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
         };
 
-        self.prop.estimate_remaining_cost(&from_state_proj, &to_goal)
+        self.prop
+            .estimate_remaining_cost(&from_state_proj, &to_goal)
             .map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::weighted::tests::*;
+    use super::*;
     use crate::error::NoError;
     use approx::assert_relative_eq;
 
@@ -205,7 +210,7 @@ mod tests {
             }
 
             // We penalize a low battery value
-            Ok(Some(1.0/from_state.battery_level()))
+            Ok(Some(1.0 / from_state.battery_level()))
         }
     }
 
@@ -224,7 +229,10 @@ mod tests {
             battery: 0.5,
         };
 
-        let cost_estimate = domain.estimate_remaining_cost(&from_state, &to_goal_state).unwrap().unwrap();
+        let cost_estimate = domain
+            .estimate_remaining_cost(&from_state, &to_goal_state)
+            .unwrap()
+            .unwrap();
         assert_relative_eq!(cost_estimate, 10.0 * 0.1);
     }
 
@@ -235,13 +243,13 @@ mod tests {
                 DefineDomainMap::for_subspace(StateInto::<Point>::new()),
                 DefineTrait::<Point>::new()
                     .with(EuclideanDistanceEstimate)
-                    .map(ScaleWeight(0.1))
+                    .map(ScaleWeight(0.1)),
             )
             .chain_lift(
                 DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
                 DefineTrait::<Battery>::new()
                     .with(BatteryLevelCostEstimate)
-                    .map(ScaleWeight(0.2))
+                    .map(ScaleWeight(0.2)),
             );
 
         let from_state = TestState {
@@ -253,7 +261,10 @@ mod tests {
             battery: 0.25,
         };
 
-        let cost_estimate = domain.estimate_remaining_cost(&from_state, &to_goal_state).unwrap().unwrap();
-        assert_relative_eq!(cost_estimate, 10.0 * 0.1 + 1.0/0.35 * 0.2);
+        let cost_estimate = domain
+            .estimate_remaining_cost(&from_state, &to_goal_state)
+            .unwrap()
+            .unwrap();
+        assert_relative_eq!(cost_estimate, 10.0 * 0.1 + 1.0 / 0.35 * 0.2);
     }
 }

@@ -17,20 +17,20 @@
 
 use crate::{
     domain::{
-        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
-        Satisfiable, ArrivalKeyring, Reversible,
+        ArrivalKeyring, Initializable, Key, Keyed, KeyedSpace, Keyring, Reversible, Satisfiable,
+        SelfKey, Space,
     },
-    motion::{
-        Timed, TimePoint, DEFAULT_ROTATIONAL_THRESHOLD, IntegrateWaypoints,
-        se2::*,
-        r2::{Positioned, MaybePositioned, Point}
-    },
-    graph::{Graph, Edge},
     error::{NoError, ThisError},
-    util::{FlatResultMapTrait, wrap_to_pi},
+    graph::{Edge, Graph},
+    motion::{
+        r2::{MaybePositioned, Point, Positioned},
+        se2::*,
+        IntegrateWaypoints, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
+    },
+    util::{wrap_to_pi, FlatResultMapTrait},
 };
-use std::borrow::Borrow;
 use smallvec::SmallVec;
+use std::borrow::Borrow;
 
 #[derive(Debug)]
 pub struct DiscreteSpaceTimeSE2<Key, const R: u32>(std::marker::PhantomData<Key>);
@@ -82,20 +82,13 @@ where
 }
 
 impl<K: Key + Clone, const R: u32> KeyedSpace<K> for DiscreteSpaceTimeSE2<K, R> {
-    fn make_keyed_state(
-        &self,
-        vertex: K,
-        waypoint: Self::Waypoint,
-    ) -> Self::State {
+    fn make_keyed_state(&self, vertex: K, waypoint: Self::Waypoint) -> Self::State {
         StateSE2::new(vertex, waypoint)
     }
 
-    fn vertex_of<'a>(
-        &'a self,
-        key: &'a Self::Key,
-    ) -> &'a K
+    fn vertex_of<'a>(&'a self, key: &'a Self::Key) -> &'a K
     where
-        K: 'a
+        K: 'a,
     {
         &key.vertex
     }
@@ -164,10 +157,7 @@ impl<W: From<WaypointSE2>, K, const R: u32> IntegrateWaypoints<W> for StateSE2<K
 }
 
 impl<K, const R: u32> StateSE2<K, R> {
-    pub fn new(
-        vertex: K,
-        waypoint: WaypointSE2,
-    ) -> Self {
+    pub fn new(vertex: K, waypoint: WaypointSE2) -> Self {
         Self {
             key: KeySE2::new(vertex, waypoint.position.rotation.angle()),
             waypoint,
@@ -223,7 +213,10 @@ impl<K, const R: u32> KeySE2<K, R> {
             // its key matches +PI.
             orientation = -orientation;
         }
-        Self { vertex, orientation }
+        Self {
+            vertex,
+            orientation,
+        }
     }
 
     pub fn orientation(&self) -> Orientation {
@@ -258,25 +251,41 @@ pub struct StartSE2<K> {
 
 impl<K> From<(K, Orientation)> for StartSE2<K> {
     fn from((key, orientation): (K, Orientation)) -> Self {
-        StartSE2 { time: TimePoint::zero(), key, orientation }
+        StartSE2 {
+            time: TimePoint::zero(),
+            key,
+            orientation,
+        }
     }
 }
 
 impl<K> From<(K, f64)> for StartSE2<K> {
     fn from((key, angle): (K, f64)) -> Self {
-        StartSE2 { time: TimePoint::zero(), key, orientation: Orientation::from_angle(angle) }
+        StartSE2 {
+            time: TimePoint::zero(),
+            key,
+            orientation: Orientation::from_angle(angle),
+        }
     }
 }
 
 impl<K> From<(TimePoint, K, Orientation)> for StartSE2<K> {
     fn from((time, key, orientation): (TimePoint, K, Orientation)) -> Self {
-        StartSE2 { time, key, orientation }
+        StartSE2 {
+            time,
+            key,
+            orientation,
+        }
     }
 }
 
 impl<K> From<(TimePoint, K, f64)> for StartSE2<K> {
     fn from((time, key, angle): (TimePoint, K, f64)) -> Self {
-        StartSE2 { time, key, orientation: Orientation::from_angle(angle) }
+        StartSE2 {
+            time,
+            key,
+            orientation: Orientation::from_angle(angle),
+        }
     }
 }
 
@@ -305,11 +314,7 @@ where
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        _to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, _to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -319,17 +324,18 @@ where
         StateSE2<G::Key, R>: 'a,
     {
         let start: StartSE2<G::Key> = from_start.into();
-        [
-            self.0.vertex(&start.key)
+        [self
+            .0
+            .vertex(&start.key)
             .ok_or_else(|| InitializeSE2Error::MissingVertex(start.key.clone()))
             .map(|v| {
                 let v = v.borrow().point();
                 StateSE2::new(
                     start.key,
                     WaypointSE2::new(start.time, v.x, v.y, start.orientation.angle()),
-                ).into()
-            })
-        ]
+                )
+                .into()
+            })]
     }
 }
 
@@ -354,7 +360,11 @@ pub struct StarburstSE2<G, const R: u32> {
 
 impl<G, const R: u32> StarburstSE2<G, R> {
     pub fn for_start(graph: G) -> Self {
-        Self { graph, reverse: None, direction: 1.0 }
+        Self {
+            graph,
+            reverse: None,
+            direction: 1.0,
+        }
     }
 
     pub fn for_goal(graph: G) -> Result<Self, G::ReversalError>
@@ -362,7 +372,11 @@ impl<G, const R: u32> StarburstSE2<G, R> {
         G: Reversible,
     {
         let reverse = graph.reversed()?;
-        Ok(Self { graph, reverse: Some(reverse), direction: 1.0 })
+        Ok(Self {
+            graph,
+            reverse: Some(reverse),
+            direction: 1.0,
+        })
     }
 
     fn starburst_impl<'a>(
@@ -370,32 +384,37 @@ impl<G, const R: u32> StarburstSE2<G, R> {
         to_vertex: G::Key,
         graph: &'a G,
         direction: f32,
-    ) -> impl Iterator<Item=Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
+    ) -> impl Iterator<Item = Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
     where
         G: Graph,
         G::Key: Clone,
         G::Vertex: Positioned,
     {
         let from_start_clone = from_vertex.clone();
-        graph.vertex(&from_vertex)
+        graph
+            .vertex(&from_vertex)
             .ok_or_else(move || InitializeSE2Error::MissingVertex(from_start_clone))
             .flat_result_map(move |from_p_ref| {
                 let from_p: Point = from_p_ref.borrow().point();
                 let from_start = from_vertex.clone();
-                graph.edges_from_vertex(&from_start).into_iter()
-                .chain(graph.lazy_edges_between(&from_vertex, &to_vertex))
+                graph
+                    .edges_from_vertex(&from_start)
+                    .into_iter()
+                    .chain(graph.lazy_edges_between(&from_vertex, &to_vertex))
                     .map(move |edge| {
-                        graph.vertex(edge.to_vertex())
-                            .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))
+                        graph
+                            .vertex(edge.to_vertex())
+                            .ok_or_else(|| {
+                                InitializeSE2Error::MissingVertex(edge.to_vertex().clone())
+                            })
                             .map(move |to_p_ref| {
                                 let to_p: Point = to_p_ref.borrow().point();
-                                (direction as f64 * (to_p - from_p)).try_normalize(1e-6)
+                                (direction as f64 * (to_p - from_p))
+                                    .try_normalize(1e-6)
                                     .map(|v| f64::atan2(v[1], v[0]))
                                     .unwrap_or(0.0)
                             })
-                            .map(move |angle|
-                                (from_p, angle)
-                            )
+                            .map(move |angle| (from_p, angle))
                     })
             })
             .map(|r| r.flatten())
@@ -405,20 +424,26 @@ impl<G, const R: u32> StarburstSE2<G, R> {
         &'a self,
         from_vertex: G::Key,
         to_vertex: G::Key,
-    ) -> impl Iterator<Item=Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
+    ) -> impl Iterator<Item = Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
     where
         G: Graph,
         G::Key: Clone,
         G::Vertex: Positioned,
     {
-        Self::starburst_impl(from_vertex.clone(), to_vertex.clone(), &self.graph, self.direction)
-        .chain(
-            self.reverse.as_ref()
-            .into_iter()
-            .flat_map(move |r_graph| {
-                Self::starburst_impl(from_vertex.clone(), to_vertex.clone(), &r_graph, -1.0*self.direction)
-            })
+        Self::starburst_impl(
+            from_vertex.clone(),
+            to_vertex.clone(),
+            &self.graph,
+            self.direction,
         )
+        .chain(self.reverse.as_ref().into_iter().flat_map(move |r_graph| {
+            Self::starburst_impl(
+                from_vertex.clone(),
+                to_vertex.clone(),
+                &r_graph,
+                -1.0 * self.direction,
+            )
+        }))
     }
 }
 
@@ -440,37 +465,32 @@ where
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
         G::Key: 'a,
         Start: 'a,
         Goal: 'a,
-        State: 'a
+        State: 'a,
     {
         let from_start = from_start.borrow().clone();
-        self
-        .starburst(from_start.clone(), to_goal.borrow().clone())
-        .map(move |r| {
-            let from_start = from_start.clone();
-            r
-            .map(move |(p, angle)|
-                StateSE2::new(
-                    from_start.clone(),
-                    WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
-                )
-            )
-        })
-        .map(|r| r.map(Into::into))
+        self.starburst(from_start.clone(), to_goal.borrow().clone())
+            .map(move |r| {
+                let from_start = from_start.clone();
+                r.map(move |(p, angle)| {
+                    StateSE2::new(
+                        from_start.clone(),
+                        WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
+                    )
+                })
+            })
+            .map(|r| r.map(Into::into))
     }
 }
 
-impl<G: Graph, const R: u32, Start, Goal> ArrivalKeyring<KeySE2<G::Key, R>, Start, Goal> for StarburstSE2<G, R>
+impl<G: Graph, const R: u32, Start, Goal> ArrivalKeyring<KeySE2<G::Key, R>, Start, Goal>
+    for StarburstSE2<G, R>
 where
     G::Key: Clone,
     G::Vertex: Positioned,
@@ -486,32 +506,27 @@ where
         Start: 'a,
         Goal: 'a;
 
-    fn get_arrival_keys<'a>(
-        &'a self,
-        start: &Start,
-        goal: &Goal,
-    ) -> Self::ArrivalKeys<'a>
+    fn get_arrival_keys<'a>(&'a self, start: &Start, goal: &Goal) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
     {
         let goal = goal.borrow().clone();
         self
-        // goal and start are intentionally swapped because Starburst::for_goal
-        // reverses the graph, allowing us to query for edges that lead into the
-        // goal.
-        .starburst(goal.clone(), start.borrow().clone())
-        .map(move |r| {
-            r.map(|(_, angle)|
-                KeySE2::new(goal.clone(), angle)
-            )
-        })
+            // goal and start are intentionally swapped because Starburst::for_goal
+            // reverses the graph, allowing us to query for edges that lead into the
+            // goal.
+            .starburst(goal.clone(), start.borrow().clone())
+            .map(move |r| r.map(|(_, angle)| KeySE2::new(goal.clone(), angle)))
     }
 }
 
 impl<G: Reversible, const R: u32> Reversible for StarburstSE2<G, R> {
     type ReversalError = G::ReversalError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         let reverse = match &self.reverse {
             Some(r) => Some(r.reversed()?),
             None => None,
@@ -532,18 +547,23 @@ pub struct PreferentialStarburstSE2<G, const R: u32> {
 
 impl<G, const R: u32> PreferentialStarburstSE2<G, R> {
     pub fn for_start(graph: G) -> Self {
-        Self { starburst: StarburstSE2::for_start(graph) }
+        Self {
+            starburst: StarburstSE2::for_start(graph),
+        }
     }
 
     pub fn for_goal(graph: G) -> Result<Self, G::ReversalError>
     where
         G: Reversible,
     {
-        Ok(Self { starburst: StarburstSE2::for_goal(graph)? })
+        Ok(Self {
+            starburst: StarburstSE2::for_goal(graph)?,
+        })
     }
 }
 
-impl<G: Graph, const R: u32, State> Initializable<G::Key, KeySE2<G::Key, R>, State> for PreferentialStarburstSE2<G, R>
+impl<G: Graph, const R: u32, State> Initializable<G::Key, KeySE2<G::Key, R>, State>
+    for PreferentialStarburstSE2<G, R>
 where
     G::Key: Clone + std::cmp::PartialEq,
     G::Vertex: Positioned,
@@ -569,18 +589,19 @@ where
         State: 'a,
     {
         let from_start_clone = from_start.clone();
-        let mut all_states: SmallVec<[Result<_, _>; 16]> = self.starburst
-        .starburst(from_start.clone(), to_goal.vertex.clone())
-        .map(move |r| {
-            let from_start = from_start.clone();
-            r
-            .map(move |(p, angle)| {
-                StateSE2::new(
-                    from_start.clone(),
-                    WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
-                )
+        let mut all_states: SmallVec<[Result<_, _>; 16]> = self
+            .starburst
+            .starburst(from_start.clone(), to_goal.vertex.clone())
+            .map(move |r| {
+                let from_start = from_start.clone();
+                r.map(move |(p, angle)| {
+                    StateSE2::new(
+                        from_start.clone(),
+                        WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
+                    )
+                })
             })
-        }).collect();
+            .collect();
 
         let from_start = from_start_clone;
         if to_goal.vertex == from_start {
@@ -605,8 +626,8 @@ where
                             TimePoint::zero(),
                             p.x,
                             p.y,
-                            to_goal.orientation().angle()
-                        )
+                            to_goal.orientation().angle(),
+                        ),
                     }));
                 } else {
                     all_states.push(Err(InitializeSE2Error::MissingVertex(from_start)));
@@ -614,13 +635,12 @@ where
             }
         }
 
-        all_states
-        .into_iter()
-        .map(|r| r.map(Into::into))
+        all_states.into_iter().map(|r| r.map(Into::into))
     }
 }
 
-impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, KeySE2<G::Key, R>> for PreferentialStarburstSE2<G, R>
+impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, KeySE2<G::Key, R>>
+    for PreferentialStarburstSE2<G, R>
 where
     G::Key: Clone + std::cmp::PartialEq,
     G::Vertex: Positioned,
@@ -644,9 +664,11 @@ where
         G::Key: 'a,
     {
         let goal_vertex_key = &goal.vertex;
-        let mut all_keys: SmallVec<[Result<_, _>; 16]> = self.starburst.get_arrival_keys(
-            start, goal_vertex_key
-        ).into_iter().collect();
+        let mut all_keys: SmallVec<[Result<_, _>; 16]> = self
+            .starburst
+            .get_arrival_keys(start, goal_vertex_key)
+            .into_iter()
+            .collect();
 
         // Look through all the keys to see if one of them matches the goal
         // exactly. If it does then we should simply use the exact goal key.
@@ -672,8 +694,13 @@ where
 
 impl<G: Reversible, const R: u32> Reversible for PreferentialStarburstSE2<G, R> {
     type ReversalError = G::ReversalError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
-        Ok(Self { starburst: self.starburst.reversed()? })
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            starburst: self.starburst.reversed()?,
+        })
     }
 }
 
@@ -684,13 +711,17 @@ pub struct SatisfySE2 {
 
 impl SatisfySE2 {
     pub fn new(rotational_threshold: f64) -> Self {
-        Self { rotational_threshold }
+        Self {
+            rotational_threshold,
+        }
     }
 }
 
 impl Default for SatisfySE2 {
     fn default() -> Self {
-        Self { rotational_threshold: DEFAULT_ROTATIONAL_THRESHOLD }
+        Self {
+            rotational_threshold: DEFAULT_ROTATIONAL_THRESHOLD,
+        }
     }
 }
 
@@ -702,7 +733,7 @@ impl From<DifferentialDriveLineFollow> for SatisfySE2 {
 
 impl<K, const R: u32, Goal> Satisfiable<StateSE2<K, R>, Goal> for SatisfySE2
 where
-    Goal: SelfKey<Key=K> + MaybeOriented,
+    Goal: SelfKey<Key = K> + MaybeOriented,
     K: PartialEq,
 {
     type SatisfactionError = NoError;
@@ -716,7 +747,9 @@ where
         }
 
         if let Some(target_yaw) = for_goal.maybe_oriented() {
-            let delta_yaw_abs = (target_yaw / by_state.waypoint.position.rotation).angle().abs();
+            let delta_yaw_abs = (target_yaw / by_state.waypoint.position.rotation)
+                .angle()
+                .abs();
             if delta_yaw_abs > self.rotational_threshold {
                 return Ok(false);
             }
@@ -738,7 +771,10 @@ impl<K: Key> Keyed for GoalSE2<K> {
 
 impl<K: Key> SelfKey for GoalSE2<K> {
     type KeyRef<'a> = &'a Self::Key;
-    fn key<'a>(&'a self) -> Self::KeyRef<'a> where Self: 'a {
+    fn key<'a>(&'a self) -> Self::KeyRef<'a>
+    where
+        Self: 'a,
+    {
         &self.key
     }
 }
@@ -787,24 +823,28 @@ mod tests {
 
         let graph = SimpleGraph::from_iters(
             [
-                Point::new(-1.0, 0.0), // 0
-                Point::new(0.0, 0.0), // 1
-                Point::new(1.0, 0.0), // 2
+                Point::new(-1.0, 0.0),  // 0
+                Point::new(0.0, 0.0),   // 1
+                Point::new(1.0, 0.0),   // 2
                 Point::new(-1.0, -1.0), // 3
-                Point::new(1.0, -1.0), // 4
-                Point::new(0.0, 1.0), // 5
+                Point::new(1.0, -1.0),  // 4
+                Point::new(0.0, 1.0),   // 5
             ],
             [
-                (0, 1, ()), (1, 0, ()),
-                (2, 1, ()), (1, 2, ()),
-                (3, 1, ()), (1, 3, ()),
+                (0, 1, ()),
+                (1, 0, ()),
+                (2, 1, ()),
+                (1, 2, ()),
+                (3, 1, ()),
+                (1, 3, ()),
                 (4, 1, ()), // (1, 4, ()),
                 (5, 1, ()), // (1, 5, ()),
-            ]
+            ],
         );
 
         let arrival = StarburstSE2::for_goal(graph.clone()).unwrap();
-        let goal_keys: Result<Vec<KeySE2<usize, 100>>, _> = arrival.get_arrival_keys(&4, &1).collect();
+        let goal_keys: Result<Vec<KeySE2<usize, 100>>, _> =
+            arrival.get_arrival_keys(&4, &1).collect();
         let goal_keys = goal_keys.unwrap();
         assert_eq!(goal_keys.len(), 8);
 
@@ -812,6 +852,5 @@ mod tests {
         let states: Result<Vec<StateSE2<usize, 100>>, _> = init.initialize(1, &3).collect();
         let states = states.unwrap();
         assert_eq!(states.len(), 3);
-
     }
 }

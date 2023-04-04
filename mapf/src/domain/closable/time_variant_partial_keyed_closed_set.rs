@@ -15,19 +15,18 @@
  *
 */
 
-use crate::{
-    domain::{PartialKeyed, Keyed, Keyring, Reversible},
-    motion::Timed,
-    error::NoError,
-};
 use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
-    AsTimeInvariant, AsTimeVariant, PartialKeyedCloser,
-    DEFAULT_TIME_THRESH,
+    AsTimeInvariant, AsTimeVariant, Closable, CloseResult, ClosedSet, ClosedStatus,
+    ClosedStatusForKey, PartialKeyedCloser, DEFAULT_TIME_THRESH,
+};
+use crate::{
+    domain::{Keyed, Keyring, PartialKeyed, Reversible},
+    error::NoError,
+    motion::Timed,
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
 };
 
 /// Factory for [`TimeVariantPartialKeyedClosedSet`]. Provide this to your domain,
@@ -41,14 +40,20 @@ pub struct TimeVariantPartialKeyedCloser<Ring> {
 
 impl<Ring: Clone> Reversible for TimeVariantPartialKeyedCloser<Ring> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(self.clone())
     }
 }
 
 impl<Ring> TimeVariantPartialKeyedCloser<Ring> {
     pub fn new(ring: Ring) -> Self {
-        Self { ring, time_thresh: DEFAULT_TIME_THRESH }
+        Self {
+            ring,
+            time_thresh: DEFAULT_TIME_THRESH,
+        }
     }
 }
 
@@ -79,7 +84,7 @@ impl<Ring> AsTimeVariant for TimeVariantPartialKeyedCloser<Ring> {
 /// unique based on their time value.
 impl<State, Ring> Closable<State> for TimeVariantPartialKeyedCloser<Ring>
 where
-    Ring: PartialKeyed + Keyring<State, Key=Option<Ring::PartialKey>> + Clone,
+    Ring: PartialKeyed + Keyring<State, Key = Option<Ring::PartialKey>> + Clone,
     Ring::PartialKey: Clone,
     State: Timed,
 {
@@ -118,7 +123,7 @@ impl<Ring: PartialKeyed, T> TimeVariantPartialKeyedClosedSet<Ring, T> {
 
 impl<Ring, T, State> ClosedSet<State, T> for TimeVariantPartialKeyedClosedSet<Ring, T>
 where
-    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>> + Keyring<State>,
+    Ring: PartialKeyed + Keyed<Key = Option<Ring::PartialKey>> + Keyring<State>,
     Ring::PartialKey: Clone,
     State: Timed,
 {
@@ -128,12 +133,18 @@ where
             Some(key) => key,
             None => return CloseResult::Accepted,
         };
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        match self.container.entry(key.clone()).or_default().entry(time_key) {
-            Entry::Occupied(entry) => {
-                CloseResult::Rejected { value, prior: entry.into_mut() }
-            }
+        match self
+            .container
+            .entry(key.clone())
+            .or_default()
+            .entry(time_key)
+        {
+            Entry::Occupied(entry) => CloseResult::Rejected {
+                value,
+                prior: entry.into_mut(),
+            },
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 CloseResult::Accepted
@@ -147,9 +158,12 @@ where
             Some(key) => key,
             None => return None,
         };
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        self.container.entry(key.clone()).or_default().insert(time_key, value)
+        self.container
+            .entry(key.clone())
+            .or_default()
+            .insert(time_key, value)
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
@@ -158,9 +172,13 @@ where
             Some(key) => key,
             None => return ClosedStatus::Open,
         };
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        self.container.get(key).map(|c| c.get(&time_key)).flatten().into()
+        self.container
+            .get(key)
+            .map(|c| c.get(&time_key))
+            .flatten()
+            .into()
     }
 
     type ClosedSetIter<'a> = impl Iterator<Item=&'a T> + 'a
@@ -173,24 +191,24 @@ where
     where
         Self: 'a,
         State: 'a,
-        T: 'a
+        T: 'a,
     {
         self.container.values().flat_map(|c| c.values())
     }
 }
 
-impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T> for TimeVariantPartialKeyedClosedSet<Ring, T>
+impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T>
+    for TimeVariantPartialKeyedClosedSet<Ring, T>
 where
-    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>>,
+    Ring: PartialKeyed + Keyed<Key = Option<Ring::PartialKey>>,
 {
     fn status_for_key<'a>(&'a self, key: &Option<Ring::PartialKey>) -> ClosedStatus<'a, T> {
         if let Some(key) = key {
-            self.container.get(key).map(|c|
-                c
-                .iter()
-                .min_by_key(|(t, _)| **t)
-                .map(|(_, value)| value)
-            ).flatten().into()
+            self.container
+                .get(key)
+                .map(|c| c.iter().min_by_key(|(t, _)| **t).map(|(_, value)| value))
+                .flatten()
+                .into()
         } else {
             ClosedStatus::Open
         }

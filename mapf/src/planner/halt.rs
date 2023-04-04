@@ -22,20 +22,14 @@ use std::{ops::Fn, sync::Arc};
 /// settings can be changed in between calls to  Search::solve().
 pub trait Halt<Mem>: Clone {
     /// Check whether the current search should be interrupted.
-    fn halt(
-        &mut self,
-        memory: &Mem,
-    ) -> bool;
+    fn halt(&mut self, memory: &Mem) -> bool;
 }
 
 /// If an empty tuple is given for the options then we treat that as an
 /// indication that we should let the solver continue without halting for any
 /// reason.
 impl<Mem> Halt<Mem> for () {
-    fn halt(
-        &mut self,
-        _: &Mem,
-    ) -> bool {
+    fn halt(&mut self, _: &Mem) -> bool {
         false
     }
 }
@@ -67,10 +61,7 @@ impl Interruptible {
 }
 
 impl<Mem> Halt<Mem> for Interruptible {
-    fn halt(
-        &mut self,
-        _: &Mem,
-    ) -> bool {
+    fn halt(&mut self, _: &Mem) -> bool {
         if let Some(interrupter) = &self.0 {
             return Interruption::Stop == interrupter();
         }
@@ -98,10 +89,7 @@ impl StepLimit {
 }
 
 impl<Mem> Halt<Mem> for StepLimit {
-    fn halt(
-        &mut self,
-        _: &Mem,
-    ) -> bool {
+    fn halt(&mut self, _: &Mem) -> bool {
         self.steps += 1;
         if let Some(limit) = self.limit {
             return self.steps > limit;
@@ -121,10 +109,7 @@ impl<Mem> Halt<Mem> for MeasureLimit
 where
     Mem: Measure,
 {
-    fn halt(
-        &mut self,
-        memory: &Mem,
-    ) -> bool {
+    fn halt(&mut self, memory: &Mem) -> bool {
         if let Some(limit) = self.0 {
             return memory.size() > limit;
         }
@@ -142,10 +127,7 @@ impl<Mem: MinimumCostBound> Halt<Mem> for CostLimit<Mem::Cost>
 where
     Mem::Cost: Clone + PartialOrd,
 {
-    fn halt(
-        &mut self,
-        memory: &Mem,
-    ) -> bool {
+    fn halt(&mut self, memory: &Mem) -> bool {
         if let Some(limit) = &self.0 {
             match memory.minimum_cost_bound() {
                 Some(bound) => return bound > *limit,

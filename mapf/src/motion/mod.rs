@@ -28,7 +28,7 @@ pub mod waypoint;
 pub use waypoint::*;
 
 pub mod trajectory;
-pub use trajectory::{Trajectory, FindWaypoint};
+pub use trajectory::{FindWaypoint, Trajectory};
 
 pub mod travel_effort_cost;
 pub use travel_effort_cost::*;
@@ -58,7 +58,10 @@ pub const DEFAULT_ROTATIONAL_THRESHOLD: f64 = 1.0f64 * std::f64::consts::PI / 18
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ThisError)]
 pub enum InterpError {
     #[error("The requested time [{request:?}] is outside the time range of the motion {range:?}")]
-    OutOfBounds{range: [TimePoint; 2], request: TimePoint},
+    OutOfBounds {
+        range: [TimePoint; 2],
+        request: TimePoint,
+    },
     #[error("The requested interpolation does not have a unique solution")]
     Indeterminate,
 }

@@ -16,50 +16,33 @@
 */
 
 use crate::{
-    Graph, Planner,
-    motion::{
-        SpeedLimiter,
-        se2::{
-            KeySE2, StateSE2,
-            MaybeOriented, DifferentialDriveLineFollow, WaypointSE2,
-        },
-        r2::{
-            Positioned, DiscreteSpaceTimeR2, LineFollow, InitializeR2, StateR2,
-            WaypointR2,
-        }
-    },
-    domain::{Informed, Weighted, KeyedCloser, Reversible, Key, Extrapolator},
     algorithm::{BackwardDijkstra, Path},
-    templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
+    domain::{Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
     error::{Anyhow, ThisError},
+    motion::{
+        r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2},
+        se2::{DifferentialDriveLineFollow, KeySE2, MaybeOriented, StateSE2, WaypointSE2},
+        SpeedLimiter,
+    },
+    templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
+    Graph, Planner,
 };
 use arrayvec::ArrayVec;
 use std::{
     borrow::Borrow,
+    collections::HashMap,
     ops::Add,
     sync::{Arc, RwLock},
-    collections::HashMap,
 };
 
-pub type QuickestPathSearch<G, W> =
-    UninformedSearch<
-        GraphMotion<
-            DiscreteSpaceTimeR2<<G as Graph>::Key>,
-            G,
-            LineFollow,
-        >,
-        W,
-        KeyedCloser<DiscreteSpaceTimeR2<<G as Graph>::Key>>,
-        InitializeR2<G>,
-        (),
-        LazyGraphMotion<
-            DiscreteSpaceTimeR2<<G as Graph>::Key>,
-            G,
-            LineFollow,
-            (),
-            (),
-        >,
-    >;
+pub type QuickestPathSearch<G, W> = UninformedSearch<
+    GraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow>,
+    W,
+    KeyedCloser<DiscreteSpaceTimeR2<<G as Graph>::Key>>,
+    InitializeR2<G>,
+    (),
+    LazyGraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow, (), ()>,
+>;
 
 pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>>;
 
@@ -108,23 +91,19 @@ where
         };
 
         Ok(Self {
-            planner: Planner::new(
-                Arc::new(
-                    BackwardDijkstra::new(
-                        &UninformedSearch::new_uninformed(
-                            motion.clone(),
-                            weight_r2,
-                            KeyedCloser(DiscreteSpaceTimeR2::new()),
-                        )
-                        .with_initializer(InitializeR2(graph.clone()))
-                        .with_connector(LazyGraphMotion {
-                            motion,
-                            keyring: (),
-                            chain: (),
-                        })
-                    )?
+            planner: Planner::new(Arc::new(BackwardDijkstra::new(
+                &UninformedSearch::new_uninformed(
+                    motion.clone(),
+                    weight_r2,
+                    KeyedCloser(DiscreteSpaceTimeR2::new()),
                 )
-            ),
+                .with_initializer(InitializeR2(graph.clone()))
+                .with_connector(LazyGraphMotion {
+                    motion,
+                    keyring: (),
+                    chain: (),
+                }),
+            )?)),
             extrapolator,
             weight_se2,
             cost_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -136,13 +115,14 @@ where
     }
 }
 
-impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal> for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
+impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
+    for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
 where
     WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output=WeightR2::Cost>,
+    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
     WeightR2::WeightedError: Into<Anyhow>,
     WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    WeightSE2::Cost: Clone + Add<Output=WeightSE2::Cost>,
+    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
     WeightSE2::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
@@ -163,28 +143,30 @@ where
 
         // First check if we've calculated this cost before
         match self.cost_cache.read() {
-            Ok(cache) => {
-                match cache.get(&(start.key.clone(), goal.clone())) {
-                    Some(cost) => return Ok(cost.clone()),
-                    None => { }
-                }
-            }
+            Ok(cache) => match cache.get(&(start.key.clone(), goal.clone())) {
+                Some(cost) => return Ok(cost.clone()),
+                None => {}
+            },
             Err(_) => return Err(QuickestPathHeuristicError::PoisonedMutex),
         }
 
         // The cost wasn't in the cache, so let's use the planner to find it.
         let cost = 'cost: {
-            let solution: Path<_, _, _> = match self.planner
+            let solution: Path<_, _, _> = match self
+                .planner
                 .plan(start.key.vertex.clone(), goal.clone())
                 .map_err(|_| QuickestPathHeuristicError::PlannerError)?
-                .solve().map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .solve()
+                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
                 .solution()
             {
                 Some(solution) => solution,
                 None => break 'cost None,
             };
 
-            let mut cost = match self.weight_se2.initial_cost(start)
+            let mut cost = match self
+                .weight_se2
+                .initial_cost(start)
                 .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
             {
                 Some(cost) => cost,
@@ -198,7 +180,7 @@ where
                 let (action, child_wp) = match self.extrapolator.extrapolate(
                     &previous_state.waypoint,
                     &child_state.waypoint.position,
-                    &()
+                    &(),
                 ) {
                     Some(wp) => wp.map_err(|_| QuickestPathHeuristicError::Extrapolation)?,
                     None => break 'cost None,
@@ -206,11 +188,11 @@ where
 
                 let child_state = StateSE2::new(child_state.key.clone(), child_wp);
 
-                let child_cost = match self.weight_se2.cost(
-                    &previous_state,
-                    &action,
-                    &child_state
-                ).map_err(|_| QuickestPathHeuristicError::BrokenWeight)? {
+                let child_cost = match self
+                    .weight_se2
+                    .cost(&previous_state, &action, &child_state)
+                    .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                {
                     Some(cost) => cost,
                     None => break 'cost None,
                 };
@@ -244,12 +226,12 @@ mod tests {
     use super::*;
     use crate::{
         graph::{
-            SimpleGraph, SharedGraph,
-            occupancy::{Cell, Visibility, VisibilityGraph, SparseGrid},
+            occupancy::{Cell, SparseGrid, Visibility, VisibilityGraph},
+            SharedGraph, SimpleGraph,
         },
         motion::{
-            TravelTimeCost, TimePoint, CircularProfile,
-            se2::{Point, GoalSE2},
+            se2::{GoalSE2, Point},
+            CircularProfile, TimePoint, TravelTimeCost,
         },
     };
     use approx::assert_relative_eq;
@@ -268,10 +250,10 @@ mod tests {
 
         let graph = SimpleGraph::from_iters(
             [
-                Point::new(0.0, 0.0), // 0
-                Point::new(1.0, 0.0), // 1
-                Point::new(2.0, 0.0), // 2
-                Point::new(3.0, 0.0), // 3
+                Point::new(0.0, 0.0),  // 0
+                Point::new(1.0, 0.0),  // 1
+                Point::new(2.0, 0.0),  // 2
+                Point::new(3.0, 0.0),  // 3
                 Point::new(1.0, -1.0), // 4
                 Point::new(2.0, -1.0), // 5
                 Point::new(3.0, -1.0), // 6
@@ -279,15 +261,23 @@ mod tests {
                 Point::new(3.0, -2.0), // 8
             ],
             [
-                (0, 1, ()), (1, 0, ()),
-                (1, 2, ()), (2, 1, ()),
-                (2, 3, ()), (3, 2, ()),
-                (2, 4, ()), (4, 2, ()),
-                (3, 6, ()), (6, 3, ()),
-                (4, 5, ()), (5, 4, ()),
-                (5, 7, ()), (7, 5, ()),
-                (7, 8, ()), (8, 7, ()),
-            ]
+                (0, 1, ()),
+                (1, 0, ()),
+                (1, 2, ()),
+                (2, 1, ()),
+                (2, 3, ()),
+                (3, 2, ()),
+                (2, 4, ()),
+                (4, 2, ()),
+                (3, 6, ()),
+                (6, 3, ()),
+                (4, 5, ()),
+                (5, 4, ()),
+                (5, 7, ()),
+                (7, 5, ()),
+                (7, 8, ()),
+                (8, 7, ()),
+            ],
         );
 
         let heuristic: QuickestPathHeuristic<_, _, _, 100> = QuickestPathHeuristic::new(
@@ -295,14 +285,19 @@ mod tests {
             TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             DifferentialDriveLineFollow::new(1.0, 1.0).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let start = StateSE2::new(0usize, WaypointSE2::new(TimePoint::zero(), 0.0, 0.0, 0.0));
         let goal = 8usize;
 
-        let estimate = heuristic.estimate_remaining_cost(&start, &goal).unwrap().unwrap();
+        let estimate = heuristic
+            .estimate_remaining_cost(&start, &goal)
+            .unwrap()
+            .unwrap();
 
-        let expected_estimate = 5.0 + 2_f64.sqrt() + 135_f64.to_radians() * 2.0 + 90_f64.to_radians() * 2.0;
+        let expected_estimate =
+            5.0 + 2_f64.sqrt() + 135_f64.to_radians() * 2.0 + 90_f64.to_radians() * 2.0;
         assert_relative_eq!(estimate.0, expected_estimate, max_relative = 0.0001);
     }
 
@@ -321,7 +316,8 @@ mod tests {
             TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             drive,
-        ).unwrap();
+        )
+        .unwrap();
 
         let state_cell = Cell::new(0, 0);
         let state_p = state_cell.to_center_point(cell_size);
@@ -337,11 +333,12 @@ mod tests {
             orientation: None,
         };
 
-        let remaining_cost_estimate = heuristic.estimate_remaining_cost(
-            &from_state, &goal
-        ).unwrap().unwrap();
+        let remaining_cost_estimate = heuristic
+            .estimate_remaining_cost(&from_state, &goal)
+            .unwrap()
+            .unwrap();
         assert_relative_eq!(
-            (goal_p - state_p).norm()/drive.translational_speed(),
+            (goal_p - state_p).norm() / drive.translational_speed(),
             remaining_cost_estimate.0,
             max_relative = 0.01,
         );
@@ -352,15 +349,12 @@ mod tests {
         let cell_size = 1.0;
         let profile = CircularProfile::new(0.75, 0.0, 0.0).unwrap();
         let visibility = Arc::new({
-            let mut vis = Visibility::new(
-                SparseGrid::new(cell_size),
-                profile.footprint_radius(),
-            );
+            let mut vis = Visibility::new(SparseGrid::new(cell_size), profile.footprint_radius());
             vis.change_cells(
                 &(-10..=-1_i64)
-                .into_iter()
-                .map(|y| (Cell::new(3, y), true))
-                .collect()
+                    .into_iter()
+                    .map(|y| (Cell::new(3, y), true))
+                    .collect(),
             );
             vis
         });
@@ -371,7 +365,8 @@ mod tests {
             TravelTimeCost(1.0),
             TravelTimeCost(1.0),
             drive,
-        ).unwrap();
+        )
+        .unwrap();
 
         let from_state = StateSE2::new(
             Cell::new(-6, -3),
@@ -383,8 +378,9 @@ mod tests {
             orientation: None,
         };
 
-        heuristic.estimate_remaining_cost(
-            &from_state, &goal
-        ).unwrap().unwrap();
+        heuristic
+            .estimate_remaining_cost(&from_state, &goal)
+            .unwrap()
+            .unwrap();
     }
 }

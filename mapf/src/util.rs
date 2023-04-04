@@ -96,7 +96,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Ok(inner) => Ok(inner.next()).transpose(),
-            Self::Err(inner) => inner.take().map(|e| Err(e))
+            Self::Err(inner) => inner.take().map(|e| Err(e)),
         }
     }
 }
@@ -132,7 +132,7 @@ pub enum ForkIter<L, R> {
     Right(R),
 }
 
-impl<L: Iterator, R: Iterator<Item=L::Item>> Iterator for ForkIter<L, R> {
+impl<L: Iterator, R: Iterator<Item = L::Item>> Iterator for ForkIter<L, R> {
     type Item = L::Item;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -144,11 +144,11 @@ impl<L: Iterator, R: Iterator<Item=L::Item>> Iterator for ForkIter<L, R> {
 
 pub fn wrap_to_pi(mut value: f64) -> f64 {
     while std::f64::consts::PI < value {
-        value -= 2.0*std::f64::consts::PI;
+        value -= 2.0 * std::f64::consts::PI;
     }
 
     while value < -std::f64::consts::PI {
-        value += 2.0*std::f64::consts::PI;
+        value += 2.0 * std::f64::consts::PI;
     }
 
     value

@@ -15,18 +15,18 @@
  *
 */
 
+use super::{
+    AsTimeInvariant, AsTimeVariant, Closable, CloseResult, ClosedSet, ClosedStatus,
+    ClosedStatusForKey, KeyedCloser,
+};
 use crate::{
     domain::{Keyed, Keyring, Reversible},
-    motion::Timed,
     error::NoError,
-};
-use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
-    AsTimeInvariant, AsTimeVariant, KeyedCloser,
+    motion::Timed,
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
 };
 
 pub const DEFAULT_TIME_THRESH: i64 = 100_000_000;
@@ -42,14 +42,20 @@ pub struct TimeVariantKeyedCloser<Ring> {
 
 impl<Ring: Clone> Reversible for TimeVariantKeyedCloser<Ring> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(self.clone())
     }
 }
 
 impl<Ring> TimeVariantKeyedCloser<Ring> {
     pub fn new(ring: Ring) -> Self {
-        Self { ring, time_thresh: DEFAULT_TIME_THRESH }
+        Self {
+            ring,
+            time_thresh: DEFAULT_TIME_THRESH,
+        }
     }
 }
 
@@ -124,12 +130,18 @@ where
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
         let key_ref = self.keyring.key_for(state);
         let key = key_ref.borrow();
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        match self.container.entry(key.clone()).or_default().entry(time_key) {
-            Entry::Occupied(entry) => {
-                CloseResult::Rejected { value, prior: entry.into_mut() }
-            }
+        match self
+            .container
+            .entry(key.clone())
+            .or_default()
+            .entry(time_key)
+        {
+            Entry::Occupied(entry) => CloseResult::Rejected {
+                value,
+                prior: entry.into_mut(),
+            },
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 CloseResult::Accepted
@@ -140,17 +152,24 @@ where
     fn replace(&mut self, state: &State, value: T) -> Option<T> {
         let key_ref = self.keyring.key_for(state);
         let key = key_ref.borrow();
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        self.container.entry(key.clone()).or_default().insert(time_key, value)
+        self.container
+            .entry(key.clone())
+            .or_default()
+            .insert(time_key, value)
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
         let key_ref = self.keyring.key_for(state);
         let key = key_ref.borrow();
-        let time_key = state.time().nanos_since_zero/self.time_thresh;
+        let time_key = state.time().nanos_since_zero / self.time_thresh;
 
-        self.container.get(key).map(|c| c.get(&time_key)).flatten().into()
+        self.container
+            .get(key)
+            .map(|c| c.get(&time_key))
+            .flatten()
+            .into()
     }
 
     type ClosedSetIter<'a> = impl Iterator<Item=&'a T> + 'a
@@ -171,12 +190,11 @@ where
 
 impl<Ring: Keyed, T> ClosedStatusForKey<Ring::Key, T> for TimeVariantKeyedClosedSet<Ring, T> {
     fn status_for_key<'a>(&'a self, key: &Ring::Key) -> ClosedStatus<'a, T> {
-        self.container.get(key).map(|c|
-            c
-            .iter()
-            .min_by_key(|(t, _)| **t)
-            .map(|(_, value)| value)
-        ).flatten().into()
+        self.container
+            .get(key)
+            .map(|c| c.iter().min_by_key(|(t, _)| **t).map(|(_, value)| value))
+            .flatten()
+            .into()
     }
 
     fn closed_keys_len(&self) -> usize {

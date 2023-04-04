@@ -15,17 +15,17 @@
  *
 */
 
+use super::{
+    AsTimeInvariant, AsTimeVariant, Closable, CloseResult, ClosedSet, ClosedStatus,
+    ClosedStatusForKey, TimeVariantKeyedCloser,
+};
 use crate::{
     domain::{Keyed, Keyring, Reversible},
     error::NoError,
 };
-use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
-    AsTimeInvariant, AsTimeVariant, TimeVariantKeyedCloser,
-};
 use std::{
-    collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
 };
 
 /// [`KeyedCloser`] implements the [`Closable`] trait by providing a
@@ -35,7 +35,10 @@ pub struct KeyedCloser<Ring>(pub Ring);
 
 impl<Ring: Clone> Reversible for KeyedCloser<Ring> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(self.clone())
     }
 }
@@ -97,9 +100,10 @@ where
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
         let key = self.keyring.key_for(state);
         match self.container.entry(key.borrow().clone()) {
-            Entry::Occupied(entry) => {
-                CloseResult::Rejected { value, prior: entry.into_mut() }
-            }
+            Entry::Occupied(entry) => CloseResult::Rejected {
+                value,
+                prior: entry.into_mut(),
+            },
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 CloseResult::Accepted

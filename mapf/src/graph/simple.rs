@@ -16,9 +16,9 @@
 */
 
 use crate::{
-    graph::{Graph, Edge},
     domain::Reversible,
     error::NoError,
+    graph::{Edge, Graph},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -29,10 +29,7 @@ pub struct SimpleGraph<V, E> {
 
 impl<V, E> SimpleGraph<V, E> {
     pub fn new(vertices: Vec<V>, edges: Vec<Vec<(usize, E)>>) -> Self {
-        Self {
-            vertices,
-            edges,
-        }
+        Self { vertices, edges }
     }
 
     pub fn from_iters(
@@ -65,7 +62,10 @@ impl<V: Clone, E: Clone> Reversible for SimpleGraph<V, E> {
         r_edges.resize(self.edges.len(), Vec::new());
         for (r_v_to, edges) in self.edges.iter().enumerate() {
             for (r_v_from, e) in edges {
-                r_edges.get_mut(*r_v_from).unwrap().push((r_v_to, e.clone()));
+                r_edges
+                    .get_mut(*r_v_from)
+                    .unwrap()
+                    .push((r_v_to, e.clone()));
             }
         }
 
@@ -122,12 +122,11 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         E: 'a,
     {
         let from_key = *from_key;
-        self
-        .edges
-        .get(from_key)
-        .into_iter()
-        .flat_map(|outgoing| outgoing.iter())
-        .map(move |(to_key, attr)| (from_key, *to_key, attr))
+        self.edges
+            .get(from_key)
+            .into_iter()
+            .flat_map(|outgoing| outgoing.iter())
+            .map(move |(to_key, attr)| (from_key, *to_key, attr))
     }
 
     type LazyEdgeIter<'a> = [(usize, usize, &'a E); 0]
@@ -135,11 +134,7 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         V: 'a,
         E: 'a;
 
-    fn lazy_edges_between<'a>(
-        &'a self,
-        _: &Self::Key,
-        _: &Self::Key
-    ) -> Self::LazyEdgeIter<'a>
+    fn lazy_edges_between<'a>(&'a self, _: &Self::Key, _: &Self::Key) -> Self::LazyEdgeIter<'a>
     where
         V: 'a,
         E: 'a,

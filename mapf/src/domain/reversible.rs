@@ -15,7 +15,7 @@
  *
 */
 
-use crate::{motion::Timed, error::NoError};
+use crate::{error::NoError, motion::Timed};
 use arrayvec::ArrayVec;
 
 /// If a trait is reversible then you can obtain its Reverse whose choices and
@@ -28,7 +28,9 @@ pub trait Reversible {
     type ReversalError;
 
     /// Get the reverse of this domain
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized;
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized;
 }
 
 /// For a reverse domain created by [`Reversible`], the `Backtrack` trait can
@@ -94,14 +96,10 @@ pub fn flip_endpoint_times<State: Clone + Timed>(
 ) -> Result<(State, State), NoError> {
     let delta_t = *initial_reverse_state.time() - *final_reverse_state.time();
     let mut initial_forward_state = final_reverse_state.clone();
-    initial_forward_state.set_time(
-        *initial_forward_state.time() + delta_t
-    );
+    initial_forward_state.set_time(*initial_forward_state.time() + delta_t);
 
     let mut final_forward_state = initial_reverse_state.clone();
-    final_forward_state.set_time(
-        *final_forward_state.time() + delta_t
-    );
+    final_forward_state.set_time(*final_forward_state.time() + delta_t);
 
     Ok((initial_forward_state, final_forward_state))
 }

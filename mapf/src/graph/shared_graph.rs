@@ -15,14 +15,10 @@
  *
 */
 
-use crate::{
-    domain::Reversible,
-    graph::Graph,
-    error::ThisError,
-};
+use crate::{domain::Reversible, error::ThisError, graph::Graph};
 use std::{
-    sync::{Arc, RwLock},
     ops::Deref,
+    sync::{Arc, RwLock},
 };
 
 /// Wrapper around Graph types which allow the graph and its reverse to be
@@ -52,10 +48,7 @@ impl<G> SharedGraph<G> {
         }
     }
 
-    pub fn from_refs(
-        graph: Arc<G>,
-        reverse: Arc<G>,
-    ) -> Self {
+    pub fn from_refs(graph: Arc<G>, reverse: Arc<G>) -> Self {
         Self {
             graph,
             reverse: Arc::new(RwLock::new(Some(reverse))),
@@ -89,7 +82,7 @@ impl<G: Graph> Graph for SharedGraph<G> {
         Self: 'a,
         Self::Vertex: 'a,
         Self::Key: 'a,
-        Self::EdgeAttributes: 'a
+        Self::EdgeAttributes: 'a,
     {
         self.graph.edges_from_vertex(key)
     }
@@ -101,7 +94,7 @@ impl<G: Graph> Graph for SharedGraph<G> {
     fn lazy_edges_between<'a>(
         &'a self,
         from_key: &Self::Key,
-        to_key: &Self::Key
+        to_key: &Self::Key,
     ) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,
@@ -124,7 +117,9 @@ impl<G: Reversible> Reversible for SharedGraph<G> {
     type ReversalError = SharedGraphReversalError<G::ReversalError>;
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
         {
-            let guard = self.reverse.read()
+            let guard = self
+                .reverse
+                .read()
                 .map_err(|_| SharedGraphReversalError::PoisonedMutex)?;
 
             if let Some(reverse) = &*guard {
@@ -134,7 +129,9 @@ impl<G: Reversible> Reversible for SharedGraph<G> {
 
         // We don't already have a reverse of the graph, so we need to get
         // write permissions and create one.
-        let mut guard = self.reverse.write()
+        let mut guard = self
+            .reverse
+            .write()
             .map_err(|_| SharedGraphReversalError::PoisonedMutex)?;
 
         if let Some(reverse) = &*guard {
@@ -145,7 +142,9 @@ impl<G: Reversible> Reversible for SharedGraph<G> {
 
         // We definitely need to create the reverse now.
         let reverse = Arc::new(
-            self.graph.reversed().map_err(SharedGraphReversalError::Graph)?
+            self.graph
+                .reversed()
+                .map_err(SharedGraphReversalError::Graph)?,
         );
 
         *guard = Some(reverse.clone());

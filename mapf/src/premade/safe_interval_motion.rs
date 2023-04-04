@@ -17,30 +17,29 @@
 
 use crate::{
     domain::{
-        Domain, Activity, Key, Keyed, Keyring, Closable, ClosedSet, CloseResult,
-        ClosedStatus,
+        Activity, Closable, CloseResult, ClosedSet, ClosedStatus, Domain, Key, Keyed, Keyring,
     },
-    motion::{
-        OverlayedDynamicEnvironment, TimePoint, Environment, SpeedLimiter,
-        Duration, Timed,
-        compute_safe_arrival_times, SafeArrivalTimes, SafeAction, WaitForObstacle,
-        is_safe_segment, compute_safe_linear_path_wait_hints, compute_safe_arrival_path,
-        se2::{
-            DifferentialDriveLineFollow, WaypointSE2, StateSE2, Position,
-            DifferentialDriveLineFollowError, MaybeOriented, KeySE2,
-        },
-        r2::{Positioned, WaypointR2},
-    },
-    graph::{Graph, Edge},
     error::ThisError,
-    util::{Minimum, ForkIter, FlatResultMapTrait},
-};
-use std::{
-    sync::{Arc, RwLock},
-    collections::{HashMap, hash_map::Entry},
-    borrow::Borrow,
+    graph::{Edge, Graph},
+    motion::{
+        compute_safe_arrival_path, compute_safe_arrival_times, compute_safe_linear_path_wait_hints,
+        is_safe_segment,
+        r2::{Positioned, WaypointR2},
+        se2::{
+            DifferentialDriveLineFollow, DifferentialDriveLineFollowError, KeySE2, MaybeOriented,
+            Position, StateSE2, WaypointSE2,
+        },
+        Duration, Environment, OverlayedDynamicEnvironment, SafeAction, SafeArrivalTimes,
+        SpeedLimiter, TimePoint, Timed, WaitForObstacle,
+    },
+    util::{FlatResultMapTrait, ForkIter, Minimum},
 };
 use smallvec::SmallVec;
+use std::{
+    borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
+    sync::{Arc, RwLock},
+};
 
 pub struct SafeIntervalCache<G: Graph> {
     pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
@@ -50,10 +49,7 @@ pub struct SafeIntervalCache<G: Graph> {
 }
 
 impl<G: Graph> SafeIntervalCache<G> {
-    pub fn new(
-        environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
-        graph: G,
-    ) -> Self {
+    pub fn new(environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>, graph: G) -> Self {
         let mut earliest_time = Minimum::new(|a: &TimePoint, b: &TimePoint| a.cmp(b));
         for obs in environment.obstacles() {
             if let Some(traj) = obs.trajectory() {
@@ -66,11 +62,14 @@ impl<G: Graph> SafeIntervalCache<G> {
             environment,
             graph,
             earliest_time,
-            safe_intervals: RwLock::new(HashMap::new())
+            safe_intervals: RwLock::new(HashMap::new()),
         }
     }
 
-    pub fn safe_intervals_for(&self, key: &G::Key) -> Result<SafeArrivalTimes, SafeIntervalCacheError<G::Key>>
+    pub fn safe_intervals_for(
+        &self,
+        key: &G::Key,
+    ) -> Result<SafeArrivalTimes, SafeIntervalCacheError<G::Key>>
     where
         G::Key: Key + Clone,
         G::Vertex: Positioned,
@@ -92,15 +91,15 @@ impl<G: Graph> SafeIntervalCache<G> {
         }
 
         // Calculate the safe intervals for this key.
-        let p = self.graph.vertex(key)
+        let p = self
+            .graph
+            .vertex(key)
             .ok_or_else(|| SafeIntervalCacheError::MissingVertex(key.clone()))?
             .borrow()
             .point();
 
-        let safe_arrivals = compute_safe_arrival_times(
-            WaypointR2::new(earliest_time, p.x, p.y),
-            &self.environment
-        );
+        let safe_arrivals =
+            compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
         match self.safe_intervals.write() {
             Ok(mut guard) => {
                 guard.insert(key.clone(), safe_arrivals.clone());
@@ -140,7 +139,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         target_key: G::Key,
         to_target: &G::Vertex,
         with_guidance: &G::EdgeAttributes,
-    ) -> impl Iterator<Item=Result<(SafePathSE2, WaypointSE2), SafeIntervalMotionError<G::Key>>>
+    ) -> impl Iterator<Item = Result<(SafePathSE2, WaypointSE2), SafeIntervalMotionError<G::Key>>>
     where
         G::Key: Key + Clone,
         G::Vertex: Positioned + MaybeOriented,
@@ -148,7 +147,9 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
     {
         let mut safe_intervals = match self.safe_intervals.safe_intervals_for(&target_key) {
             Ok(r) => r,
-            Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Cache(err))).into_iter()),
+            Err(err) => {
+                return ForkIter::Left(Some(Err(SafeIntervalMotionError::Cache(err))).into_iter())
+            }
         };
 
         let target_point = to_target.point();
@@ -158,7 +159,11 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             with_guidance,
         ) {
             Ok(arrival) => arrival,
-            Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter()),
+            Err(err) => {
+                return ForkIter::Left(
+                    Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter(),
+                )
+            }
         };
 
         if arrival.waypoints.len() > 1 {
@@ -166,7 +171,9 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
             if !is_safe_segment(
-                (&from_state.waypoint.into(), &wp0), None, &self.safe_intervals.environment,
+                (&from_state.waypoint.into(), &wp0),
+                None,
+                &self.safe_intervals.environment,
             ) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -177,7 +184,9 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let to_position = match arrival.waypoints.last() {
             Some(p) => *p,
             // No motion is needed, the agent is already on the target
-            None => return ForkIter::Left(Some(Ok((SmallVec::new(), from_state.waypoint))).into_iter()),
+            None => {
+                return ForkIter::Left(Some(Ok((SmallVec::new(), from_state.waypoint))).into_iter())
+            }
         };
 
         let maybe_oriented = to_target.maybe_oriented();
@@ -185,7 +194,9 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
         let ranked_hints = compute_safe_linear_path_wait_hints(
-            (&from_point, &to_point), None, &self.safe_intervals.environment
+            (&from_point, &to_point),
+            None,
+            &self.safe_intervals.environment,
         );
 
         safe_intervals.retain(|t| *t >= to_position.time);
@@ -193,63 +204,60 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         safe_intervals.insert(0, to_position.time);
 
         let paths: SmallVec<[_; 5]> = safe_intervals
-        .into_iter()
-        .filter_map(|arrival_time|
-            compute_safe_arrival_path(
-                from_point,
-                to_point,
-                arrival_time,
-                &ranked_hints,
-                &self.safe_intervals.environment
-            )
-        )
-        .filter_map(move |action| {
-            let mut action: SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]> =
-                action
-                .into_iter()
-                .map(|a| a.map_movement(|wp| wp.with_yaw(yaw)))
-                .collect();
+            .into_iter()
+            .filter_map(|arrival_time| {
+                compute_safe_arrival_path(
+                    from_point,
+                    to_point,
+                    arrival_time,
+                    &ranked_hints,
+                    &self.safe_intervals.environment,
+                )
+            })
+            .filter_map(move |action| {
+                let mut action: SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]> = action
+                    .into_iter()
+                    .map(|a| a.map_movement(|wp| wp.with_yaw(yaw)))
+                    .collect();
 
-            if arrival.waypoints.len() > 1 {
-                // Add the initial rotation to the safe actions
-                action.insert(0, SafeAction::Move(arrival.waypoints[0]));
-            }
-
-            // TODO(@mxgrey): Remove these unwraps before targeting production.
-            let arrival_wp = *action.last().unwrap().movement().unwrap();
-            if let Some(target_yaw) = maybe_oriented {
-                // TODO(@mxgrey): Consider how to de-duplicate this block
-                // from the Extrapolator impl.
-                let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
-                if delta_yaw_abs > self.extrapolator.rotational_threshold() {
-                    arrival.time += Duration::from_secs_f64(
-                        self.extrapolator.direction() * delta_yaw_abs / self.extrapolator.rotational_speed()
-                    );
-                    let final_wp = WaypointSE2 {
-                        time: arrival.time,
-                        position: Position::new(
-                            target_point.coords,
-                            target_yaw.angle(),
-                        ),
-                    };
-
-                    if !is_safe_segment(
-                        (&arrival_wp.into(), &final_wp.into()),
-                        None,
-                        &self.safe_intervals.environment,
-                    ) {
-                        // We cannot rotate to face the target orientation
-                        // so this is not a valid action.
-                        return None;
-                    }
-                    action.push(SafeAction::Move(final_wp));
+                if arrival.waypoints.len() > 1 {
+                    // Add the initial rotation to the safe actions
+                    action.insert(0, SafeAction::Move(arrival.waypoints[0]));
                 }
-            }
 
-            let wp = *action.last().unwrap().movement().unwrap();
-            Some(Ok((action, wp)))
-        })
-        .collect();
+                // TODO(@mxgrey): Remove these unwraps before targeting production.
+                let arrival_wp = *action.last().unwrap().movement().unwrap();
+                if let Some(target_yaw) = maybe_oriented {
+                    // TODO(@mxgrey): Consider how to de-duplicate this block
+                    // from the Extrapolator impl.
+                    let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
+                    if delta_yaw_abs > self.extrapolator.rotational_threshold() {
+                        arrival.time += Duration::from_secs_f64(
+                            self.extrapolator.direction() * delta_yaw_abs
+                                / self.extrapolator.rotational_speed(),
+                        );
+                        let final_wp = WaypointSE2 {
+                            time: arrival.time,
+                            position: Position::new(target_point.coords, target_yaw.angle()),
+                        };
+
+                        if !is_safe_segment(
+                            (&arrival_wp.into(), &final_wp.into()),
+                            None,
+                            &self.safe_intervals.environment,
+                        ) {
+                            // We cannot rotate to face the target orientation
+                            // so this is not a valid action.
+                            return None;
+                        }
+                        action.push(SafeAction::Move(final_wp));
+                    }
+                }
+
+                let wp = *action.last().unwrap().movement().unwrap();
+                Some(Ok((action, wp)))
+            })
+            .collect();
 
         ForkIter::Right(paths.into_iter())
     }
@@ -286,31 +294,37 @@ where
         // template to implement an Extrapolator. This is all being hard-coded
         // for now as a proof of concept.
         let vertex = from_state.key.vertex.clone();
-        self.safe_intervals.graph
-        .edges_from_vertex(&vertex)
-        .into_iter()
-        .flat_map(move |edge| {
-            let from_state = from_state.clone();
-            let to_vertex = edge.to_vertex().clone();
-            let edge = edge.attributes().clone();
-            self.safe_intervals.graph
-            .vertex(&to_vertex)
-            .ok_or_else(|| SafeIntervalMotionError::MissingVertex(to_vertex.clone()))
-            .flat_result_map(move |v| {
+        self.safe_intervals
+            .graph
+            .edges_from_vertex(&vertex)
+            .into_iter()
+            .flat_map(move |edge| {
                 let from_state = from_state.clone();
-                let to_vertex = to_vertex.clone();
-                self
-                .compute_safe_arrivals(&from_state, to_vertex.clone(), v.borrow(), &edge)
-                .map(move |r| {
-                    let to_vertex = to_vertex.clone();
-                    r.map(move |(action, wp)| {
-                        let state = StateSE2::new(to_vertex.clone(), wp);
-                        (action, state)
+                let to_vertex = edge.to_vertex().clone();
+                let edge = edge.attributes().clone();
+                self.safe_intervals
+                    .graph
+                    .vertex(&to_vertex)
+                    .ok_or_else(|| SafeIntervalMotionError::MissingVertex(to_vertex.clone()))
+                    .flat_result_map(move |v| {
+                        let from_state = from_state.clone();
+                        let to_vertex = to_vertex.clone();
+                        self.compute_safe_arrivals(
+                            &from_state,
+                            to_vertex.clone(),
+                            v.borrow(),
+                            &edge,
+                        )
+                        .map(move |r| {
+                            let to_vertex = to_vertex.clone();
+                            r.map(move |(action, wp)| {
+                                let state = StateSE2::new(to_vertex.clone(), wp);
+                                (action, state)
+                            })
+                        })
                     })
-                })
+                    .map(|x| x.flatten())
             })
-            .map(|x| x.flatten())
-        })
     }
 }
 
@@ -357,11 +371,11 @@ pub struct SafeIntervalCloser<Ring, G: Graph> {
 }
 
 impl<Ring, G: Graph> SafeIntervalCloser<Ring, G> {
-    pub fn new(
-        keyring: Ring,
-        safe_intervals: Arc<SafeIntervalCache<G>>,
-    ) -> Self {
-        Self { keyring, cache: safe_intervals }
+    pub fn new(keyring: Ring, safe_intervals: Arc<SafeIntervalCache<G>>) -> Self {
+        Self {
+            keyring,
+            cache: safe_intervals,
+        }
     }
 }
 
@@ -387,16 +401,17 @@ pub struct SafeIntervalClosedSet<Ring: Keyed, G: Graph, T> {
 }
 
 impl<Ring: Keyed, G: Graph, T> SafeIntervalClosedSet<Ring, G, T> {
-    pub fn new(
-        keyring: Ring,
-        cache: Arc<SafeIntervalCache<G>>,
-    ) -> Self {
-        Self { keyring, cache, container: HashMap::new() }
+    pub fn new(keyring: Ring, cache: Arc<SafeIntervalCache<G>>) -> Self {
+        Self {
+            keyring,
+            cache,
+            container: HashMap::new(),
+        }
     }
 
     fn get_closed_intervals<'a, State: Timed>(
         &'a mut self,
-        state: &State
+        state: &State,
     ) -> Option<&'a mut ClosedIntervals<T>>
     where
         Ring: Keyring<State>,
@@ -483,10 +498,8 @@ struct ClosedIntervals<T> {
 
 impl<T> ClosedIntervals<T> {
     fn new(safe_intervals: SafeArrivalTimes) -> Self {
-        let mut intervals: SmallVec<[_; 5]> = safe_intervals
-            .into_iter()
-            .map(|t| (t, None))
-            .collect();
+        let mut intervals: SmallVec<[_; 5]> =
+            safe_intervals.into_iter().map(|t| (t, None)).collect();
 
         intervals.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -568,11 +581,11 @@ impl<T> ClosedIntervals<T> {
         prior.into()
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a T> + 'a {
-        self.indefinite_start.iter()
-        .chain(
-            self.intervals.iter()
-            .filter_map(|(_, value)| value.as_ref())
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T> + 'a {
+        self.indefinite_start.iter().chain(
+            self.intervals
+                .iter()
+                .filter_map(|(_, value)| value.as_ref()),
         )
     }
 }

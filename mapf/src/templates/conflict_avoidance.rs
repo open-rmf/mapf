@@ -15,7 +15,7 @@
  *
 */
 
-use crate::domain::{Extrapolator, ConflictAvoider};
+use crate::domain::{ConflictAvoider, Extrapolator};
 
 #[derive(Debug, Clone)]
 pub struct ConflictAvoidance<Avoider, Environment> {
@@ -23,7 +23,8 @@ pub struct ConflictAvoidance<Avoider, Environment> {
     pub environment: Environment,
 }
 
-impl<Avoider, Env, State, Target, Guidance> Extrapolator<State, Target, Guidance> for ConflictAvoidance<Avoider, Env>
+impl<Avoider, Env, State, Target, Guidance> Extrapolator<State, Target, Guidance>
+    for ConflictAvoidance<Avoider, Env>
 where
     Avoider: ConflictAvoider<State, Target, Guidance, Env>,
 {
@@ -52,14 +53,8 @@ where
         Target: 'a,
         Guidance: 'a,
     {
-        self
-        .avoider
-        .avoid_conflicts(
-            from_state,
-            to_target,
-            with_guidance,
-            &self.environment,
-        )
-        .into_iter()
+        self.avoider
+            .avoid_conflicts(from_state, to_target, with_guidance, &self.environment)
+            .into_iter()
     }
 }

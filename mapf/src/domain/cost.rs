@@ -16,12 +16,12 @@
 */
 
 use float_ord::FloatOrd;
+use num::traits::Zero;
 use std::{
     cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
-use num::traits::Zero;
 
 /// Use Cost(f64) or Cost(f32) to use floating point values as planner costs,
 /// giving them the traits of total ordering, full equivalence, and hashability.
@@ -93,7 +93,7 @@ macro_rules! cost_impl {
         impl Div for Cost<$f> {
             type Output = Self;
             fn div(self, rhs: Self) -> Self {
-                Cost(self.0/rhs.0)
+                Cost(self.0 / rhs.0)
             }
         }
         impl DivAssign for Cost<$f> {

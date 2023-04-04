@@ -15,7 +15,7 @@
  *
 */
 
-use std::{cmp::Eq, hash::Hash, borrow::Borrow, fmt::Debug};
+use std::{borrow::Borrow, cmp::Eq, fmt::Debug, hash::Hash};
 
 /// The `Key` trait describes objects that can be used as Keys by Keyed domains.
 ///
@@ -54,13 +54,20 @@ pub trait Keyring<State>: Keyed {
 /// If a State contains its own key, it can implement SelfKey so that its key
 /// can be obtained without a [`Keyring`].
 pub trait SelfKey: Keyed {
-    type KeyRef<'a>: Borrow<Self::Key> + 'a where Self: 'a;
-    fn key<'a>(&'a self) -> Self::KeyRef<'a> where Self: 'a;
+    type KeyRef<'a>: Borrow<Self::Key> + 'a
+    where
+        Self: 'a;
+    fn key<'a>(&'a self) -> Self::KeyRef<'a>
+    where
+        Self: 'a;
 }
 
 impl<T: Key + Clone> SelfKey for T {
     type KeyRef<'a> = &'a Self::Key where Self: 'a;
-    fn key<'a>(&'a self) -> &'a Self::Key where Self: 'a {
+    fn key<'a>(&'a self) -> &'a Self::Key
+    where
+        Self: 'a,
+    {
         self
     }
 }
@@ -116,7 +123,7 @@ impl<K: Key> Keyed for SelfPartialKeyring<K> {
     type Key = Option<K>;
 }
 
-impl<K: Key, State: SelfKey<Key=Option<K>>> Keyring<State> for SelfPartialKeyring<K> {
+impl<K: Key, State: SelfKey<Key = Option<K>>> Keyring<State> for SelfPartialKeyring<K> {
     type KeyRef<'a> = State::KeyRef<'a>
     where
         Self: 'a,

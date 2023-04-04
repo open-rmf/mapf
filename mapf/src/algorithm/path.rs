@@ -16,9 +16,9 @@
 */
 
 use crate::{
-    domain::{Domain, Backtrack},
-    motion::{Trajectory, Waypoint, IntegrateWaypoints},
+    domain::{Backtrack, Domain},
     error::ThisError,
+    motion::{IntegrateWaypoints, Trajectory, Waypoint},
 };
 
 #[derive(Debug, Clone)]
@@ -37,20 +37,27 @@ impl<S, A, C> Path<S, A, C> {
         ReverseDomain: Domain + Backtrack<S, A>,
         ReverseDomain::BacktrackError: Into<ReverseDomain::Error>,
     {
-        let (_, mut parent_forward_state) = reverse_domain.flip_endpoints(
-            &self.initial_state,
-            self.sequence.last().map(|s| &s.1).unwrap_or(&self.initial_state),
-        ).map_err(Into::into)?;
+        let (_, mut parent_forward_state) = reverse_domain
+            .flip_endpoints(
+                &self.initial_state,
+                self.sequence
+                    .last()
+                    .map(|s| &s.1)
+                    .unwrap_or(&self.initial_state),
+            )
+            .map_err(Into::into)?;
         let mut parent_reverse_state = self.initial_state;
 
         let mut sequence = Vec::new();
         for (reverse_action, child_reverse_state) in self.sequence {
-            let (forward_action, child_forward_state) = reverse_domain.backtrack(
-                &parent_forward_state,
-                &parent_reverse_state,
-                &reverse_action,
-                &child_reverse_state,
-            ).map_err(Into::into)?;
+            let (forward_action, child_forward_state) = reverse_domain
+                .backtrack(
+                    &parent_forward_state,
+                    &parent_reverse_state,
+                    &reverse_action,
+                    &child_reverse_state,
+                )
+                .map_err(Into::into)?;
 
             sequence.push((forward_action, parent_forward_state));
             parent_forward_state = child_forward_state;
@@ -67,10 +74,10 @@ impl<S, A, C> Path<S, A, C> {
     }
 
     pub fn make_trajectory<W: Waypoint>(
-        &self
+        &self,
     ) -> Result<
         Option<Trajectory<W>>,
-        WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>
+        WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>,
     >
     where
         S: IntegrateWaypoints<W>,
@@ -87,10 +94,10 @@ impl<S, A, C> Path<S, A, C> {
         for (action, _) in self.sequence.iter() {
             waypoints.extend(
                 action
-                .integrated_waypoints(initial_wp)
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(WaypointIntegrationError::Action)?
+                    .integrated_waypoints(initial_wp)
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(WaypointIntegrationError::Action)?,
             );
 
             initial_wp = waypoints.last().cloned();

@@ -16,17 +16,16 @@
 */
 
 use crate::{
-    domain::{
-        Domain, Reversible, Keyed, Closable, Activity, Weighted, Initializable,
-        Keyring, ClosedStatusForKey, Backtrack, ArrivalKeyring, Connectable,
-        Configurable,
-    },
     algorithm::{
-        Algorithm, Coherent, Solvable, SearchStatus, Path,
         dijkstra::{
+            forward::{DijkstraSearchError, Memory},
             Dijkstra,
-            forward::{Memory, DijkstraSearchError},
         },
+        Algorithm, Coherent, Path, SearchStatus, Solvable,
+    },
+    domain::{
+        Activity, ArrivalKeyring, Backtrack, Closable, ClosedStatusForKey, Configurable,
+        Connectable, Domain, Initializable, Keyed, Keyring, Reversible, Weighted,
     },
     error::ThisError,
 };
@@ -35,10 +34,10 @@ use std::ops::Add;
 pub struct BackwardDijkstra<D: Reversible>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     backward: Dijkstra<D>,
 }
@@ -46,13 +45,15 @@ where
 impl<D: Reversible> BackwardDijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
-        Ok(Self { backward: Dijkstra::new(domain.reversed()?) })
+        Ok(Self {
+            backward: Dijkstra::new(domain.reversed()?),
+        })
     }
 
     pub fn backward(&self) -> &Dijkstra<D> {
@@ -63,10 +64,10 @@ where
 impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
 }
@@ -74,10 +75,10 @@ where
 pub struct BackwardMemory<D: Reversible>
 where
     D: Domain
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>,
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     backward: Memory<D>,
 }
@@ -85,13 +86,13 @@ where
 impl<D: Reversible, Start, Goal> Coherent<Start, Goal> for BackwardDijkstra<D>
 where
     D: Domain
-    + Keyring<D::State>
-    + Initializable<Goal, Start, D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
-    + Connectable<D::State, D::ActivityAction, D::Key>
-    + ArrivalKeyring<D::Key, Goal, Start>,
+        + Keyring<D::State>
+        + Initializable<Goal, Start, D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>
+        + Connectable<D::State, D::ActivityAction, D::Key>
+        + ArrivalKeyring<D::Key, Goal, Start>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityAction: Clone,
     D::InitialError: Into<D::Error>,
@@ -106,31 +107,22 @@ where
 {
     type InitError = DijkstraSearchError<D::Error>;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError> {
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError> {
         let memory = self.backward.initialize(goal.clone(), &start)?;
-        Ok(BackwardMemory {
-            backward: memory,
-        })
+        Ok(BackwardMemory { backward: memory })
     }
 }
 
 impl<D, Goal> Solvable<Goal> for BackwardDijkstra<D>
 where
     D: Domain
-    + Reversible
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Keyring<D::State>
-    + Closable<D::State>
-    + Connectable<D::State, D::ActivityAction, D::Key>
-    + Backtrack<
-        D::State,
-        D::ActivityAction,
-    >,
+        + Reversible
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Keyring<D::State>
+        + Closable<D::State>
+        + Connectable<D::State, D::ActivityAction, D::Key>
+        + Backtrack<D::State, D::ActivityAction>,
     D::State: Clone,
     D::ActivityAction: Clone,
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
@@ -150,13 +142,11 @@ where
     ) -> Result<SearchStatus<Self::Solution>, Self::StepError> {
         // Note: Passing in the goal doesn't matter because the Dijkstra
         // algorithm memory saves the goal information anyway.
-        self.backward.step(&mut memory.backward, &())
-            .and_then(|r|
+        self.backward.step(&mut memory.backward, &()).and_then(|r|
                 // If a solution is found, backtrack the path to make it run
                 // forward instead of being in reverse.
                 r.and_then(|path| path.backtrack(self.backward.domain()))
-                    .map_err(DijkstraSearchError::Domain)
-            )
+                    .map_err(DijkstraSearchError::Domain))
     }
 }
 
@@ -166,11 +156,11 @@ where
 impl<D: Configurable> Configurable for BackwardDijkstra<D>
 where
     D: Domain
-    + Reversible
-    + Keyed
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Closable<D::State>
+        + Reversible
+        + Keyed
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Closable<D::State>,
 {
     type Configuration = D::Configuration;
     type ConfigurationError = BackwardConfigurationError<D::ReversalError, D::ConfigurationError>;
@@ -178,7 +168,10 @@ where
     where
         F: FnOnce(Self::Configuration) -> Self::Configuration,
     {
-        let configured = self.backward.domain().reversed()
+        let configured = self
+            .backward
+            .domain()
+            .reversed()
             .map_err(BackwardConfigurationError::Reverse)?
             .configure(f)
             .map_err(BackwardConfigurationError::Configure)?;
@@ -199,13 +192,10 @@ pub enum BackwardConfigurationError<R, C> {
 mod tests {
     use super::*;
     use crate::{
-        graph::{SimpleGraph, SharedGraph},
-        motion::{
-            se2::*,
-            TravelTimeCost,
-        },
-        templates::{UninformedSearch, GraphMotion, LazyGraphMotion},
         domain::KeyedCloser,
+        graph::{SharedGraph, SimpleGraph},
+        motion::{se2::*, TravelTimeCost},
+        templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
         Planner,
     };
     use std::sync::Arc;
@@ -224,10 +214,10 @@ mod tests {
 
         let graph = SharedGraph::new(SimpleGraph::from_iters(
             [
-                Point::new(0.0, 0.0), // 0
-                Point::new(1.0, 0.0), // 1
-                Point::new(2.0, 0.0), // 2
-                Point::new(3.0, 0.0), // 3
+                Point::new(0.0, 0.0),  // 0
+                Point::new(1.0, 0.0),  // 1
+                Point::new(2.0, 0.0),  // 2
+                Point::new(3.0, 0.0),  // 3
                 Point::new(1.0, -1.0), // 4
                 Point::new(2.0, -1.0), // 5
                 Point::new(3.0, -1.0), // 6
@@ -235,15 +225,23 @@ mod tests {
                 Point::new(3.0, -2.0), // 8
             ],
             [
-                (0, 1, ()), (1, 0, ()),
-                (1, 2, ()), (2, 1, ()),
-                (2, 3, ()), (3, 2, ()),
-                (2, 4, ()), (4, 2, ()),
-                (3, 6, ()), (6, 3, ()),
-                (4, 5, ()), (5, 4, ()),
-                (5, 7, ()), (7, 5, ()),
-                (7, 8, ()), (8, 7, ()),
-            ]
+                (0, 1, ()),
+                (1, 0, ()),
+                (1, 2, ()),
+                (2, 1, ()),
+                (2, 3, ()),
+                (3, 2, ()),
+                (2, 4, ()),
+                (4, 2, ()),
+                (3, 6, ()),
+                (6, 3, ()),
+                (4, 5, ()),
+                (5, 4, ()),
+                (5, 7, ()),
+                (7, 5, ()),
+                (7, 8, ()),
+                (8, 7, ()),
+            ],
         ));
 
         let extrapolator = DifferentialDriveLineFollow::new(1.0, 1.0).unwrap();
@@ -254,26 +252,23 @@ mod tests {
             extrapolator,
         };
 
-        let planner = Planner::new(
-            Arc::new(
-                BackwardDijkstra::new(
-                    &UninformedSearch::new_uninformed(
-                        motion.clone(),
-                        weight,
-                        KeyedCloser(DiscreteSpaceTimeSE2::new()),
-                    )
-                    .with_initializer(PreferentialStarburstSE2::for_start(graph.clone()))
-                    .with_satisfier(PreferentialStarburstSE2::for_goal(graph).unwrap())
-                    .with_connector(
-                        LazyGraphMotion {
-                            motion,
-                            keyring: (),
-                            chain: MergeIntoGoal(extrapolator),
-                        }
-                    )
-                ).unwrap()
+        let planner = Planner::new(Arc::new(
+            BackwardDijkstra::new(
+                &UninformedSearch::new_uninformed(
+                    motion.clone(),
+                    weight,
+                    KeyedCloser(DiscreteSpaceTimeSE2::new()),
+                )
+                .with_initializer(PreferentialStarburstSE2::for_start(graph.clone()))
+                .with_satisfier(PreferentialStarburstSE2::for_goal(graph).unwrap())
+                .with_connector(LazyGraphMotion {
+                    motion,
+                    keyring: (),
+                    chain: MergeIntoGoal(extrapolator),
+                }),
             )
-        );
+            .unwrap(),
+        ));
 
         for i in 0..=8 {
             for angle in [0.0, 90.0, 180.0, 30.0, -140.0_f64] {

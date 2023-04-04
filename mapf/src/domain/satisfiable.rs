@@ -15,10 +15,7 @@
  *
 */
 
-use crate::{
-    domain::SelfKey,
-    error::NoError,
-};
+use crate::{domain::SelfKey, error::NoError};
 use std::borrow::Borrow;
 
 /// The `Satisfiable` trait allows search algorithms to recognize when a state
@@ -60,7 +57,7 @@ where
 pub trait ArrivalKeyring<Key, Start, Goal> {
     type ArrivalKeyError;
 
-    type ArrivalKeys<'a>: IntoIterator<Item=Result<Key, Self::ArrivalKeyError>> + 'a
+    type ArrivalKeys<'a>: IntoIterator<Item = Result<Key, Self::ArrivalKeyError>> + 'a
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
@@ -68,11 +65,7 @@ pub trait ArrivalKeyring<Key, Start, Goal> {
         Start: 'a,
         Goal: 'a;
 
-    fn get_arrival_keys<'a>(
-        &'a self,
-        start: &Start,
-        goal: &Goal,
-    ) -> Self::ArrivalKeys<'a>
+    fn get_arrival_keys<'a>(&'a self, start: &Start, goal: &Goal) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
@@ -94,11 +87,7 @@ where
         Start: 'a,
         Goal: 'a;
 
-    fn get_arrival_keys<'a>(
-        &'a self,
-        _: &Start,
-        goal: &Goal,
-    ) -> Self::ArrivalKeys<'a>
+    fn get_arrival_keys<'a>(&'a self, _: &Start, goal: &Goal) -> Self::ArrivalKeys<'a>
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,

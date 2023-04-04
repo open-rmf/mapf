@@ -16,17 +16,14 @@
 */
 
 use crate::{
-    domain::{
-        Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
-        Reversible
-    },
-    motion::{
-        Timed, TimePoint, IntegrateWaypoints,
-        r2::*,
-        se2::{StateSE2, MaybeOriented, Orientation},
-    },
+    domain::{Initializable, Key, Keyed, KeyedSpace, Keyring, Reversible, SelfKey, Space},
+    error::{NoError, ThisError},
     graph::Graph,
-    error::{ThisError, NoError},
+    motion::{
+        r2::*,
+        se2::{MaybeOriented, Orientation, StateSE2},
+        IntegrateWaypoints, TimePoint, Timed,
+    },
 };
 use std::borrow::Borrow;
 
@@ -80,20 +77,13 @@ impl<K: Key + Clone> Keyring<StateR2<K>> for DiscreteSpaceTimeR2<K> {
 }
 
 impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
-    fn make_keyed_state(
-        &self,
-        key: K,
-        waypoint: Self::Waypoint,
-    ) -> Self::State {
+    fn make_keyed_state(&self, key: K, waypoint: Self::Waypoint) -> Self::State {
         StateR2 { key, waypoint }
     }
 
-    fn vertex_of<'a>(
-        &'a self,
-        key: &'a Self::Key,
-    ) -> &'a K
+    fn vertex_of<'a>(&'a self, key: &'a Self::Key) -> &'a K
     where
-        K: 'a
+        K: 'a,
     {
         key
     }
@@ -101,7 +91,10 @@ impl<K: Key + Clone> KeyedSpace<K> for DiscreteSpaceTimeR2<K> {
 
 impl<K> Reversible for DiscreteSpaceTimeR2<K> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(self.clone())
     }
 }
@@ -181,7 +174,7 @@ impl<K: Key + Clone> SelfKey for StateR2<K> {
 
     fn key<'a>(&'a self) -> &'a Self::Key
     where
-        K: 'a
+        K: 'a,
     {
         &self.key
     }
@@ -194,7 +187,7 @@ impl<K, const R: u32> From<StateSE2<K, R>> for StateR2<K> {
             waypoint: WaypointR2 {
                 time: value.waypoint.time,
                 position: value.waypoint.position.point(),
-            }
+            },
         }
     }
 }
@@ -213,7 +206,10 @@ impl<K> From<(TimePoint, K)> for StartR2<K> {
 
 impl<K> From<K> for StartR2<K> {
     fn from(key: K) -> Self {
-        StartR2 { key, time: TimePoint::zero() }
+        StartR2 {
+            key,
+            time: TimePoint::zero(),
+        }
     }
 }
 
@@ -234,11 +230,7 @@ where
         Start: 'a,
         Goal: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        _to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, _to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -246,8 +238,9 @@ where
         Goal: 'a,
     {
         let start: StartR2<G::Key> = from_start.into();
-        [
-            self.0.vertex(&start.key)
+        [self
+            .0
+            .vertex(&start.key)
             .ok_or_else(|| InitializeR2Error::MissingVertex(start.key.clone()))
             .map(|v| {
                 let v: Position = v.borrow().point();
@@ -255,14 +248,16 @@ where
                     key: start.key,
                     waypoint: WaypointR2::new(start.time, v.x, v.y),
                 }
-            })
-        ]
+            })]
     }
 }
 
 impl<G: Reversible> Reversible for InitializeR2<G> {
     type ReversalError = G::ReversalError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(Self(self.0.reversed()?))
     }
 }

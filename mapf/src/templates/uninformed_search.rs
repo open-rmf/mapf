@@ -24,11 +24,7 @@ pub type UninformedSearch<A, W, X, I, S, C> = InformedSearch<A, W, (), X, I, S, 
 impl<A, W, X> UninformedSearch<A, W, X, (), (), ()> {
     /// Create a new UninformedSearch domain with the minimum required
     /// components.
-    pub fn new_uninformed(
-        activity: A,
-        weight: W,
-        closer: X,
-    ) -> Self {
+    pub fn new_uninformed(activity: A, weight: W, closer: X) -> Self {
         Self {
             activity,
             weight,

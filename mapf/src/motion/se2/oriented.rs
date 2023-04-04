@@ -16,7 +16,8 @@
 */
 
 use crate::motion::{
-    r2, se2::{self, Orientation}
+    r2,
+    se2::{self, Orientation},
 };
 
 /// Implement this trait for structs that can express an SE(2) orientation or

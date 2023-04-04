@@ -19,9 +19,9 @@ use anyhow;
 use std::cell::RefCell;
 
 use crate::{
-    algorithm::{Algorithm, Solvable, SearchStatus},
-    planner::Halt,
+    algorithm::{Algorithm, SearchStatus, Solvable},
     error::Anyhow,
+    planner::Halt,
 };
 
 /// Search manages the progress of a planning effort.
@@ -40,12 +40,7 @@ pub struct Search<Algo: Algorithm, Goal, Halting> {
 }
 
 impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
-    pub fn new(
-        memory: Algo::Memory,
-        algorithm: Algo,
-        goal: Goal,
-        halting: Halting,
-    ) -> Self {
+    pub fn new(memory: Algo::Memory, algorithm: Algo, goal: Goal, halting: Halting) -> Self {
         Self {
             memory,
             algorithm,
@@ -58,9 +53,7 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
     /// step() function until a solution is found, the progress gets
     /// interrupted, or the algorithm determines that the problem is impossible
     /// to solve.
-    pub fn solve(
-        &mut self,
-    ) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
+    pub fn solve(&mut self) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
     where
         Algo: Solvable<Goal>,
         Halting: Halt<Algo::Memory>,
@@ -79,9 +72,7 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
         }
     }
 
-    pub fn step(
-        &mut self,
-    ) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
+    pub fn step(&mut self) -> Result<SearchStatus<Algo::Solution>, Algo::StepError>
     where
         Algo: Solvable<Goal>,
     {
@@ -105,10 +96,7 @@ impl<Algo: Algorithm, Goal, Halting> Search<Algo, Goal, Halting> {
     }
 
     /// Change the halting behavior for this progress.
-    pub fn with_halting<NewHalt>(
-        self,
-        halting: NewHalt
-    ) -> Search<Algo, Goal, NewHalt> {
+    pub fn with_halting<NewHalt>(self, halting: NewHalt) -> Search<Algo, Goal, NewHalt> {
         Search {
             memory: self.memory,
             algorithm: self.algorithm,
@@ -211,7 +199,9 @@ where
     G: 'static,
 {
     fn from(value: Search<A, G, H>) -> Self {
-        AbstractSearch { implementation: Box::new(RefCell::new(value)) }
+        AbstractSearch {
+            implementation: Box::new(RefCell::new(value)),
+        }
     }
 }
 
@@ -237,7 +227,9 @@ where
     G: 'static,
 {
     fn from(value: Search<A, G, H>) -> Self {
-        AbstractSearchWithHalting { implementation: Box::new(RefCell::new(value)) }
+        AbstractSearchWithHalting {
+            implementation: Box::new(RefCell::new(value)),
+        }
     }
 }
 

@@ -21,7 +21,10 @@ pub trait Timed {
     fn time(&self) -> &TimePoint;
     fn set_time(&mut self, new_time: TimePoint);
 
-    fn with_time(mut self, new_time: TimePoint) -> Self where Self: Sized {
+    fn with_time(mut self, new_time: TimePoint) -> Self
+    where
+        Self: Sized,
+    {
         self.set_time(new_time);
         self
     }

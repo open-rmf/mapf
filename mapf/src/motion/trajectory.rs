@@ -15,10 +15,7 @@
  *
 */
 
-use super::{
-    timed::TimeCmp,
-    Duration, InterpError, Motion, TimePoint, Waypoint,
-};
+use super::{timed::TimeCmp, Duration, InterpError, Motion, TimePoint, Waypoint};
 use cached::{Cached, UnboundCache};
 use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;
@@ -462,7 +459,6 @@ pub struct TrajectoryIter<'a, W: Waypoint> {
 }
 
 impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
-
     pub fn pairs(self) -> TrajectoryIterPairs<'a, W> {
         TrajectoryIterPairs {
             base: self,
@@ -470,11 +466,7 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
         }
     }
 
-    fn new(
-        trajectory: &'a Trajectory<W>,
-        begin: TimePoint,
-        until: Option<TimePoint>,
-    ) -> Self {
+    fn new(trajectory: &'a Trajectory<W>, begin: TimePoint, until: Option<TimePoint>) -> Self {
         let next_element = match trajectory.find(&begin) {
             FindWaypoint::BeforeStart => {
                 if trajectory.indefinite_initial_time {
@@ -488,7 +480,12 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
             FindWaypoint::AfterFinish => TrajectoryIterNext::Depleted,
         };
 
-        Self { trajectory, next_element, begin, until }
+        Self {
+            trajectory,
+            next_element,
+            begin,
+            until,
+        }
     }
 }
 
@@ -581,7 +578,7 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIterPairs<'a, W> {
             None => match self.base.next() {
                 Some(wp) => wp,
                 None => return None,
-            }
+            },
         };
 
         match self.base.next() {

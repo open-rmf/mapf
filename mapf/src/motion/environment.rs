@@ -15,21 +15,19 @@
  *
 */
 
-use crate::{
-    motion::{
-        Waypoint, Trajectory,
-        r2::{WaypointR2, Point},
-    },
+use crate::motion::{
+    r2::{Point, WaypointR2},
+    Trajectory, Waypoint,
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
 
 type Vector2 = nalgebra::Vector2<f64>;
 
 pub trait Environment<Profile, Obstacle> {
-    type Obstacles<'a>: IntoIterator<Item=&'a Obstacle> + 'a
+    type Obstacles<'a>: IntoIterator<Item = &'a Obstacle> + 'a
     where
         Self: 'a,
         Profile: 'a,
@@ -46,7 +44,9 @@ pub struct DynamicEnvironment<W: Waypoint> {
     pub obstacles: Vec<DynamicCircularObstacle<W>>,
 }
 
-impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>> for DynamicEnvironment<W> {
+impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
+    for DynamicEnvironment<W>
+{
     type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
     where
         W: 'a;
@@ -62,7 +62,10 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>> for D
 
 impl<W: Waypoint> DynamicEnvironment<W> {
     pub fn new(profile: CircularProfile) -> Self {
-        Self { profile, obstacles: Vec::new() }
+        Self {
+            profile,
+            obstacles: Vec::new(),
+        }
     }
 }
 
@@ -74,7 +77,10 @@ pub struct DynamicEnvironmentOverlay<W: Waypoint> {
 
 impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
     fn default() -> Self {
-        Self { profile: None, obstacles: HashMap::new() }
+        Self {
+            profile: None,
+            obstacles: HashMap::new(),
+        }
     }
 }
 
@@ -86,7 +92,10 @@ pub struct OverlayedDynamicEnvironment<W: Waypoint> {
 
 impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     pub fn new(base: Arc<DynamicEnvironment<W>>) -> Self {
-        Self { base, overlay: Default::default() }
+        Self {
+            base,
+            overlay: Default::default(),
+        }
     }
 
     /// Overlay an obstacle. If there was already an overlay for this obstacle
@@ -160,8 +169,8 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
                     Some(base_obs) => base_obs,
                     None => return Err(Some(trajectory)),
                 };
-                let overlay_obs = DynamicCircularObstacle::new(base_obs.profile)
-                    .with_trajectory(trajectory);
+                let overlay_obs =
+                    DynamicCircularObstacle::new(base_obs.profile).with_trajectory(trajectory);
                 vacant.insert(overlay_obs);
                 None
             }
@@ -188,7 +197,7 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     {
         let mut env = match Arc::try_unwrap(self.base) {
             Ok(base) => base,
-            Err(arc_base) => (*arc_base).clone()
+            Err(arc_base) => (*arc_base).clone(),
         };
 
         f(&mut env);
@@ -197,7 +206,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     }
 }
 
-impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>> for OverlayedDynamicEnvironment<W> {
+impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
+    for OverlayedDynamicEnvironment<W>
+{
     type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
     where
         W: 'a;
@@ -207,18 +218,17 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>> for O
     }
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
-        self
-        .base
-        .obstacles
-        .iter()
-        .enumerate()
-        .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+        self.base
+            .obstacles
+            .iter()
+            .enumerate()
+            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
     }
 }
 
 impl<Env, Profile, Obstacle> Environment<Profile, Obstacle> for Arc<Env>
 where
-    Env: Environment<Profile, Obstacle>
+    Env: Environment<Profile, Obstacle>,
 {
     type Obstacles<'a> = Env::Obstacles<'a>
     where
@@ -252,17 +262,16 @@ pub struct CircularProfile {
 }
 
 impl CircularProfile {
-
-    pub fn new(
-        footprint_radius: f64,
-        safety_buffer: f64,
-        follow_buffer: f64,
-    ) -> Result<Self, ()> {
+    pub fn new(footprint_radius: f64, safety_buffer: f64, follow_buffer: f64) -> Result<Self, ()> {
         if footprint_radius < 0.0 || safety_buffer < 0.0 || follow_buffer < 0.0 {
             return Err(());
         }
 
-        Ok(Self { footprint_radius, safety_buffer, follow_buffer })
+        Ok(Self {
+            footprint_radius,
+            safety_buffer,
+            follow_buffer,
+        })
     }
 
     pub fn with_footprint_radius(mut self, footprint_radius: f64) -> Result<Self, ()> {
@@ -358,9 +367,9 @@ impl<W: Waypoint + Into<WaypointR2>> DynamicCircularObstacle<W> {
 
     pub fn with_trajectory(self, trajectory: Option<Trajectory<W>>) -> Self {
         Self {
-            bounding_box: trajectory.as_ref().map(
-                |t| BoundingBox::for_trajectory(&self.profile, t)
-            ),
+            bounding_box: trajectory
+                .as_ref()
+                .map(|t| BoundingBox::for_trajectory(&self.profile, t)),
             profile: self.profile,
             trajectory,
         }
@@ -372,9 +381,10 @@ impl<W: Waypoint + Into<WaypointR2>> DynamicCircularObstacle<W> {
 
     pub fn set_profile(&mut self, profile: CircularProfile) {
         self.profile = profile;
-        self.bounding_box = self.trajectory.as_ref().map(
-            |t| BoundingBox::for_trajectory(&self.profile, t)
-        );
+        self.bounding_box = self
+            .trajectory
+            .as_ref()
+            .map(|t| BoundingBox::for_trajectory(&self.profile, t));
     }
 
     pub fn trajectory(&self) -> Option<&Trajectory<W>> {
@@ -383,9 +393,10 @@ impl<W: Waypoint + Into<WaypointR2>> DynamicCircularObstacle<W> {
 
     pub fn set_trajectory(&mut self, trajectory: Option<Trajectory<W>>) {
         self.trajectory = trajectory;
-        self.bounding_box = self.trajectory.as_ref().map(
-            |t| BoundingBox::for_trajectory(&self.profile, t)
-        );
+        self.bounding_box = self
+            .trajectory
+            .as_ref()
+            .map(|t| BoundingBox::for_trajectory(&self.profile, t));
     }
 
     pub fn bounding_box(&self) -> Option<&BoundingBox> {
@@ -429,34 +440,27 @@ impl BoundingBox {
 
     pub fn for_line(profile: &CircularProfile, wp0: &WaypointR2, wp1: &WaypointR2) -> Self {
         Self::for_point(wp0.position)
-        .incorporating(wp1.position)
-        .inflated_by(profile.footprint_radius)
+            .incorporating(wp1.position)
+            .inflated_by(profile.footprint_radius)
     }
 
     pub fn for_trajectory<W>(profile: &CircularProfile, trajectory: &Trajectory<W>) -> Self
     where
         W: Into<WaypointR2> + Waypoint,
     {
-        let initial_bb = BoundingBox::for_point(
-            trajectory.initial_motion().clone().into().position
-        );
+        let initial_bb =
+            BoundingBox::for_point(trajectory.initial_motion().clone().into().position);
 
         trajectory
-        .iter()
-        .fold(initial_bb, |b: Self, p| b.incorporating(p.into().position))
-        .inflated_by(profile.footprint_radius)
+            .iter()
+            .fold(initial_bb, |b: Self, p| b.incorporating(p.into().position))
+            .inflated_by(profile.footprint_radius)
     }
 
     pub fn incorporating(self, p: Point) -> Self {
         Self {
-            min: Vector2::new(
-                f64::min(self.min.x, p.x),
-                f64::min(self.min.y, p.y),
-            ),
-            max: Vector2::new(
-                f64::max(self.max.x, p.x),
-                f64::max(self.max.y, p.y),
-            ),
+            min: Vector2::new(f64::min(self.min.x, p.x), f64::min(self.min.y, p.y)),
+            max: Vector2::new(f64::max(self.max.x, p.x), f64::max(self.max.y, p.y)),
         }
     }
 

@@ -36,11 +36,7 @@ pub trait ActionMap<State, FromAction> {
         FromAction: 'a;
 
     /// Implement this function to modify a set of actions.
-    fn map_action<'a>(
-        &'a self,
-        from_state: State,
-        from_action: FromAction,
-    ) -> Self::ToActions<'a>
+    fn map_action<'a>(&'a self, from_state: State, from_action: FromAction) -> Self::ToActions<'a>
     where
         FromAction: 'a,
         State: 'a;
@@ -53,13 +49,15 @@ pub struct ActionInto<ToAction> {
 
 impl<ToAction> ActionInto<ToAction> {
     pub fn new() -> Self {
-        Self { _ignore: Default::default() }
+        Self {
+            _ignore: Default::default(),
+        }
     }
 }
 
 impl<S, FromAction, ToAction> ActionMap<S, FromAction> for ActionInto<ToAction>
 where
-    FromAction: Into<ToAction>
+    FromAction: Into<ToAction>,
 {
     type ToAction = ToAction;
     type ActionMapError = NoError;
@@ -69,11 +67,7 @@ where
         S: 'a,
         FromAction: 'a;
 
-    fn map_action<'a>(
-        &'a self,
-        _: S,
-        from_action: FromAction,
-    ) -> Self::ToActions<'a>
+    fn map_action<'a>(&'a self, _: S, from_action: FromAction) -> Self::ToActions<'a>
     where
         FromAction: 'a,
         S: 'a,
@@ -84,12 +78,14 @@ where
 
 /// This struct implements ActionMap for any action that implements Into<Option<ToAction>>
 pub struct MaybeActionInto<ToAction> {
-    _ignore: std::marker::PhantomData<ToAction>
+    _ignore: std::marker::PhantomData<ToAction>,
 }
 
 impl<ToAction> MaybeActionInto<ToAction> {
     pub fn new() -> Self {
-        Self { _ignore: Default::default() }
+        Self {
+            _ignore: Default::default(),
+        }
     }
 }
 
@@ -105,11 +101,7 @@ where
         S: 'a,
         FromAction: 'a;
 
-    fn map_action<'a>(
-        &'a self,
-        _: S,
-        from_action: FromAction,
-    ) -> Self::ToActions<'a>
+    fn map_action<'a>(&'a self, _: S, from_action: FromAction) -> Self::ToActions<'a>
     where
         FromAction: 'a,
         S: 'a,
@@ -129,11 +121,7 @@ impl<State, Action> ActionMap<State, Action> for NoActionMap {
         State: 'a,
         Action: 'a;
 
-    fn map_action<'a>(
-        &'a self,
-        _: State,
-        from_action: Action,
-    ) -> Self::ToActions<'a>
+    fn map_action<'a>(&'a self, _: State, from_action: Action) -> Self::ToActions<'a>
     where
         Action: 'a,
         State: 'a,

@@ -15,7 +15,7 @@
  *
 */
 
-use super::{timed, Interpolation, r2::Positioned, se2::MaybeOriented};
+use super::{r2::Positioned, se2::MaybeOriented, timed, Interpolation};
 use arrayvec::ArrayVec;
 
 pub trait Waypoint:
@@ -32,9 +32,8 @@ pub trait Waypoint:
 pub trait IntegrateWaypoints<W> {
     type WaypointIntegrationError;
 
-    type IntegratedWaypointIter<'a>: IntoIterator<
-        Item=Result<W, Self::WaypointIntegrationError>
-    > + 'a
+    type IntegratedWaypointIter<'a>: IntoIterator<Item = Result<W, Self::WaypointIntegrationError>>
+        + 'a
     where
         Self: 'a,
         Self::WaypointIntegrationError: 'a,
@@ -95,6 +94,9 @@ where
 
         // The final state should be almost exactly the same as the last move
         assert!((to_state.point() - last_p).norm() < 1e-3);
-        Arclength { translational, rotational }
+        Arclength {
+            translational,
+            rotational,
+        }
     }
 }

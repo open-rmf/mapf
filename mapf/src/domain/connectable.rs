@@ -35,11 +35,7 @@ pub trait Connectable<State, Action, Target> {
         Action: 'a,
         Target: 'a;
 
-    fn connect<'a>(
-        &'a self,
-        from_state: State,
-        to_target: &'a Target,
-    ) -> Self::Connections<'a>
+    fn connect<'a>(&'a self, from_state: State, to_target: &'a Target) -> Self::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -58,11 +54,7 @@ impl<State, Action, Target> Connectable<State, Action, Target> for () {
         State: 'a,
         Target: 'a;
 
-    fn connect<'a>(
-        &'a self,
-        _: State,
-        _: &'a Target,
-    ) -> Self::Connections<'a>
+    fn connect<'a>(&'a self, _: State, _: &'a Target) -> Self::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -72,7 +64,6 @@ impl<State, Action, Target> Connectable<State, Action, Target> for () {
     {
         []
     }
-
 }
 
 impl<Base, Prop, State, Action, Target> Connectable<State, Action, Target> for Chained<Base, Prop>
@@ -91,11 +82,7 @@ where
         Action: 'a,
         Target: 'a;
 
-    fn connect<'a>(
-        &'a self,
-        from_state: State,
-        to_target: &'a Target,
-    ) -> Self::Connections<'a>
+    fn connect<'a>(&'a self, from_state: State, to_target: &'a Target) -> Self::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -103,20 +90,13 @@ where
         Action: 'a,
         Target: 'a,
     {
-        self
-        .base
-        .connect(from_state.clone(), to_target)
-        .into_iter()
-        .map(|r|
-            r
-            .map(|(action, state)| (action.into(), state))
-            .map_err(Into::into)
-        )
-        .chain(
-            self
-            .prop
-            .connect(from_state, to_target)
+        self.base
+            .connect(from_state.clone(), to_target)
             .into_iter()
-        )
+            .map(|r| {
+                r.map(|(action, state)| (action.into(), state))
+                    .map_err(Into::into)
+            })
+            .chain(self.prop.connect(from_state, to_target).into_iter())
     }
 }

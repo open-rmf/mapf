@@ -17,12 +17,12 @@
 
 use crate::{
     domain::Reversible,
+    error::NoError,
     graph::{
-        Edge, Graph,
         occupancy::{Cell, Grid, Point, Visibility},
+        Edge, Graph,
     },
     util::triangular_for,
-    error::NoError,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -153,9 +153,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
             .flat_map(|from_cell| {
                 self.visibility
                     .calculate_visibility(from_cell)
-                    .map(move |to_cell| {
-                        (from_cell, to_cell)
-                    })
+                    .map(move |to_cell| (from_cell, to_cell))
                     .filter(|(from_cell, to_cell)| from_cell != to_cell)
             })
             .chain({
@@ -195,13 +193,13 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     fn lazy_edges_between<'a>(
         &'a self,
         from_key: &Self::Key,
-        to_key: &Self::Key
+        to_key: &Self::Key,
     ) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,
         Self::Key: 'a,
-        Self::EdgeAttributes: 'a
+        Self::EdgeAttributes: 'a,
     {
         if self.visibility.points.contains_key(to_key) || self.points_of_interest.contains(to_key) {
             // No need to return anything because the target is in the set of
@@ -212,7 +210,9 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
         let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
         for p in [from_p, to_p] {
-            if self.visibility.grid()
+            if self
+                .visibility
+                .grid()
                 .is_square_occupied(p, 2.0 * self.visibility.agent_radius)
                 .is_some()
             {
@@ -222,9 +222,12 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
             }
         }
 
-        if self.visibility.grid().is_sweep_occupied(
-            from_p, to_p, 2.0 * self.visibility.agent_radius()
-        ).is_some() {
+        if self
+            .visibility
+            .grid()
+            .is_sweep_occupied(from_p, to_p, 2.0 * self.visibility.agent_radius())
+            .is_some()
+        {
             // A point along the sweep between the cells is occupied so we
             // cannot generate an edge between teh two cells.
             return None;
@@ -236,7 +239,10 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
 
 impl<G: Grid> Reversible for VisibilityGraph<G> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         // Visibility graphs are always bidirectional, so the reverse is the
         // same as the forward.
         Ok(self.clone())
@@ -367,13 +373,13 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     fn lazy_edges_between<'a>(
         &'a self,
         from_key: &Self::Key,
-        to_key: &Self::Key
+        to_key: &Self::Key,
     ) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,
         Self::Key: 'a,
-        Self::EdgeAttributes: 'a
+        Self::EdgeAttributes: 'a,
     {
         if self.visibility.points.contains_key(to_key) || self.points_of_interest.contains(to_key) {
             // No need to return anything because the target is in the set of
@@ -384,7 +390,9 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
         let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
         for p in [from_p, to_p] {
-            if self.visibility.grid()
+            if self
+                .visibility
+                .grid()
                 .is_square_occupied(p, 2.0 * self.visibility.agent_radius)
                 .is_some()
             {
@@ -394,9 +402,12 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
             }
         }
 
-        if self.visibility.grid().is_sweep_occupied(
-            from_p, to_p, 2.0 * self.visibility.agent_radius()
-        ).is_some() {
+        if self
+            .visibility
+            .grid()
+            .is_sweep_occupied(from_p, to_p, 2.0 * self.visibility.agent_radius())
+            .is_some()
+        {
             // A point along the sweep between the cells is occupied so we
             // cannot generate an edge between teh two cells.
             return None;

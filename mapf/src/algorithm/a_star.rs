@@ -16,15 +16,14 @@
 */
 
 use crate::{
-    error::{Anyhow, ThisError},
     algorithm::{
-        Algorithm, Coherent, Solvable, SearchStatus, MinimumCostBound, Measure,
-        Path, tree::*,
+        tree::*, Algorithm, Coherent, Measure, MinimumCostBound, Path, SearchStatus, Solvable,
     },
     domain::{
-        Domain, Activity, Weighted, Initializable, Informed, Satisfiable,
-        Closable, ClosedSet, CloseResult, Connectable, Configurable,
+        Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Informed,
+        Initializable, Satisfiable, Weighted,
     },
+    error::{Anyhow, ThisError},
 };
 use std::ops::Add;
 
@@ -49,9 +48,7 @@ pub struct AStar<D>(pub D);
 pub struct AStarConnect<D>(pub D);
 
 #[derive(Debug)]
-pub struct Memory<Closed, State, Action, Cost>(
-    pub Tree<Closed, Node<State, Action, Cost>, Cost>
-);
+pub struct Memory<Closed, State, Action, Cost>(pub Tree<Closed, Node<State, Action, Cost>, Cost>);
 
 impl<Closed, State, Action, Cost> Measure for Memory<Closed, State, Action, Cost>
 where
@@ -80,7 +77,6 @@ pub enum AStarSearchError<D> {
     Domain(D),
 }
 
-
 impl<D> AStar<D> {
     fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
     where
@@ -99,14 +95,11 @@ impl<D> AStar<D> {
 
 impl<D> AStar<D>
 where
-    D: Domain
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>,
+    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::ActivityAction>,
     D::State: Clone,
     D::ActivityAction: Clone,
     D::WeightedError: Into<D::Error>,
-    D::Cost: Ord + Add<Output=D::Cost> + Clone,
+    D::Cost: Ord + Add<Output = D::Cost> + Clone,
 {
     #[inline]
     fn initialize_impl<Start, Goal>(
@@ -115,8 +108,7 @@ where
         goal: &Goal,
     ) -> Result<<Self as Algorithm>::Memory, AStarSearchError<D::Error>>
     where
-        D: Initializable<Start, Goal, D::State>
-        + Informed<D::State, Goal, CostEstimate=D::Cost>,
+        D: Initializable<Start, Goal, D::State> + Informed<D::State, Goal, CostEstimate = D::Cost>,
         D::InitialError: Into<D::Error>,
         D::InformedError: Into<D::Error>,
     {
@@ -128,19 +120,23 @@ where
                 Some(c) => c,
                 None => continue,
             };
-            let remaining_cost_estimate = match domain.estimate_remaining_cost(
-                &state, &goal
-            ).map_err(Self::domain_err)? {
+            let remaining_cost_estimate = match domain
+                .estimate_remaining_cost(&state, &goal)
+                .map_err(Self::domain_err)?
+            {
                 Some(c) => c,
                 None => continue,
             };
 
-            memory.0.push_node(Node {
-                cost,
-                remaining_cost_estimate,
-                state,
-                parent: None,
-            }).map_err(Self::algo_err)?;
+            memory
+                .0
+                .push_node(Node {
+                    cost,
+                    remaining_cost_estimate,
+                    state,
+                    parent: None,
+                })
+                .map_err(Self::algo_err)?;
         }
 
         Ok(memory)
@@ -153,7 +149,10 @@ where
         queue: &mut TreeFrontierQueue<D::Cost>,
         arena: &Vec<Node<D::State, D::ActivityAction, D::Cost>>,
         goal: &Goal,
-    ) -> Result<Flow<(usize, Node<D::State, D::ActivityAction, D::Cost>), D>, AStarSearchError<D::Error>>
+    ) -> Result<
+        Flow<(usize, Node<D::State, D::ActivityAction, D::Cost>), D>,
+        AStarSearchError<D::Error>,
+    >
     where
         D: Satisfiable<D::State, Goal> + Activity<D::State>,
         D::SatisfactionError: Into<D::Error>,
@@ -164,10 +163,11 @@ where
         };
 
         let top = arena.get_node(top_id).map_err(Self::algo_err)?;
-        if domain.is_satisfied(&top.state, goal).map_err(Self::domain_err)? {
-            let solution = arena
-                .retrace(top_id)
-                .map_err(Self::algo_err)?;
+        if domain
+            .is_satisfied(&top.state, goal)
+            .map_err(Self::domain_err)?
+        {
+            let solution = arena.retrace(top_id).map_err(Self::algo_err)?;
             return Ok(Flow::Return(SearchStatus::Solved(solution)));
         }
 
@@ -200,15 +200,20 @@ where
         D: Activity<D::State>,
         D::ActivityAction: Into<D::ActivityAction>,
         D::ActivityError: Into<D::Error>,
-        D: Informed<D::State, Goal, CostEstimate=D::Cost>,
+        D: Informed<D::State, Goal, CostEstimate = D::Cost>,
         D::InformedError: Into<D::Error>,
     {
         for next in domain.choices(parent.state.clone()) {
             let (action, child_state) = next.map_err(Self::domain_err)?;
             Self::make_child_node(
-                domain, memory,
-                parent_id, &parent.state, &parent.cost,
-                action.into(), child_state, goal
+                domain,
+                memory,
+                parent_id,
+                &parent.state,
+                &parent.cost,
+                action.into(),
+                child_state,
+                goal,
             )?
         }
 
@@ -227,7 +232,7 @@ where
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
     where
-        D: Informed<D::State, Goal, CostEstimate=D::Cost>,
+        D: Informed<D::State, Goal, CostEstimate = D::Cost>,
         D::InformedError: Into<D::Error>,
     {
         let cost = match domain
@@ -240,17 +245,21 @@ where
 
         let remaining_cost_estimate = match domain
             .estimate_remaining_cost(&child_state, goal)
-            .map_err(Self::domain_err)? {
+            .map_err(Self::domain_err)?
+        {
             Some(c) => c,
             None => return Ok(()),
         };
 
-        memory.0.push_node(Node {
-            state: child_state,
-            cost,
-            remaining_cost_estimate,
-            parent: Some((parent_id, action)),
-        }).map_err(Self::algo_err)?;
+        memory
+            .0
+            .push_node(Node {
+                state: child_state,
+                cost,
+                remaining_cost_estimate,
+                parent: Some((parent_id, action)),
+            })
+            .map_err(Self::algo_err)?;
 
         Ok(())
     }
@@ -258,10 +267,7 @@ where
 
 impl<D> Algorithm for AStar<D>
 where
-    D: Domain
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>,
+    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::ActivityAction>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::ActivityAction, D::Cost>;
 }
@@ -269,25 +275,21 @@ where
 impl<D, Start, Goal> Coherent<Start, Goal> for AStar<D>
 where
     D: Domain
-    + Initializable<Start, Goal, D::State>
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Informed<D::State, Goal, CostEstimate=D::Cost>,
+        + Initializable<Start, Goal, D::State>
+        + Closable<D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Informed<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Ord + Add<Output=D::Cost> + Clone,
+    D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::InitialError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::InformedError: Into<D::Error>,
 {
     type InitError = AStarSearchError<D::Error>;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError> {
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError> {
         Self::initialize_impl(&self.0, start, goal)
     }
 }
@@ -295,11 +297,11 @@ where
 impl<D, Goal> Solvable<Goal> for AStar<D>
 where
     D: Domain
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Informed<D::State, Goal, CostEstimate=D::Cost>
-    + Satisfiable<D::State, Goal>,
+        + Closable<D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Informed<D::State, Goal, CostEstimate = D::Cost>
+        + Satisfiable<D::State, Goal>,
     D::State: Clone,
     D::ActivityAction: Clone,
     D::Error: Into<Anyhow>,
@@ -347,10 +349,7 @@ impl<D: Configurable> Configurable for AStar<D> {
 
 impl<D> Algorithm for AStarConnect<D>
 where
-    D: Domain
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>,
+    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::ActivityAction>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::ActivityAction, D::Cost>;
 }
@@ -358,25 +357,21 @@ where
 impl<D, Start, Goal> Coherent<Start, Goal> for AStarConnect<D>
 where
     D: Domain
-    + Initializable<Start, Goal, D::State>
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Informed<D::State, Goal, CostEstimate=D::Cost>,
+        + Initializable<Start, Goal, D::State>
+        + Closable<D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Informed<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Ord + Add<Output=D::Cost> + Clone,
+    D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::InitialError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
     D::InformedError: Into<D::Error>,
 {
     type InitError = AStarSearchError<D::Error>;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError> {
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError> {
         AStar::<D>::initialize_impl(&self.0, start, goal)
     }
 }
@@ -384,15 +379,15 @@ where
 impl<D, Goal> Solvable<Goal> for AStarConnect<D>
 where
     D: Domain
-    + Closable<D::State>
-    + Activity<D::State>
-    + Weighted<D::State, D::ActivityAction>
-    + Informed<D::State, Goal, CostEstimate=D::Cost>
-    + Satisfiable<D::State, Goal>
-    + Connectable<D::State, D::ActivityAction, Goal>,
+        + Closable<D::State>
+        + Activity<D::State>
+        + Weighted<D::State, D::ActivityAction>
+        + Informed<D::State, Goal, CostEstimate = D::Cost>
+        + Satisfiable<D::State, Goal>
+        + Connectable<D::State, D::ActivityAction, Goal>,
     D::State: Clone,
     D::ActivityAction: Clone,
-    D::Cost: Ord + Add<Output=D::Cost> + Clone,
+    D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
     D::ActivityError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -412,7 +407,7 @@ where
             &mut memory.0.closed_set,
             &mut memory.0.queue,
             &memory.0.arena,
-            goal
+            goal,
         )? {
             Flow::Proceed(r) => r,
             Flow::Return(r) => return Ok(r),
@@ -424,9 +419,14 @@ where
         for connection in self.0.connect(top.state.clone(), goal) {
             let (action, child_state) = connection.map_err(AStar::<D>::domain_err)?;
             AStar::<D>::make_child_node(
-                &self.0, memory,
-                top_id, &top.state, &top.cost,
-                action, child_state, goal
+                &self.0,
+                memory,
+                top_id,
+                &top.state,
+                &top.cost,
+                action,
+                child_state,
+                goal,
             )?;
         }
 

@@ -38,7 +38,8 @@ pub trait Extrapolator<State, Target, Guidance> {
     /// If the target cannot be reached this will return an empty iterator. If
     /// more than one extrapolation is provided, the meaning of the ordering is
     /// implementation-defined (if the ordering has any meaning at all).
-    type ExtrapolationIter<'a>: IntoIterator<Item=Result<(Self::Extrapolation, State), Self::ExtrapolationError>> + 'a
+    type ExtrapolationIter<'a>: IntoIterator<Item = Result<(Self::Extrapolation, State), Self::ExtrapolationError>>
+        + 'a
     where
         Self: 'a,
         Self::Extrapolation: 'a,
@@ -109,11 +110,11 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
     /// If the target cannot be reached this will return an empty iterator. If more
     /// than one extrapolation is provided, the meaning of the ordering is
     /// implementation-defined (if the ordering has any meaning at all).
-    type IncrementalExtrapolationIter<'a>:
-        IntoIterator<
-            Item=Result<
+    type IncrementalExtrapolationIter<'a>: IntoIterator<
+            Item = Result<
                 (Self::IncrementalExtrapolation, State, ExtrapolationProgress),
-                Self::IncrementalExtrapolationError>
+                Self::IncrementalExtrapolationError,
+            >,
         > + 'a
     where
         Self: 'a,
@@ -193,7 +194,9 @@ impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExt
     }
 }
 
-impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance> for NoExtrapolation<E> {
+impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance>
+    for NoExtrapolation<E>
+{
     type IncrementalExtrapolation = E;
     type IncrementalExtrapolationError = NoError;
     type IncrementalExtrapolationIter<'a> = [Result<(E, State, ExtrapolationProgress), NoError>; 0]

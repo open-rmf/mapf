@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    error::{StdError, NoError},
+    error::{NoError, StdError},
     motion::{Trajectory, Waypoint},
 };
 

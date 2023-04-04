@@ -16,9 +16,9 @@
 */
 
 use crate::{
-    domain::{Weighted, Cost, Reversible},
-    motion::Timed,
+    domain::{Cost, Reversible, Weighted},
     error::NoError,
+    motion::Timed,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -38,27 +38,27 @@ impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
         &self,
         from_state: &State,
         _: &Action,
-        to_state: &State
+        to_state: &State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         // Using the absolute value of the difference allows this same
         // implementation to work both forwards and backwards in time. We are
         // assuming that any case where time is decreasing in the child state,
         // a reverse search is being performed.
         let duration = (*to_state.time() - *from_state.time()).as_secs_f64().abs();
-        Ok(Some(Cost(duration*self.0)))
+        Ok(Some(Cost(duration * self.0)))
     }
 
-    fn initial_cost(
-        &self,
-        _: &State,
-    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    fn initial_cost(&self, _: &State) -> Result<Option<Self::Cost>, Self::WeightedError> {
         Ok(Some(Cost(0.0)))
     }
 }
 
 impl Reversible for TravelTimeCost {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(*self)
     }
 }

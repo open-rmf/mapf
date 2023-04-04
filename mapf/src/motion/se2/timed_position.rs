@@ -17,12 +17,13 @@
 
 use super::{Position, Vector, Velocity};
 use crate::{
-    motion::{
-        self, timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
-        r2::{Positioned, MaybePositioned},
-        se2::{Oriented, MaybeOriented, Orientation},
-    },
     error::NoError,
+    motion::{
+        self,
+        r2::{MaybePositioned, Positioned},
+        se2::{MaybeOriented, Orientation, Oriented},
+        timed, IntegrateWaypoints, InterpError, Interpolation, TimePoint,
+    },
 };
 use arrayvec::ArrayVec;
 
@@ -54,7 +55,7 @@ impl WaypointSE2 {
         return WaypointSE2 {
             time: TimePoint::from_secs_f64(time),
             position: Position::new(Vector::new(x, y), yaw),
-        }
+        };
     }
 }
 
@@ -84,8 +85,7 @@ impl MaybeOriented for WaypointSE2 {
 
 impl std::fmt::Debug for WaypointSE2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("WaypointSE2")
+        f.debug_struct("WaypointSE2")
             .field("time", &self.time.as_secs_f64())
             .field("position", &DebugPositionSE2::from(self.position))
             .finish()
@@ -107,7 +107,11 @@ impl DebugPositionSE2 {
 
 impl From<Position> for DebugPositionSE2 {
     fn from(p: Position) -> Self {
-        Self::new(p.translation.x, p.translation.y, p.rotation.angle().to_degrees())
+        Self::new(
+            p.translation.x,
+            p.translation.y,
+            p.rotation.angle().to_degrees(),
+        )
     }
 }
 
@@ -200,17 +204,14 @@ where
     where
         Self: 'a,
         Self::WaypointIntegrationError: 'a,
-        W: 'a
+        W: 'a,
     {
         // TODO(@mxgrey): Should it be an error if _initial_waypoint is None?
         // We do not store the initial waypoint for the trajectory in the action
         // so it would be wrong to initiate a trajectory with an action. However
         // we also don't need that initial waypoint information to produce the
         // correct waypoints, so it's unclear whether that needs to be an error.
-        self
-        .into_iter()
-        .map(|w| Ok(w.clone().into()))
-        .collect()
+        self.into_iter().map(|w| Ok(w.clone().into())).collect()
     }
 }
 

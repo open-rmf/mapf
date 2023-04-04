@@ -30,11 +30,7 @@ pub trait Initializable<Start, Goal, State> {
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -52,11 +48,7 @@ impl<Start: Into<State>, Goal, State> Initializable<Start, Goal, State> for () {
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        _to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, _to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Start: 'a,
         Goal: 'a,
@@ -77,11 +69,7 @@ impl<Start: Into<State>, Goal, State> Initializable<Start, Goal, State> for Init
         Goal: 'a,
         Start: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        _to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, _to_goal: &Goal) -> Self::InitialStates<'a>
     where
         State: 'a,
         Goal: 'a,
@@ -102,11 +90,7 @@ impl<Start: Into<Option<State>>, Goal, State> Initializable<Start, Goal, State> 
         Goal: 'a,
         Start: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        _to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, _to_goal: &Goal) -> Self::InitialStates<'a>
     where
         State: 'a,
         Goal: 'a,
@@ -135,11 +119,7 @@ where
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: StartIter,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: StartIter, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -148,7 +128,9 @@ where
         State: 'a,
     {
         let to_goal = to_goal.clone();
-        from_start.into_iter().flat_map(move |start| self.0.initialize(start, &to_goal))
+        from_start
+            .into_iter()
+            .flat_map(move |start| self.0.initialize(start, &to_goal))
     }
 }
 
@@ -169,11 +151,7 @@ where
         Goal: 'a,
         State: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -181,7 +159,10 @@ where
         Goal: 'a,
         State: 'a,
     {
-        self.0.initialize(from_start, to_goal).into_iter().map(|s| s.into())
+        self.0
+            .initialize(from_start, to_goal)
+            .into_iter()
+            .map(|s| s.into())
     }
 }
 
@@ -200,11 +181,7 @@ where
         Start: 'a,
         Goal: 'a;
 
-    fn initialize<'a>(
-        &'a self,
-        from_start: Start,
-        to_goal: &Goal,
-    ) -> Self::InitialStates<'a>
+    fn initialize<'a>(&'a self, from_start: Start, to_goal: &Goal) -> Self::InitialStates<'a>
     where
         Self: 'a,
         Base::Error: 'a,
@@ -228,7 +205,7 @@ mod tests {
     #[derive(Debug, PartialEq)]
     enum TestState {
         OnGraph(usize),
-        OffGraph(Point)
+        OffGraph(Point),
     }
     impl From<usize> for TestState {
         fn from(value: usize) -> Self {
@@ -243,8 +220,7 @@ mod tests {
 
     #[test]
     fn test_single_start() {
-        let domain = DefineTrait::<TestState>::new()
-            .with(InitFrom);
+        let domain = DefineTrait::<TestState>::new().with(InitFrom);
 
         let initial_state: Result<Vec<_>, _> = domain.initialize(5, &()).into_iter().collect();
         let initial_state = initial_state.unwrap();
@@ -254,14 +230,13 @@ mod tests {
 
     #[test]
     fn test_multi_start() {
-        let domain = DefineTrait::<TestState>::new()
-            .with(ManyInit(InitFrom));
+        let domain = DefineTrait::<TestState>::new().with(ManyInit(InitFrom));
 
-        let initial_states: Result<Vec<_>, _> = domain.initialize(
-            [Point::new(0.1, 0.2), Point::new(3.0, 4.0)], &()
-        ).into_iter().collect();
+        let initial_states: Result<Vec<_>, _> = domain
+            .initialize([Point::new(0.1, 0.2), Point::new(3.0, 4.0)], &())
+            .into_iter()
+            .collect();
         let initial_states = initial_states.unwrap();
         assert!(initial_states.len() == 2);
     }
 }
-

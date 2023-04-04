@@ -21,7 +21,8 @@ pub trait ConflictAvoider<State, Target, Guidance, Environment> {
     type AvoidanceAction;
     type AvoidanceError;
 
-    type AvoidanceActionIter<'a>: IntoIterator<Item=Result<(Self::AvoidanceAction, State), Self::AvoidanceError>> + 'a
+    type AvoidanceActionIter<'a>: IntoIterator<Item = Result<(Self::AvoidanceAction, State), Self::AvoidanceError>>
+        + 'a
     where
         Self: 'a,
         Self::AvoidanceAction: 'a,

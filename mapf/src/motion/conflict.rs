@@ -16,21 +16,20 @@
 */
 
 use crate::{
-    motion::{
-        Trajectory, Waypoint, TimePoint, Interpolation, Motion, Timed, Duration,
-        Environment, CircularProfile, DynamicCircularObstacle, BoundingBox,
-        IntegrateWaypoints, Measurable, Arclength,
-        r2::{WaypointR2, Point, Positioned},
-        se2::MaybeOriented,
-    },
     error::ThisError,
+    motion::{
+        r2::{Point, Positioned, WaypointR2},
+        se2::MaybeOriented,
+        Arclength, BoundingBox, CircularProfile, Duration, DynamicCircularObstacle, Environment,
+        IntegrateWaypoints, Interpolation, Measurable, Motion, TimePoint, Timed, Trajectory,
+        Waypoint,
+    },
 };
-use smallvec::SmallVec;
 use arrayvec::ArrayVec;
+use smallvec::SmallVec;
 use std::cmp::Ordering;
 
 type Vector2 = nalgebra::Vector2<f64>;
-
 
 #[derive(Debug, Clone, Copy)]
 pub enum SafeAction<Movement, WaitFor> {
@@ -92,9 +91,11 @@ where
     {
         let mut initial_waypoint = match initial_waypoint {
             Some(wp) => wp,
-            None => return SmallVec::from_iter([
-                Err(SafeActionIntegrateWaypointError::MissingInitialWaypoint)
-            ]),
+            None => {
+                return SmallVec::from_iter([Err(
+                    SafeActionIntegrateWaypointError::MissingInitialWaypoint,
+                )])
+            }
         };
 
         let mut waypoints = SmallVec::new();
@@ -142,7 +143,10 @@ where
 
         // The final state should be almost exactly the same as the last move
         assert!((to_state.point() - last_p).norm() < 1e-3);
-        Arclength { translational, rotational }
+        Arclength {
+            translational,
+            rotational,
+        }
     }
 }
 
@@ -162,8 +166,7 @@ pub struct WaitForObstacle {
 
 impl std::fmt::Debug for WaitForObstacle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("WaitForObstacle")
+        f.debug_struct("WaitForObstacle")
             .field("for_obstacle", &self.for_obstacle)
             .field("time_estimate", &self.time_estimate.as_secs_f64())
             .finish()
@@ -187,11 +190,7 @@ where
         // This very small time interval suggests that the agent is not moving
         // significantly. Just check if the proposed path is safe or not.
         if is_safe_segment((&from_point, &to_point), Some(bb), in_environment) {
-            return SmallVec::from_iter([
-                SmallVec::from_iter([
-                    SafeAction::Move(to_point)
-                ])
-            ]);
+            return SmallVec::from_iter([SmallVec::from_iter([SafeAction::Move(to_point)])]);
         } else {
             // The segment is not safe and it's too close to being a singularity
             // to make it safe, so we'll just return that there are no safe paths
@@ -199,13 +198,12 @@ where
         }
     }
 
-    let ranked_hints = compute_safe_linear_path_wait_hints(
-        (&from_point, &to_point), Some(bb), in_environment
-    );
+    let ranked_hints =
+        compute_safe_linear_path_wait_hints((&from_point, &to_point), Some(bb), in_environment);
 
     compute_safe_arrival_times(to_point, in_environment)
         .into_iter()
-        .filter_map(|arrival_time|
+        .filter_map(|arrival_time| {
             compute_safe_arrival_path(
                 from_point,
                 to_point,
@@ -213,7 +211,8 @@ where
                 &ranked_hints,
                 in_environment,
             )
-        ).collect()
+        })
+        .collect()
 }
 
 pub type RankedHints = SmallVec<[RankedHint; 16]>;
@@ -227,15 +226,11 @@ where
     W: Into<WaypointR2> + Waypoint,
     Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
-    let bb = bounding_box.unwrap_or_else(
-        || BoundingBox::for_line(
-            in_environment.agent_profile(), from_point, to_point
-        )
-    );
+    let bb = bounding_box.unwrap_or_else(|| {
+        BoundingBox::for_line(in_environment.agent_profile(), from_point, to_point)
+    });
 
-    let wait_hints = compute_wait_hints(
-        (&from_point, &to_point), &bb, in_environment
-    );
+    let wait_hints = compute_wait_hints((&from_point, &to_point), &bb, in_environment);
 
     let dx = to_point.position - from_point.position;
     let dist = dx.norm();
@@ -254,20 +249,22 @@ where
             Duration::from_secs_f64(wait_t)
         };
 
-        ranked_hints.push(RankedHint { contour, reach, hint });
+        ranked_hints.push(RankedHint {
+            contour,
+            reach,
+            hint,
+        });
     }
 
-    ranked_hints.sort_by(|a, b| {
-        match a.contour.cmp(&b.contour) {
-            Ordering::Equal => {
-                if a.reach <= b.reach {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+    ranked_hints.sort_by(|a, b| match a.contour.cmp(&b.contour) {
+        Ordering::Equal => {
+            if a.reach <= b.reach {
+                Ordering::Less
+            } else {
+                Ordering::Greater
             }
-            other => other,
         }
+        other => other,
     });
 
     ranked_hints
@@ -300,7 +297,8 @@ where
                     None => continue,
                 };
 
-                let critical_distance_squared = profile.critical_distance_squared_for(obs.profile());
+                let critical_distance_squared =
+                    profile.critical_distance_squared_for(obs.profile());
                 let adjustment = adjust_candidate_time(
                     for_point,
                     candidate_time,
@@ -337,12 +335,9 @@ where
                 None => continue,
             };
 
-            if let Some(check) = find_next_candidate_time(
-                candidate_time,
-                for_point,
-                obs_traj,
-                min_distance_squared,
-            ) {
+            if let Some(check) =
+                find_next_candidate_time(candidate_time, for_point, obs_traj, min_distance_squared)
+            {
                 if let Some(next_candidate_time) = &mut next_candidate_time {
                     if check < *next_candidate_time {
                         *next_candidate_time = check;
@@ -476,11 +471,9 @@ where
             };
 
             let parent_wp_start = make_parent_arrival(hint_wp, parent_wp_end);
-            let safe_hint_arrival = is_safe_segment(
-                (&hint_wp, &parent_wp_start), None, in_environment
-            ) && is_safe_segment(
-                (&parent_wp_start, &parent_wp_end), None, in_environment
-            );
+            let safe_hint_arrival =
+                is_safe_segment((&hint_wp, &parent_wp_start), None, in_environment)
+                    && is_safe_segment((&parent_wp_start, &parent_wp_end), None, in_environment);
 
             if !safe_hint_arrival {
                 // We can't safely reach the parent from this hint. We need to
@@ -510,11 +503,9 @@ where
             // Test if the start waypoint can arrive at this hint. If it can
             // then we have found our path.
             let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
-            let safe_hint_arrival = is_safe_segment(
-                (&from_point, &hint_arrival_wp), None, in_environment
-            ) && is_safe_segment(
-                (&hint_arrival_wp, &hint_wp), None, in_environment
-            );
+            let safe_hint_arrival =
+                is_safe_segment((&from_point, &hint_arrival_wp), None, in_environment)
+                    && is_safe_segment((&hint_arrival_wp, &hint_wp), None, in_environment);
             if safe_hint_arrival {
                 // We have found the desired path
                 search.push(element);
@@ -562,7 +553,7 @@ impl ArrivalPathSearchElement {
     fn new(index: usize) -> Self {
         Self {
             index,
-            child: if index > 0 { Some(index-1) } else { None },
+            child: if index > 0 { Some(index - 1) } else { None },
             tested_arrival_to_parent: false,
         }
     }
@@ -623,14 +614,16 @@ struct Proximity {
 
 impl Proximity {
     fn none() -> Self {
-        Self { enter: None, exit: None }
+        Self {
+            enter: None,
+            exit: None,
+        }
     }
 }
 
 impl std::fmt::Debug for Proximity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("Proximity")
+        f.debug_struct("Proximity")
             .field("enter", &self.enter.as_ref().map(|t| t.as_secs_f64()))
             .field("exit", &self.exit.as_ref().map(|t| t.as_secs_f64()))
             .finish()
@@ -692,7 +685,10 @@ fn detect_proximity(
     if radicand < 0.0 {
         // The objects are moving relative to each other, but they will never come
         // close enough to each other.
-        return Proximity { enter: None, exit: None };
+        return Proximity {
+            enter: None,
+            exit: None,
+        };
     }
 
     let sqrt_radicand = radicand.sqrt();
@@ -717,7 +713,7 @@ fn detect_proximity(
             Some(t_range.0 + Duration::from_secs_f64(t_p))
         } else {
             None
-        }
+        },
     };
 }
 
@@ -902,22 +898,16 @@ where
             let line_b = (&wp0_b, &wp1_b);
 
             if !bb.overlaps(Some(
-                BoundingBox::for_line(obs.profile(), &wp0_b, &wp1_b)
-                .inflated_by(1e-3)
+                BoundingBox::for_line(obs.profile(), &wp0_b, &wp1_b).inflated_by(1e-3),
             )) {
                 continue;
             }
 
             let in_time_range = |t: &TimePoint| -> bool {
-                line_a.0.time < *t && *t < line_a.1.time
-                && line_b.0.time < *t && *t < line_b.1.time
+                line_a.0.time < *t && *t < line_a.1.time && line_b.0.time < *t && *t < line_b.1.time
             };
 
-            let proximity = detect_proximity(
-                conflict_distance_squared,
-                line_a,
-                line_b,
-            );
+            let proximity = detect_proximity(conflict_distance_squared, line_a, line_b);
 
             if let Some(t) = proximity.enter.filter(in_time_range) {
                 let t_range = compute_t_range(line_a, line_b);
@@ -925,7 +915,7 @@ where
                 let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
                 let a = dv.dot(&dv);
                 let b = 2.0 * dv.dot(&dp0);
-                let deriv = 2.0*a * t + b;
+                let deriv = 2.0 * a * t + b;
                 // Allow for a little floating point error. When the derivative
                 // is very very close to zero (which is a perfectly acceptable
                 // value), floating point calculation errors can cause its
@@ -960,7 +950,7 @@ where
     let profile = in_environment.agent_profile();
     let q = wp0.position;
     let r = wp1.position;
-    let u = match (r -q).try_normalize(1e-8) {
+    let u = match (r - q).try_normalize(1e-8) {
         Some(u) => u,
         // The agent is hardly moving so don't bother looking for where it needs
         // to wait.
@@ -988,8 +978,7 @@ where
             let obs_wp0: WaypointR2 = obs_wp0.into();
             let obs_wp1: WaypointR2 = obs_wp1.into();
             if !bb.overlaps(Some(
-                BoundingBox::for_line(obs.profile(), &obs_wp0, &obs_wp1)
-                .inflated_by(1e-3)
+                BoundingBox::for_line(obs.profile(), &obs_wp0, &obs_wp1).inflated_by(1e-3),
             )) {
                 continue;
             }
@@ -998,11 +987,8 @@ where
             let obs_r = obs_wp1.position;
             let obs_dt = (obs_wp1.time - obs_wp0.time).as_secs_f64();
             let obs_t0 = obs_wp0.time;
-            let obstruction_time_range = compute_quadratic_wait_hints(
-                q, r, u,
-                obs_q, obs_r, obs_dt,
-                min_distance_squared,
-            );
+            let obstruction_time_range =
+                compute_quadratic_wait_hints(q, r, u, obs_q, obs_r, obs_dt, min_distance_squared);
 
             if let Some((_, t_end)) = obstruction_time_range {
                 // There should be a valid unit vector from the start to the end
@@ -1013,8 +999,12 @@ where
                 // Find the times that the main trajectory is within proximity
                 // of the line so that we can compute the waiting location.
                 let wait_point_time = compute_quadratic_wait_hints(
-                    obs_q, obs_r, obs_u,
-                    q, r, agent_dt,
+                    obs_q,
+                    obs_r,
+                    obs_u,
+                    q,
+                    r,
+                    agent_dt,
                     min_distance_squared,
                 );
 
@@ -1024,7 +1014,11 @@ where
                         let arrival = wp0.time + Duration::from_secs_f64(t_wait_at);
                         if arrival <= until {
                             let at_point = q + agent_v * t_wait_at;
-                            wait_hints.push(WaitHint { at_point, until, for_obstacle });
+                            wait_hints.push(WaitHint {
+                                at_point,
+                                until,
+                                for_obstacle,
+                            });
                         }
                     }
                 }
@@ -1085,7 +1079,7 @@ where
                                     0.0
                                 };
                                 wait_hints.push(WaitHint {
-                                    at_point: q + s*u,
+                                    at_point: q + s * u,
                                     until: TimePoint::from_secs_f64(t),
                                     for_obstacle,
                                 });
@@ -1115,7 +1109,7 @@ where
 
                                 let tp = TimePoint::from_secs_f64(t);
                                 wait_hints.push(WaitHint {
-                                    at_point: q + s*u,
+                                    at_point: q + s * u,
                                     until: tp.min(obs_wp1.time),
                                     for_obstacle,
                                 });
@@ -1135,9 +1129,9 @@ where
                     let mut times: ArrayVec<f64, 2> = ArrayVec::new();
                     let mut both_in_range = true;
                     for obs_q in [obs_q, obs_r] {
-                        if let Some((t, _)) = compute_stationary_proximity(
-                            obs_q, q, agent_v, min_distance_squared,
-                        ) {
+                        if let Some((t, _)) =
+                            compute_stationary_proximity(obs_q, q, agent_v, min_distance_squared)
+                        {
                             if t >= 0.0 {
                                 // This point will be an obstruction
                                 times.push(t);
@@ -1153,9 +1147,9 @@ where
                     }
 
                     if both_in_range {
-                        let t_wait_at = times.iter().min_by(
-                            |a, b| a.partial_cmp(b).unwrap_or(Ordering::Less)
-                        );
+                        let t_wait_at = times
+                            .iter()
+                            .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
                         if let Some(t_wait_at) = t_wait_at {
                             let at_point = q + agent_v * *t_wait_at;
                             wait_hints.push(WaitHint {
@@ -1178,9 +1172,9 @@ where
                 // will be a clearance available for the agent. This is not a
                 // physically realistic scenario but it could arise in practice
                 // from pseudo obstacles or limited horizon obstacles.
-                if let Some((t, _)) = compute_stationary_proximity(
-                    obs_r, q, agent_v, min_distance_squared,
-                ) {
+                if let Some((t, _)) =
+                    compute_stationary_proximity(obs_r, q, agent_v, min_distance_squared)
+                {
                     if t >= 0.0 {
                         let at_point = q + agent_v * t;
                         wait_hints.push(WaitHint {
@@ -1209,7 +1203,7 @@ fn compute_quadratic_wait_hints(
     dt: f64,
     min_distance_squared: f64,
 ) -> Option<(f64, f64)> {
-    let v = (pf - p0)/dt;
+    let v = (pf - p0) / dt;
     let alpha = v - v.dot(&u) * u;
     let beta = p0 - (p0 - q).dot(&u) * u - q;
     let a = alpha.dot(&alpha);
@@ -1270,9 +1264,9 @@ fn compute_quadratic_wait_hints(
         // Check if the proximity exit time relative to the endpoint is between
         // t_perpindicular and t_end. If so, that exit time should become the
         // new t_end.
-        if let Some((_, t_leave_endpoint)) = compute_stationary_proximity(
-            r, p0, v, min_distance_squared
-        ) {
+        if let Some((_, t_leave_endpoint)) =
+            compute_stationary_proximity(r, p0, v, min_distance_squared)
+        {
             if t_leave_endpoint < t_end {
                 t_end = t_leave_endpoint;
             }
@@ -1316,8 +1310,7 @@ struct WaitHint {
 
 impl std::fmt::Debug for WaitHint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("WaitHint")
+        f.debug_struct("WaitHint")
             .field("at_point", &self.at_point)
             .field("until", &self.until.as_secs_f64())
             .field("for_obstacle", &self.for_obstacle)
@@ -1334,7 +1327,7 @@ impl From<WaitHint> for WaypointR2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::motion::{DynamicEnvironment, CircularProfile};
+    use crate::motion::{CircularProfile, DynamicEnvironment};
     use approx::assert_relative_eq;
 
     fn add_to_env(
@@ -1344,21 +1337,19 @@ mod tests {
         (t1, x1, y1): (f64, f64, f64),
     ) {
         in_environment.obstacles.push(
-            DynamicCircularObstacle::new(profile)
-            .with_trajectory(Some(Trajectory::from_iter(
-                [
+            DynamicCircularObstacle::new(profile).with_trajectory(Some(
+                Trajectory::from_iter([
                     WaypointR2::new(TimePoint::from_secs_f64(t0), x0, y0),
                     WaypointR2::new(TimePoint::from_secs_f64(t1), x1, y1),
-                ]
-            ).unwrap()))
+                ])
+                .unwrap(),
+            )),
         );
     }
 
     #[test]
     fn test_head_to_head_cross_over() {
-        for footprint_radius in [
-            0.001, 0.01, 0.1, 0.25, 0.5, 1.0, 1.1, 1.5,
-        ] {
+        for footprint_radius in [0.001, 0.01, 0.1, 0.25, 0.5, 1.0, 1.1, 1.5] {
             let profile = CircularProfile::new(footprint_radius, 0.5, 1.0).unwrap();
 
             let from_point = WaypointR2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0);
@@ -1367,7 +1358,8 @@ mod tests {
             let y_obs = 1.0 + 2.0 * footprint_radius;
             let mut in_environment = DynamicEnvironment::new(profile);
             add_to_env(
-                &mut in_environment, profile,
+                &mut in_environment,
+                profile,
                 (0.0, 10.0, -y_obs),
                 (10.0, 0.0, y_obs),
             );
@@ -1381,7 +1373,12 @@ mod tests {
             assert!(is_safe_segment(line_a, None, &in_environment));
 
             let t_wait_until = path[1].wait_for().unwrap().time_estimate;
-            let obs_traj = in_environment.obstacles.first().unwrap().trajectory().unwrap();
+            let obs_traj = in_environment
+                .obstacles
+                .first()
+                .unwrap()
+                .trajectory()
+                .unwrap();
             let obs_p = obs_traj
                 .initial_motion()
                 .interpolate(obs_traj.finish_motion())
@@ -1391,7 +1388,7 @@ mod tests {
             assert_relative_eq!(
                 (wait_p.position - obs_p).norm(),
                 profile.critical_distance_for(&profile),
-                max_relative=0.1,
+                max_relative = 0.1,
             );
         }
     }
@@ -1406,11 +1403,12 @@ mod tests {
 
         let mut in_environment = DynamicEnvironment::new(profile);
 
-        let x_obs = 0.5 + 2.0*footprint_radius;
+        let x_obs = 0.5 + 2.0 * footprint_radius;
         add_to_env(
-            &mut in_environment, profile,
+            &mut in_environment,
+            profile,
             (0.0, x_obs, -1.0),
-            (5.0, 2.5, 0.0)
+            (5.0, 2.5, 0.0),
         );
 
         let line_a = (&from_point, &to_point);
@@ -1436,11 +1434,12 @@ mod tests {
 
         let mut in_environment = DynamicEnvironment::new(profile);
 
-        let x_obs = 0.5 + 2.0*footprint_radius;
+        let x_obs = 0.5 + 2.0 * footprint_radius;
         add_to_env(
-            &mut in_environment, profile,
+            &mut in_environment,
+            profile,
             (0.0, x_obs, -1.0),
-            (40.0, 20.0, 0.0)
+            (40.0, 20.0, 0.0),
         );
 
         let line_a = (&from_point, &to_point);
@@ -1489,19 +1488,22 @@ mod tests {
                 let tf_c = t0 + 100.0 * dt;
 
                 add_to_env(
-                    &mut in_environment, profile,
+                    &mut in_environment,
+                    profile,
                     (t0_a, obs_a.x, obs_a.y),
                     (tf_a, obs_a.x, obs_a.y),
                 );
 
                 add_to_env(
-                    &mut in_environment, profile,
+                    &mut in_environment,
+                    profile,
                     (t0_b, obs_b.x, obs_b.y),
                     (tf_b, obs_b.x, obs_b.y),
                 );
 
                 add_to_env(
-                    &mut in_environment, profile,
+                    &mut in_environment,
+                    profile,
                     (t0_c, obs_a.x, obs_a.y),
                     (tf_c, obs_a.x, obs_a.y),
                 );
@@ -1514,15 +1516,23 @@ mod tests {
 
                 let path = paths.first().unwrap();
                 let wp_f = path.last().unwrap().movement().unwrap();
-                assert_relative_eq!((wp_f.position - to_point.position).norm(), 0.0, epsilon=1e-3);
-                assert_relative_eq!(wp_f.time.as_secs_f64(), tf_b + 0.4 * dt + 2.0*footprint_radius/v, epsilon=1e-3);
+                assert_relative_eq!(
+                    (wp_f.position - to_point.position).norm(),
+                    0.0,
+                    epsilon = 1e-3
+                );
+                assert_relative_eq!(
+                    wp_f.time.as_secs_f64(),
+                    tf_b + 0.4 * dt + 2.0 * footprint_radius / v,
+                    epsilon = 1e-3
+                );
             }
         }
     }
 
     #[test]
     fn test_cycling_endpoint_blocker() {
-        let profile = CircularProfile::new(0.25, 0.5, 1.0,).unwrap();
+        let profile = CircularProfile::new(0.25, 0.5, 1.0).unwrap();
 
         for t0 in [0.0, -413.1, 17.6, -782.994, 4230.0] {
             let dt = 5.0;
@@ -1549,40 +1559,49 @@ mod tests {
                         [10.0, 5.0, 5.0],
                         [15.0, 5.0, 0.0],
                     ] {
-                        obs_wps.push(WaypointR2::new_f64(
-                            20.0*(cycle as f64) + t + t0, x, y
-                        ));
+                        obs_wps.push(WaypointR2::new_f64(20.0 * (cycle as f64) + t + t0, x, y));
                     }
                 }
-                obs_wps.push(WaypointR2::new_f64(
-                    20.0*(n_cycles as f64) + t0, 0.0, 0.0
-                ));
+                obs_wps.push(WaypointR2::new_f64(20.0 * (n_cycles as f64) + t0, 0.0, 0.0));
                 // Pause a moment on the destination for the very last waypoint
                 obs_wps.push(WaypointR2::new_f64(
-                    20.0*(n_cycles as f64) + 10.0 + t0, 0.0, 0.0
+                    20.0 * (n_cycles as f64) + 10.0 + t0,
+                    0.0,
+                    0.0,
                 ));
 
                 let obs_traj = Trajectory::from_iter(obs_wps).unwrap();
                 let mut in_environment = DynamicEnvironment::new(profile);
                 in_environment.obstacles.push(
-                    DynamicCircularObstacle::new(profile)
-                    .with_trajectory(Some(obs_traj.clone()))
+                    DynamicCircularObstacle::new(profile).with_trajectory(Some(obs_traj.clone())),
                 );
 
-                let paths = compute_safe_linear_paths(
-                    from_point, to_point, &in_environment
-                );
+                let paths = compute_safe_linear_paths(from_point, to_point, &in_environment);
                 assert_eq!(11, paths.len());
 
                 for i in 0..n_cycles {
-                    let tf = paths[i].last().unwrap().movement().unwrap().time.as_secs_f64();
+                    let tf = paths[i]
+                        .last()
+                        .unwrap()
+                        .movement()
+                        .unwrap()
+                        .time
+                        .as_secs_f64();
                     let i = i as f64;
-                    assert!(20.0*i + t0 < tf);
-                    assert!(tf < 20.0*(i+1.0) + t0);
+                    assert!(20.0 * i + t0 < tf);
+                    assert!(tf < 20.0 * (i + 1.0) + t0);
                 }
 
-                let tf = paths.last().unwrap().last().unwrap().movement().unwrap().time.as_secs_f64();
-                let obs_tf = 20.0*(n_cycles as f64) + 10.0 + t0;
+                let tf = paths
+                    .last()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .movement()
+                    .unwrap()
+                    .time
+                    .as_secs_f64();
+                let obs_tf = 20.0 * (n_cycles as f64) + 10.0 + t0;
                 assert!(obs_tf < tf);
                 assert!(tf < obs_tf + 1.0);
             }

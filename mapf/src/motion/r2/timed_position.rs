@@ -15,13 +15,14 @@
  *
 */
 
-use super::{Position, Velocity, Positioned, MaybePositioned};
+use super::{MaybePositioned, Position, Positioned, Velocity};
 use crate::{
-    motion::{
-        self, Timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
-        se2::{MaybeOriented, WaypointSE2},
-    },
     error::NoError,
+    motion::{
+        self,
+        se2::{MaybeOriented, WaypointSE2},
+        IntegrateWaypoints, InterpError, Interpolation, TimePoint, Timed,
+    },
 };
 use arrayvec::ArrayVec;
 
@@ -33,8 +34,7 @@ pub struct WaypointR2 {
 
 impl std::fmt::Debug for WaypointR2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("WaypointR2")
+        f.debug_struct("WaypointR2")
             .field("time", &self.time.as_secs_f64())
             .field("position", &self.position)
             .finish()
@@ -123,14 +123,14 @@ impl Motion {
 
     pub fn in_range(&self, time: &TimePoint) -> Result<(), InterpError> {
         if *time < self.initial_wp.time {
-            return Err(InterpError::OutOfBounds{
+            return Err(InterpError::OutOfBounds {
                 range: [self.initial_wp.time, self.final_wp.time],
                 request: *time,
             });
         }
 
         if self.final_wp.time < *time {
-            return Err(InterpError::OutOfBounds{
+            return Err(InterpError::OutOfBounds {
                 range: [self.initial_wp.time, self.final_wp.time],
                 request: *time,
             });
@@ -177,25 +177,22 @@ where
     where
         Self: 'a,
         Self::WaypointIntegrationError: 'a,
-        W: 'a
+        W: 'a,
     {
         // TODO(@mxgrey): Should it be an error if _initial_waypoint is None?
         // We do not store the initial waypoint for the trajectory in the action
         // so it would be wrong to initiate a trajectory with an action. However
         // we also don't need that initial waypoint information to produce the
         // correct waypoints, so it's unclear whether that needs to be an error.
-        self
-        .into_iter()
-        .map(|w| Ok(w.clone().into()))
-        .collect()
+        self.into_iter().map(|w| Ok(w.clone().into())).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::motion::{Duration, Motion};
     use approx::assert_relative_eq;
-    use crate::motion::{Motion, Duration};
 
     #[test]
     fn test_interpolation() {

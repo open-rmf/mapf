@@ -15,17 +15,17 @@
  *
 */
 
+use super::{
+    AsTimeInvariant, AsTimeVariant, Closable, CloseResult, ClosedSet, ClosedStatus,
+    ClosedStatusForKey, TimeVariantPartialKeyedCloser,
+};
 use crate::{
-    domain::{PartialKeyed, Keyed, Keyring, Reversible},
+    domain::{Keyed, Keyring, PartialKeyed, Reversible},
     error::NoError,
 };
-use super::{
-    Closable, ClosedSet, CloseResult, ClosedStatus, ClosedStatusForKey,
-    AsTimeInvariant, AsTimeVariant, TimeVariantPartialKeyedCloser,
-};
 use std::{
-    collections::{HashMap, hash_map::Entry},
     borrow::Borrow,
+    collections::{hash_map::Entry, HashMap},
 };
 
 /// Factory for [`PartialKeyedClosedSet`]. Provide this to your domain, e.g.
@@ -36,14 +36,17 @@ pub struct PartialKeyedCloser<Ring>(pub Ring);
 
 impl<Ring: Clone> Reversible for PartialKeyedCloser<Ring> {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(self.clone())
     }
 }
 
 impl<State, Ring> Closable<State> for PartialKeyedCloser<Ring>
 where
-    Ring: PartialKeyed + Keyring<State, Key=Option<Ring::PartialKey>> + Clone,
+    Ring: PartialKeyed + Keyring<State, Key = Option<Ring::PartialKey>> + Clone,
     Ring::PartialKey: Clone,
 {
     type ClosedSet<T> = PartialKeyedClosedSet<Ring, T>;
@@ -99,7 +102,7 @@ impl<Ring: PartialKeyed, T> PartialKeyedClosedSet<Ring, T> {
 
 impl<State, Ring, T> ClosedSet<State, T> for PartialKeyedClosedSet<Ring, T>
 where
-    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>> + Keyring<State>,
+    Ring: PartialKeyed + Keyed<Key = Option<Ring::PartialKey>> + Keyring<State>,
     Ring::PartialKey: Clone,
 {
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
@@ -109,9 +112,10 @@ where
             None => return CloseResult::Accepted,
         };
         match self.container.entry(key.clone()) {
-            Entry::Occupied(entry) => {
-                CloseResult::Rejected { value, prior: entry.into_mut() }
-            }
+            Entry::Occupied(entry) => CloseResult::Rejected {
+                value,
+                prior: entry.into_mut(),
+            },
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 CloseResult::Accepted
@@ -147,7 +151,7 @@ where
     where
         Self: 'a,
         State: 'a,
-        T: 'a
+        T: 'a,
     {
         self.container.values()
     }
@@ -155,7 +159,7 @@ where
 
 impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T> for PartialKeyedClosedSet<Ring, T>
 where
-    Ring: PartialKeyed + Keyed<Key=Option<Ring::PartialKey>>,
+    Ring: PartialKeyed + Keyed<Key = Option<Ring::PartialKey>>,
 {
     fn status_for_key<'a>(&'a self, key: &Option<Ring::PartialKey>) -> ClosedStatus<'a, T> {
         if let Some(key) = key {
@@ -208,13 +212,18 @@ mod tests {
     #[test]
     fn test_partial_keyed_closed_set() {
         let mut closed_set = PartialKeyedClosedSet::new(SelfPartialKeyring::<usize>::new());
-        assert!(closed_set.close(&TestState::new(Some(1), 0.24), 0).accepted());
-        assert!(closed_set.status(&TestState::new(Some(1), 0.55)).is_closed());
-        assert!(closed_set.close(&TestState::new(Some(1), 0.1), 32).rejected());
+        assert!(closed_set
+            .close(&TestState::new(Some(1), 0.24), 0)
+            .accepted());
+        assert!(closed_set
+            .status(&TestState::new(Some(1), 0.55))
+            .is_closed());
+        assert!(closed_set
+            .close(&TestState::new(Some(1), 0.1), 32)
+            .rejected());
 
         assert!(closed_set.close(&TestState::new(None, 0.4), 0).accepted());
         assert!(closed_set.status(&TestState::new(None, 123.4)).is_open());
         assert!(closed_set.close(&TestState::new(None, 0.01), 3).accepted());
     }
 }
-

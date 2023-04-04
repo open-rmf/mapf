@@ -19,7 +19,7 @@ pub mod a_star;
 pub use a_star::{AStar, AStarConnect};
 
 pub mod dijkstra;
-pub use dijkstra::{Dijkstra, BackwardDijkstra};
+pub use dijkstra::{BackwardDijkstra, Dijkstra};
 
 pub mod tree;
 
@@ -90,11 +90,7 @@ pub trait Algorithm {
 pub trait Coherent<Start, Goal>: Algorithm {
     type InitError;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError>;
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError>;
 }
 
 /// The `Algorithm` trait defines the basic structure that an algorithm needs
@@ -128,11 +124,7 @@ impl<Algo: Algorithm> Algorithm for Arc<Algo> {
 impl<Start, Goal, Algo: Coherent<Start, Goal>> Coherent<Start, Goal> for Arc<Algo> {
     type InitError = Algo::InitError;
 
-    fn initialize(
-        &self,
-        start: Start,
-        goal: &Goal,
-    ) -> Result<Self::Memory, Self::InitError> {
+    fn initialize(&self, start: Start, goal: &Goal) -> Result<Self::Memory, Self::InitError> {
         self.as_ref().initialize(start, goal)
     }
 }

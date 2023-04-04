@@ -16,20 +16,13 @@
 */
 
 use crate::{
+    domain::{Extrapolator, Informed, Key, KeyedSpace, Reversible, SelfKey, Weighted},
     graph::Graph,
-    motion::{
-        r2::{
-            Position, DiscreteSpaceTimeR2, StateR2 as StateR2,
-            LineFollow, LineFollowError, WaypointR2,
-        },
-    },
-    domain::{
-        Informed, Weighted, Extrapolator, Key, Reversible, KeyedSpace, SelfKey
-    },
+    motion::r2::{DiscreteSpaceTimeR2, LineFollow, LineFollowError, Position, StateR2, WaypointR2},
 };
 use arrayvec::ArrayVec;
-use thiserror::Error as ThisError;
 use std::borrow::Borrow;
+use thiserror::Error as ThisError;
 
 #[derive(Debug, Clone)]
 pub struct DirectTravelHeuristic<G: Graph, W> {
@@ -45,7 +38,7 @@ where
     G::Key: Key + Clone,
     G::Vertex: Borrow<Position>,
     W: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    Goal: SelfKey<Key=G::Key>,
+    Goal: SelfKey<Key = G::Key>,
 {
     type CostEstimate = W::Cost;
     type InformedError = DirectTravelError<W::WeightedError>;
@@ -63,24 +56,24 @@ where
             }
         };
 
-        self
-        .extrapolator
-        .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
-        .transpose()
-        .map_err(DirectTravelError::Extrapolator)
-        .map(|action|
-            action
-            .map(|(action, child_wp)| {
-                let child_state = self.space.make_keyed_state(
-                    to_goal.key().borrow().clone(), child_wp
-                );
-                self.weight.cost(from_state, &action, &child_state)
-                .map_err(DirectTravelError::Weighted)
-            })
+        self.extrapolator
+            .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
             .transpose()
-            .map(|x| x.flatten())
-        )
-        .flatten()
+            .map_err(DirectTravelError::Extrapolator)
+            .map(|action| {
+                action
+                    .map(|(action, child_wp)| {
+                        let child_state = self
+                            .space
+                            .make_keyed_state(to_goal.key().borrow().clone(), child_wp);
+                        self.weight
+                            .cost(from_state, &action, &child_state)
+                            .map_err(DirectTravelError::Weighted)
+                    })
+                    .transpose()
+                    .map(|x| x.flatten())
+            })
+            .flatten()
     }
 }
 
@@ -97,9 +90,18 @@ impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(DirectTravelHeuristic {
             space: DiscreteSpaceTimeR2::new(),
-            graph: self.graph.reversed().map_err(DirectTravelReversalError::Graph)?,
-            weight: self.weight.reversed().map_err(DirectTravelReversalError::Weighted)?,
-            extrapolator: self.extrapolator.reversed().map_err(DirectTravelReversalError::Extrapolator)?,
+            graph: self
+                .graph
+                .reversed()
+                .map_err(DirectTravelReversalError::Graph)?,
+            weight: self
+                .weight
+                .reversed()
+                .map_err(DirectTravelReversalError::Weighted)?,
+            extrapolator: self
+                .extrapolator
+                .reversed()
+                .map_err(DirectTravelReversalError::Extrapolator)?,
         })
     }
 }

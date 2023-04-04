@@ -16,10 +16,10 @@
 */
 
 use crate::{
-    graph::{Graph, Edge},
-    domain::{KeyedSpace, Connectable, ArrivalKeyring, Extrapolator, Reversible},
-    templates::{GraphMotion},
+    domain::{ArrivalKeyring, Connectable, Extrapolator, KeyedSpace, Reversible},
     error::ThisError,
+    graph::{Edge, Graph},
+    templates::GraphMotion,
     util::FlatResultMapTrait,
 };
 use std::borrow::Borrow;
@@ -39,7 +39,8 @@ pub struct LazyGraphMotion<S, G, E, R, C> {
     pub chain: C,
 }
 
-impl<S, G, E, R, C, State, Action, Goal> Connectable<State, Action, Goal> for LazyGraphMotion<S, G, E, R, C>
+impl<S, G, E, R, C, State, Action, Goal> Connectable<State, Action, Goal>
+    for LazyGraphMotion<S, G, E, R, C>
 where
     S: KeyedSpace<G::Key>,
     S::Key: Borrow<G::Key>,
@@ -62,12 +63,9 @@ where
         Action: 'a,
         Goal: 'a;
 
-    type ConnectionError = LazyGraphMotionError<G::Key, R::ArrivalKeyError, E::ExtrapolationError, C::ConnectionError>;
-    fn connect<'a>(
-        &'a self,
-        from_state: State,
-        to_target: &'a Goal,
-    ) -> Self::Connections<'a>
+    type ConnectionError =
+        LazyGraphMotionError<G::Key, R::ArrivalKeyError, E::ExtrapolationError, C::ConnectionError>;
+    fn connect<'a>(&'a self, from_state: State, to_target: &'a Goal) -> Self::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -76,58 +74,72 @@ where
         Goal: 'a,
     {
         let from_spatial_state: S::State = from_state.clone().borrow().clone();
-        let from_key: G::Key = self.motion.space.key_for(&from_spatial_state).borrow().borrow().clone();
-        self.keyring.get_arrival_keys(&from_key, to_target)
-        .into_iter()
-        .flat_map(move |r: Result<G::Key, R::ArrivalKeyError>| {
-            let from_spatial_state = from_spatial_state.clone();
-            let from_key = from_key.clone();
-            r
-            .map_err(LazyGraphMotionError::Keyring)
-            .flat_result_map(move |to_vertex: G::Key| {
+        let from_key: G::Key = self
+            .motion
+            .space
+            .key_for(&from_spatial_state)
+            .borrow()
+            .borrow()
+            .clone();
+        self.keyring
+            .get_arrival_keys(&from_key, to_target)
+            .into_iter()
+            .flat_map(move |r: Result<G::Key, R::ArrivalKeyError>| {
                 let from_spatial_state = from_spatial_state.clone();
-                self.motion.graph.lazy_edges_between(&from_key, &to_vertex)
-                .into_iter()
-                .flat_map(move |edge|{
-                    let from_state = from_spatial_state.clone();
-                    let to_vertex = to_vertex.clone();
-                    let edge: G::EdgeAttributes = edge.attributes().clone();
-
-                    self.motion.graph.vertex(&to_vertex)
-                    .ok_or_else(|| LazyGraphMotionError::MissingVertex(to_vertex.clone()))
-                    .flat_result_map(move |v| {
-                        let from_state = from_state.clone();
-                        let to_vertex = to_vertex.clone();
-                        let extrapolations = self.motion.extrapolator.extrapolate(
-                            self.motion.space.waypoint(&from_state).borrow(), v.borrow(), &edge
-                        );
-
-                        extrapolations
-                        .into_iter()
-                        .map(move |r| {
-                            let to_vertex = to_vertex.clone();
-                            r
-                            .map_err(LazyGraphMotionError::Extrapolator)
-                            .map(move |(action, waypoint)| {
+                let from_key = from_key.clone();
+                r.map_err(LazyGraphMotionError::Keyring)
+                    .flat_result_map(move |to_vertex: G::Key| {
+                        let from_spatial_state = from_spatial_state.clone();
+                        self.motion
+                            .graph
+                            .lazy_edges_between(&from_key, &to_vertex)
+                            .into_iter()
+                            .flat_map(move |edge| {
+                                let from_state = from_spatial_state.clone();
                                 let to_vertex = to_vertex.clone();
-                                let state = self.motion.space.make_keyed_state(
-                                    to_vertex.clone(), waypoint
-                                );
-                                (action.into(), state.into())
+                                let edge: G::EdgeAttributes = edge.attributes().clone();
+
+                                self.motion
+                                    .graph
+                                    .vertex(&to_vertex)
+                                    .ok_or_else(|| {
+                                        LazyGraphMotionError::MissingVertex(to_vertex.clone())
+                                    })
+                                    .flat_result_map(move |v| {
+                                        let from_state = from_state.clone();
+                                        let to_vertex = to_vertex.clone();
+                                        let extrapolations = self.motion.extrapolator.extrapolate(
+                                            self.motion.space.waypoint(&from_state).borrow(),
+                                            v.borrow(),
+                                            &edge,
+                                        );
+
+                                        extrapolations.into_iter().map(move |r| {
+                                            let to_vertex = to_vertex.clone();
+                                            r.map_err(LazyGraphMotionError::Extrapolator).map(
+                                                move |(action, waypoint)| {
+                                                    let to_vertex = to_vertex.clone();
+                                                    let state = self.motion.space.make_keyed_state(
+                                                        to_vertex.clone(),
+                                                        waypoint,
+                                                    );
+                                                    (action.into(), state.into())
+                                                },
+                                            )
+                                        })
+                                    })
+                                    .map(|x| x.flatten())
                             })
-                        })
                     })
                     .map(|x| x.flatten())
-                })
+                    .map(|x: Result<(Action, State), Self::ConnectionError>| x)
             })
-            .map(|x| x.flatten())
-            .map(|x: Result<(Action, State), Self::ConnectionError>| x)
-        })
-        .chain(
-            self.chain.connect(from_state, to_target)
-            .into_iter()
-            .map(|r| r.map_err(LazyGraphMotionError::Chain))
-        )
+            .chain(
+                self.chain
+                    .connect(from_state, to_target)
+                    .into_iter()
+                    .map(|r| r.map_err(LazyGraphMotionError::Chain)),
+            )
     }
 }
 
@@ -145,11 +157,23 @@ where
         C::ReversalError,
     >;
 
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(LazyGraphMotion {
-            motion: self.motion.reversed().map_err(LazyGraphMotionReversalError::GraphMotion)?,
-            keyring: self.keyring.reversed().map_err(LazyGraphMotionReversalError::Keyring)?,
-            chain: self.chain.reversed().map_err(LazyGraphMotionReversalError::Chain)?
+            motion: self
+                .motion
+                .reversed()
+                .map_err(LazyGraphMotionReversalError::GraphMotion)?,
+            keyring: self
+                .keyring
+                .reversed()
+                .map_err(LazyGraphMotionReversalError::Keyring)?,
+            chain: self
+                .chain
+                .reversed()
+                .map_err(LazyGraphMotionReversalError::Chain)?,
         })
     }
 }
@@ -179,12 +203,9 @@ pub enum LazyGraphMotionReversalError<M, R, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        graph::occupancy::*,
-        motion::se2::*,
-    };
-    use std::sync::Arc;
+    use crate::{graph::occupancy::*, motion::se2::*};
     use arrayvec::ArrayVec;
+    use std::sync::Arc;
 
     #[test]
     fn test_lazy_graph_motion_connect() {
@@ -220,11 +241,8 @@ mod tests {
             (Cell::new(-30, -30), 1),
             (Cell::new(-60, 20), 1),
         ] {
-            let r: Result<Vec<(ArrayVec<WaypointSE2, 3>, _)>, _> = lazy.connect(
-                from_state, &to_cell
-            )
-            .into_iter()
-            .collect();
+            let r: Result<Vec<(ArrayVec<WaypointSE2, 3>, _)>, _> =
+                lazy.connect(from_state, &to_cell).into_iter().collect();
 
             let connections = r.unwrap();
             assert_eq!(expected_connections, connections.len());

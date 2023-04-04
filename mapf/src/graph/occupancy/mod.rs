@@ -786,5 +786,5 @@ impl<'a, G: Grid> Iterator for VisibilityEdgeIter<'a, G> {
 pub mod sparse_grid;
 pub use sparse_grid::SparseGrid;
 pub mod visibility_graph;
-pub use visibility_graph::{VisibilityGraph, NeighborhoodGraph};
+pub use visibility_graph::{NeighborhoodGraph, VisibilityGraph};
 mod util;

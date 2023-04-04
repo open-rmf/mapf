@@ -87,9 +87,9 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
                 for x in [-3, 1] {
                     vis.change_cells(
                         &(-14..=-1)
-                        .into_iter()
-                        .map(|y| (Cell::new(x, y), true))
-                        .collect()
+                            .into_iter()
+                            .map(|y| (Cell::new(x, y), true))
+                            .collect(),
                     );
                 }
                 vis

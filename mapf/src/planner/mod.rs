@@ -16,14 +16,14 @@
 */
 
 pub mod search;
-pub use search::{Search, AbstractSearch};
+pub use search::{AbstractSearch, Search};
 
 pub mod halt;
 pub use halt::Halt;
 
 use crate::{
-    domain::Configurable,
     algorithm::{Coherent, Solvable},
+    domain::Configurable,
     error::Anyhow,
 };
 use anyhow;
@@ -121,12 +121,7 @@ impl<Algo, Halting> Planner<Algo, Halting> {
     {
         let memory = self.algorithm.initialize(start, &goal)?;
 
-        Ok(Search::new(
-            memory,
-            self.algorithm.clone(),
-            goal,
-            halt,
-        ))
+        Ok(Search::new(memory, self.algorithm.clone(), goal, halt))
     }
 
     /// Convert the planner into a single [`Search`] instance. This can be used
@@ -222,7 +217,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        algorithm::{Algorithm, SearchStatus, MinimumCostBound},
+        algorithm::{Algorithm, MinimumCostBound, SearchStatus},
         error::NoError,
     };
     use std::sync::Arc;
@@ -235,7 +230,8 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct CountingSolution {
-        #[allow(dead_code)] cost: u64,
+        #[allow(dead_code)]
+        cost: u64,
         sequence: Vec<u64>,
     }
 
@@ -304,11 +300,7 @@ mod tests {
     impl Coherent<u64, u64> for CountingAlgorithm {
         type InitError = NoError;
 
-        fn initialize(
-            &self,
-            start: u64,
-            _: &u64,
-        ) -> Result<Self::Memory, Self::InitError> {
+        fn initialize(&self, start: u64, _: &u64) -> Result<Self::Memory, Self::InitError> {
             let queue = vec![Arc::new(CountingNode {
                 value: start,
                 cost: 0,
@@ -324,11 +316,7 @@ mod tests {
         let planner = Planner::new(CountingAlgorithm);
         let start = 5;
         let goal = 10;
-        let result = planner
-            .plan(start, goal)
-            .unwrap()
-            .solve()
-            .unwrap();
+        let result = planner.plan(start, goal).unwrap().solve().unwrap();
         assert!(matches!(result, SearchStatus::Solved(_)));
         if let SearchStatus::Solved(solution) = result {
             assert!(solution.sequence.len() == (goal - start + 1) as usize);
@@ -342,11 +330,7 @@ mod tests {
         let planner = Planner::new(CountingAlgorithm);
         let start = 10;
         let goal = 5;
-        let result = planner
-            .plan(start, goal)
-            .unwrap()
-            .solve()
-            .unwrap();
+        let result = planner.plan(start, goal).unwrap().solve().unwrap();
         assert!(matches!(result, SearchStatus::Impossible));
     }
 

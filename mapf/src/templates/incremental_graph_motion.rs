@@ -16,20 +16,17 @@
 */
 
 use crate::{
-    graph::{Graph, Edge},
     domain::{
-        Domain, IncrementalExtrapolator, Activity, Reversible,
-        KeyedSpace, Keyed, PartialKeyed, Keyring, SelfKey, Backtrack,
+        Activity, Backtrack, Domain, IncrementalExtrapolator, Keyed, KeyedSpace, Keyring,
+        PartialKeyed, Reversible, SelfKey,
     },
+    error::StdError,
+    graph::{Edge, Graph},
     motion::Timed,
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
     util::{FlatResultMapTrait, ForkIter},
-    error::StdError,
 };
-use std::{
-    borrow::Borrow,
-    fmt::Debug,
-};
+use std::{borrow::Borrow, fmt::Debug};
 
 /// `IncrementalGraphMotion` defines a domain and activity that moves over a
 /// spatial graph as thoroughly as possible. This is generally used for motion
@@ -61,12 +58,13 @@ impl<S, G, E> IncrementalGraphMotion<S, G, E> {
         G::Key: Clone,
         G::EdgeAttributes: Clone,
     {
-        let vertex = self.space.vertex_of(
-            self.space.key_for(&original_state.base_state).borrow()
-        ).clone();
+        let vertex = self
+            .space
+            .vertex_of(self.space.key_for(&original_state.base_state).borrow())
+            .clone();
         IncrementalState {
             target: original_state.target.clone(),
-            base_state: self.space.make_keyed_state(vertex, waypoint)
+            base_state: self.space.make_keyed_state(vertex, waypoint),
         }
     }
 }
@@ -111,7 +109,10 @@ where
     {
         if let Some((to_key, with_guidance)) = from_state.target.clone() {
             return ForkIter::Left(
-                [self.graph.vertex(&to_key).ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))]
+                [self
+                    .graph
+                    .vertex(&to_key)
+                    .ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))]
                 .into_iter()
                 .flat_map(move |r| {
                     let from_state = from_state.clone();
@@ -127,108 +128,110 @@ where
                         let from_state = from_state.clone();
                         let to_key = to_key.clone();
                         let with_guidance = with_guidance.clone();
-                        extrapolation
-                        .into_iter()
-                        .map(move |r| {
+                        extrapolation.into_iter().map(move |r| {
                             let from_state = from_state.clone();
                             let to_key = to_key.clone();
                             let with_guidance = with_guidance.clone();
-                            r
-                            .map_err(GraphMotionError::Extrapolator)
-                            .map(move |(action, waypoint, progress)| {
-                                let to_key = to_key.clone();
-                                let with_guidance = with_guidance.clone();
-                                if progress.incomplete() {
-                                    let key = self.space.key_for(
-                                        &from_state.base_state
-                                    ).borrow().borrow().clone();
-                                    let state = self.space.make_keyed_state(
-                                        key, waypoint,
-                                    );
-                                    let state = IncrementalState {
-                                        target: Some((to_key, with_guidance)),
-                                        base_state: state,
-                                    };
-                                    (action, state)
-                                } else {
-                                    let state = self.space.make_keyed_state(
-                                        to_key, waypoint
-                                    );
-                                    let state = IncrementalState {
-                                        target: None,
-                                        base_state: state,
-                                    };
-                                    (action, state)
-                                }
-                            })
+                            r.map_err(GraphMotionError::Extrapolator).map(
+                                move |(action, waypoint, progress)| {
+                                    let to_key = to_key.clone();
+                                    let with_guidance = with_guidance.clone();
+                                    if progress.incomplete() {
+                                        let key = self
+                                            .space
+                                            .key_for(&from_state.base_state)
+                                            .borrow()
+                                            .borrow()
+                                            .clone();
+                                        let state = self.space.make_keyed_state(key, waypoint);
+                                        let state = IncrementalState {
+                                            target: Some((to_key, with_guidance)),
+                                            base_state: state,
+                                        };
+                                        (action, state)
+                                    } else {
+                                        let state = self.space.make_keyed_state(to_key, waypoint);
+                                        let state = IncrementalState {
+                                            target: None,
+                                            base_state: state,
+                                        };
+                                        (action, state)
+                                    }
+                                },
+                            )
                         })
                     })
                 })
-                .map(|x| x.flatten())
-            )
+                .map(|x| x.flatten()),
+            );
         }
 
         // TODO(@mxgrey): Consider ways to reduce code duplication between the
         // left and right forks.
         ForkIter::Right(
-            self
-            .graph
-            .edges_from_vertex(self.space.key_for(&from_state.base_state.clone()).borrow().borrow())
-            .into_iter()
-            .flat_map(move |edge| {
-                let from_state = from_state.clone();
-                let to_key = edge.to_vertex().clone();
-                let with_guidance = edge.attributes().clone();
-                self
-                .graph
-                .vertex(&to_key)
-                .ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))
-                .flat_result_map(move |v| {
-                    let extrapolation = self.extrapolator.incremental_extrapolate(
-                        self.space.waypoint(&from_state.base_state).borrow(),
-                        v.borrow(),
-                        &with_guidance,
-                    );
-
+            self.graph
+                .edges_from_vertex(
+                    self.space
+                        .key_for(&from_state.base_state.clone())
+                        .borrow()
+                        .borrow(),
+                )
+                .into_iter()
+                .flat_map(move |edge| {
                     let from_state = from_state.clone();
-                    let to_key = to_key.clone();
-                    let with_guidance = with_guidance.clone();
-                    extrapolation
-                    .into_iter()
-                    .map(move |r| {
-                        let from_state = from_state.clone();
-                        let to_key = to_key.clone();
-                        let with_guidance = with_guidance.clone();
-                        r
-                        .map_err(GraphMotionError::Extrapolator)
-                        .map(move |(action, waypoint, progress)| {
-                            if progress.incomplete() {
-                                let key = self.space.key_for(
-                                    &from_state.base_state
-                                ).borrow().borrow().clone();
-                                let state = self.space.make_keyed_state(
-                                    key, waypoint
-                                );
-                                let state = IncrementalState {
-                                    target: Some((to_key.clone(), with_guidance.clone())),
-                                    base_state: state,
-                                };
-                                (action, state)
-                            } else {
-                                let state = self.space.make_keyed_state(
-                                    to_key.clone(), waypoint,
-                                );
-                                let state = IncrementalState {
-                                    target: None,
-                                    base_state: state
-                                };
-                                (action, state)
-                            }
+                    let to_key = edge.to_vertex().clone();
+                    let with_guidance = edge.attributes().clone();
+                    self.graph
+                        .vertex(&to_key)
+                        .ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))
+                        .flat_result_map(move |v| {
+                            let extrapolation = self.extrapolator.incremental_extrapolate(
+                                self.space.waypoint(&from_state.base_state).borrow(),
+                                v.borrow(),
+                                &with_guidance,
+                            );
+
+                            let from_state = from_state.clone();
+                            let to_key = to_key.clone();
+                            let with_guidance = with_guidance.clone();
+                            extrapolation.into_iter().map(move |r| {
+                                let from_state = from_state.clone();
+                                let to_key = to_key.clone();
+                                let with_guidance = with_guidance.clone();
+                                r.map_err(GraphMotionError::Extrapolator).map(
+                                    move |(action, waypoint, progress)| {
+                                        if progress.incomplete() {
+                                            let key = self
+                                                .space
+                                                .key_for(&from_state.base_state)
+                                                .borrow()
+                                                .borrow()
+                                                .clone();
+                                            let state = self.space.make_keyed_state(key, waypoint);
+                                            let state = IncrementalState {
+                                                target: Some((
+                                                    to_key.clone(),
+                                                    with_guidance.clone(),
+                                                )),
+                                                base_state: state,
+                                            };
+                                            (action, state)
+                                        } else {
+                                            let state = self
+                                                .space
+                                                .make_keyed_state(to_key.clone(), waypoint);
+                                            let state = IncrementalState {
+                                                target: None,
+                                                base_state: state,
+                                            };
+                                            (action, state)
+                                        }
+                                    },
+                                )
+                            })
                         })
-                    })
-                })
-                .map(|x| x.flatten())
-            })
+                        .map(|x| x.flatten())
+                }),
         )
     }
 }
@@ -260,7 +263,7 @@ where
     fn key_for<'a>(&'a self, state: &'a IncrementalState<S::State, G>) -> Self::KeyRef<'a>
     where
         Self: 'a,
-        IncrementalState<S::State, G>: 'a
+        IncrementalState<S::State, G>: 'a,
     {
         self.space.key_for(&state.base_state)
     }
@@ -272,42 +275,58 @@ where
     G: Reversible,
     E: Reversible,
 {
-    type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
+    type ReversalError =
+        GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(IncrementalGraphMotion {
-            space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
-            graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,
-            extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
+            space: self
+                .space
+                .reversed()
+                .map_err(GraphMotionReversalError::Space)?,
+            graph: self
+                .graph
+                .reversed()
+                .map_err(GraphMotionReversalError::Graph)?,
+            extrapolator: self
+                .extrapolator
+                .reversed()
+                .map_err(GraphMotionReversalError::Extrapolator)?,
         })
     }
 }
 
-impl<S, G, E> Backtrack<IncrementalState<S::State, G>, E::IncrementalExtrapolation> for IncrementalGraphMotion<S, G, E>
+impl<S, G, E> Backtrack<IncrementalState<S::State, G>, E::IncrementalExtrapolation>
+    for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>
+        + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
 {
     type BacktrackError = E::BacktrackError;
     fn flip_endpoints(
         &self,
         initial_reverse_state: &IncrementalState<S::State, G>,
         final_reverse_state: &IncrementalState<S::State, G>,
-    ) -> Result<(IncrementalState<S::State, G>, IncrementalState<S::State, G>), Self::BacktrackError> {
-        self
-        .extrapolator
-        .flip_endpoints(
-            self.space.waypoint(&initial_reverse_state.base_state).borrow(),
-            self.space.waypoint(&final_reverse_state.base_state).borrow(),
-        )
-        .map(|(initial_forward_waypoint, final_forward_waypoint)| {
-            (
-                self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
-                self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+    ) -> Result<(IncrementalState<S::State, G>, IncrementalState<S::State, G>), Self::BacktrackError>
+    {
+        self.extrapolator
+            .flip_endpoints(
+                self.space
+                    .waypoint(&initial_reverse_state.base_state)
+                    .borrow(),
+                self.space
+                    .waypoint(&final_reverse_state.base_state)
+                    .borrow(),
             )
-        })
+            .map(|(initial_forward_waypoint, final_forward_waypoint)| {
+                (
+                    self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
+                    self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+                )
+            })
     }
 
     fn backtrack(
@@ -316,17 +335,25 @@ where
         parent_reverse_state: &IncrementalState<S::State, G>,
         reverse_action: &E::IncrementalExtrapolation,
         child_reverse_state: &IncrementalState<S::State, G>,
-    ) -> Result<(E::IncrementalExtrapolation, IncrementalState<S::State, G>), Self::BacktrackError> {
-        self.extrapolator.backtrack(
-            self.space.waypoint(&parent_forward_state.base_state).borrow(),
-            self.space.waypoint(&parent_reverse_state.base_state).borrow(),
-            reverse_action,
-            self.space.waypoint(&child_reverse_state.base_state).borrow()
-        )
-        .map(|(action, waypoint)| {
-            let state = self.update_state_waypoint(waypoint, child_reverse_state);
-            (action, state)
-        })
+    ) -> Result<(E::IncrementalExtrapolation, IncrementalState<S::State, G>), Self::BacktrackError>
+    {
+        self.extrapolator
+            .backtrack(
+                self.space
+                    .waypoint(&parent_forward_state.base_state)
+                    .borrow(),
+                self.space
+                    .waypoint(&parent_reverse_state.base_state)
+                    .borrow(),
+                reverse_action,
+                self.space
+                    .waypoint(&child_reverse_state.base_state)
+                    .borrow(),
+            )
+            .map(|(action, waypoint)| {
+                let state = self.update_state_waypoint(waypoint, child_reverse_state);
+                (action, state)
+            })
     }
 }
 
@@ -364,7 +391,10 @@ where
 
 impl<BaseState, G: Graph> From<BaseState> for IncrementalState<BaseState, G> {
     fn from(base_state: BaseState) -> Self {
-        IncrementalState { target: None, base_state }
+        IncrementalState {
+            target: None,
+            base_state,
+        }
     }
 }
 
@@ -380,7 +410,10 @@ impl<BaseState: Keyed, G: Graph> Keyed for IncrementalState<BaseState, G> {
 
 impl<BaseState: SelfKey, G: Graph> SelfKey for IncrementalState<BaseState, G> {
     type KeyRef<'a> = BaseState::KeyRef<'a> where BaseState: 'a, G: 'a;
-    fn key<'a>(&'a self) -> Self::KeyRef<'a> where Self: 'a {
+    fn key<'a>(&'a self) -> Self::KeyRef<'a>
+    where
+        Self: 'a,
+    {
         self.base_state.key()
     }
 }
@@ -399,8 +432,8 @@ impl<BaseState: Timed, G: Graph> Timed for IncrementalState<BaseState, G> {
 mod tests {
     use super::*;
     use crate::{
-        graph::SimpleGraph,
         domain::Initializable,
+        graph::SimpleGraph,
         motion::se2::{Point, StarburstSE2, StateSE2},
     };
 
@@ -419,25 +452,31 @@ mod tests {
 
         let graph = SimpleGraph::from_iters(
             [
-                Point::new(-1.0, 0.0), // 0
-                Point::new(0.0, 0.0), // 1
-                Point::new(1.0, 0.0), // 2
+                Point::new(-1.0, 0.0),  // 0
+                Point::new(0.0, 0.0),   // 1
+                Point::new(1.0, 0.0),   // 2
                 Point::new(-1.0, -1.0), // 3
-                Point::new(1.0, -1.0), // 4
-                Point::new(0.0, 1.0), // 5
+                Point::new(1.0, -1.0),  // 4
+                Point::new(0.0, 1.0),   // 5
             ],
             [
-                (0, 1, ()), (1, 0, ()),
-                (2, 1, ()), (1, 2, ()),
-                (3, 1, ()), (1, 3, ()),
-                (4, 1, ()), (1, 4, ()),
-                (5, 1, ()), (1, 5, ()),
-            ]
+                (0, 1, ()),
+                (1, 0, ()),
+                (2, 1, ()),
+                (1, 2, ()),
+                (3, 1, ()),
+                (1, 3, ()),
+                (4, 1, ()),
+                (1, 4, ()),
+                (5, 1, ()),
+                (1, 5, ()),
+            ],
         );
 
         const R: u32 = 100;
         let init = StarburstSE2::for_start(graph);
-        let states: Result<Vec<IncrementalState<StateSE2<usize, R>, SimpleGraph<Point, ()>>>, _> = init.initialize(1, &4).collect();
+        let states: Result<Vec<IncrementalState<StateSE2<usize, R>, SimpleGraph<Point, ()>>>, _> =
+            init.initialize(1, &4).collect();
         let states = states.unwrap();
         assert!(states.len() == 5);
     }

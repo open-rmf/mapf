@@ -16,9 +16,9 @@
 */
 
 use crate::{
-    domain::{Weighted, Cost, Reversible},
-    motion::{Timed, Measurable},
+    domain::{Cost, Reversible, Weighted},
     error::NoError,
+    motion::{Measurable, Timed},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -59,14 +59,11 @@ impl TravelEffortCost {
     /// * `radians` - The agent will accept a detour that involves `t * radians`
     /// spinning where `t` is how many seconds the agent can arrive earlier by
     /// allowing the spinning.
-    pub fn save_one_second_with_detour_up_to(
-        meters: f64,
-        radians: f64,
-    ) -> Self {
+    pub fn save_one_second_with_detour_up_to(meters: f64, radians: f64) -> Self {
         Self {
             time: 1.0,
-            translation: 1.0/meters,
-            rotation: 1.0/radians,
+            translation: 1.0 / meters,
+            rotation: 1.0 / radians,
         }
     }
 }
@@ -93,7 +90,7 @@ impl<State: Timed, Action: Measurable<State>> Weighted<State, Action> for Travel
         &self,
         from_state: &State,
         action: &Action,
-        to_state: &State
+        to_state: &State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         // Using the absolute value of the difference allows this same
         // implementation to work both forwards and backwards in time. We are
@@ -108,17 +105,17 @@ impl<State: Timed, Action: Measurable<State>> Weighted<State, Action> for Travel
         Ok(Some(Cost(cost)))
     }
 
-    fn initial_cost(
-        &self,
-        _: &State,
-    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    fn initial_cost(&self, _: &State) -> Result<Option<Self::Cost>, Self::WeightedError> {
         Ok(Some(Cost(0.0)))
     }
 }
 
 impl Reversible for TravelEffortCost {
     type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError> where Self: Sized {
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized,
+    {
         Ok(*self)
     }
 }

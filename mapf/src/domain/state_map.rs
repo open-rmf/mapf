@@ -26,10 +26,8 @@ pub trait ProjectState<State>: StateSubspace {
     type ProjectionError;
 
     /// Project a state down to the target state space.
-    fn project(
-        &self,
-        state: &State
-    ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
+    fn project(&self, state: &State)
+        -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
 }
 
 pub trait LiftState<State>: StateSubspace {
@@ -42,7 +40,7 @@ pub trait LiftState<State>: StateSubspace {
     fn lift(
         &self,
         original: &State,
-        projection: Self::ProjectedState
+        projection: Self::ProjectedState,
     ) -> Result<Option<State>, Self::LiftError>;
 }
 
@@ -60,7 +58,9 @@ pub struct NoStateSubspace<State> {
 }
 impl<State> NoStateSubspace<State> {
     pub fn new() -> Self {
-        Self { _ignore: Default::default() }
+        Self {
+            _ignore: Default::default(),
+        }
     }
 }
 impl<State> StateSubspace for NoStateSubspace<State> {
@@ -87,13 +87,17 @@ pub struct StateInto<ProjectedState> {
 }
 impl<ProjectedState> StateInto<ProjectedState> {
     pub fn new() -> Self {
-        Self { _ignore: Default::default() }
+        Self {
+            _ignore: Default::default(),
+        }
     }
 }
 impl<ProjectedState> StateSubspace for StateInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
-impl<State: Clone + Into<ProjectedState>, ProjectedState> ProjectState<State> for StateInto<ProjectedState> {
+impl<State: Clone + Into<ProjectedState>, ProjectedState> ProjectState<State>
+    for StateInto<ProjectedState>
+{
     type ProjectionError = NoError;
     fn project(&self, state: &State) -> Result<Option<ProjectedState>, NoError> {
         Ok(Some(state.clone().into()))
@@ -119,7 +123,9 @@ pub struct StateMaybeInto<ProjectedState> {
 }
 impl<ProjectedState> StateMaybeInto<ProjectedState> {
     pub fn new() -> Self {
-        Self { _ignore: Default::default() }
+        Self {
+            _ignore: Default::default(),
+        }
     }
 }
 impl<ProjectedState> StateSubspace for StateMaybeInto<ProjectedState> {

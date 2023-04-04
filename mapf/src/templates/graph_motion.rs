@@ -16,13 +16,13 @@
 */
 
 use crate::{
-    graph::{Graph, Edge},
     domain::{
-        Domain, Extrapolator, Activity, Reversible,
-        KeyedSpace, Keyed, PartialKeyed, Keyring, Backtrack,
+        Activity, Backtrack, Domain, Extrapolator, Keyed, KeyedSpace, Keyring, PartialKeyed,
+        Reversible,
     },
-    util::FlatResultMapTrait,
     error::{StdError, ThisError},
+    graph::{Edge, Graph},
+    util::FlatResultMapTrait,
 };
 use std::borrow::Borrow;
 
@@ -34,19 +34,16 @@ pub struct GraphMotion<S, G, E> {
 }
 
 impl<S, G, E> GraphMotion<S, G, E> {
-    fn update_state_waypoint(
-        &self,
-        waypoint: S::Waypoint,
-        original_state: &S::State,
-    ) -> S::State
+    fn update_state_waypoint(&self, waypoint: S::Waypoint, original_state: &S::State) -> S::State
     where
         S: KeyedSpace<G::Key>,
         G: Graph,
         G::Key: Clone,
     {
-        let vertex = self.space.vertex_of(
-            self.space.key_for(&original_state).borrow()
-        ).clone();
+        let vertex = self
+            .space
+            .vertex_of(self.space.key_for(&original_state).borrow())
+            .clone();
         self.space.make_keyed_state(vertex, waypoint)
     }
 }
@@ -102,42 +99,39 @@ where
         Self::ActivityError: 'a,
         S::State: 'a,
     {
-        self
-        .graph
-        .edges_from_vertex(self.space.key_for(&from_state.clone()).borrow().borrow())
-        .into_iter()
-        .flat_map(move |edge| {
-            let from_state = from_state.clone();
-            let to_vertex = edge.to_vertex().clone();
-            let edge = edge.attributes().clone();
-            self
-            .graph
-            .vertex(&to_vertex)
-            .ok_or_else(|| GraphMotionError::MissingVertex(to_vertex.clone()))
-            .flat_result_map(move |v| {
+        self.graph
+            .edges_from_vertex(self.space.key_for(&from_state.clone()).borrow().borrow())
+            .into_iter()
+            .flat_map(move |edge| {
                 let from_state = from_state.clone();
-                let to_vertex = to_vertex.clone();
-                let extrapolations = self.extrapolator.extrapolate(
-                    self.space.waypoint(&from_state).borrow(), v.borrow(), &edge
-                );
-
-                extrapolations
-                .into_iter()
-                .map(move |r| {
-                    let to_vertex = to_vertex.clone();
-                    r
-                    .map_err(GraphMotionError::Extrapolator)
-                    .map(move |(action, waypoint)| {
+                let to_vertex = edge.to_vertex().clone();
+                let edge = edge.attributes().clone();
+                self.graph
+                    .vertex(&to_vertex)
+                    .ok_or_else(|| GraphMotionError::MissingVertex(to_vertex.clone()))
+                    .flat_result_map(move |v| {
+                        let from_state = from_state.clone();
                         let to_vertex = to_vertex.clone();
-                        let state = self.space.make_keyed_state(
-                            to_vertex.clone(), waypoint
+                        let extrapolations = self.extrapolator.extrapolate(
+                            self.space.waypoint(&from_state).borrow(),
+                            v.borrow(),
+                            &edge,
                         );
-                        (action, state)
+
+                        extrapolations.into_iter().map(move |r| {
+                            let to_vertex = to_vertex.clone();
+                            r.map_err(GraphMotionError::Extrapolator).map(
+                                move |(action, waypoint)| {
+                                    let to_vertex = to_vertex.clone();
+                                    let state =
+                                        self.space.make_keyed_state(to_vertex.clone(), waypoint);
+                                    (action, state)
+                                },
+                            )
+                        })
                     })
-                })
+                    .map(|x| x.flatten())
             })
-            .map(|x| x.flatten())
-        })
     }
 }
 
@@ -168,7 +162,7 @@ where
     fn key_for<'a>(&'a self, state: &'a S::State) -> Self::KeyRef<'a>
     where
         Self: 'a,
-        S::State: 'a
+        S::State: 'a,
     {
         self.space.key_for(state)
     }
@@ -180,12 +174,22 @@ where
     G: Reversible,
     E: Reversible,
 {
-    type ReversalError = GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
+    type ReversalError =
+        GraphMotionReversalError<S::ReversalError, G::ReversalError, E::ReversalError>;
     fn reversed(&self) -> Result<Self, Self::ReversalError> {
         Ok(GraphMotion {
-            space: self.space.reversed().map_err(GraphMotionReversalError::Space)?,
-            graph: self.graph.reversed().map_err(GraphMotionReversalError::Graph)?,
-            extrapolator: self.extrapolator.reversed().map_err(GraphMotionReversalError::Extrapolator)?,
+            space: self
+                .space
+                .reversed()
+                .map_err(GraphMotionReversalError::Space)?,
+            graph: self
+                .graph
+                .reversed()
+                .map_err(GraphMotionReversalError::Graph)?,
+            extrapolator: self
+                .extrapolator
+                .reversed()
+                .map_err(GraphMotionReversalError::Extrapolator)?,
         })
     }
 }
@@ -196,7 +200,8 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes> + Backtrack<S::Waypoint, E::Extrapolation>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>
+        + Backtrack<S::Waypoint, E::Extrapolation>,
 {
     type BacktrackError = E::BacktrackError;
     fn flip_endpoints(
@@ -204,18 +209,17 @@ where
         initial_reverse_state: &S::State,
         final_reverse_state: &S::State,
     ) -> Result<(S::State, S::State), Self::BacktrackError> {
-        self
-        .extrapolator
-        .flip_endpoints(
-            self.space.waypoint(&initial_reverse_state).borrow(),
-            self.space.waypoint(&final_reverse_state).borrow()
-        )
-        .map(|(initial_forward_waypoint, final_forward_waypoint)| {
-            (
-                self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
-                self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+        self.extrapolator
+            .flip_endpoints(
+                self.space.waypoint(&initial_reverse_state).borrow(),
+                self.space.waypoint(&final_reverse_state).borrow(),
             )
-        })
+            .map(|(initial_forward_waypoint, final_forward_waypoint)| {
+                (
+                    self.update_state_waypoint(initial_forward_waypoint, final_reverse_state),
+                    self.update_state_waypoint(final_forward_waypoint, initial_reverse_state),
+                )
+            })
     }
 
     fn backtrack(
@@ -225,19 +229,19 @@ where
         reverse_action: &E::Extrapolation,
         child_reverse_state: &S::State,
     ) -> Result<(E::Extrapolation, S::State), Self::BacktrackError> {
-        self.extrapolator.backtrack(
-            self.space.waypoint(&parent_forward_state).borrow(),
-            self.space.waypoint(&parent_reverse_state).borrow(),
-            reverse_action,
-            self.space.waypoint(&child_reverse_state).borrow()
-        )
-        .map(|(action, waypoint)| {
-            let state = self.update_state_waypoint(waypoint, child_reverse_state);
-            (action, state)
-        })
+        self.extrapolator
+            .backtrack(
+                self.space.waypoint(&parent_forward_state).borrow(),
+                self.space.waypoint(&parent_reverse_state).borrow(),
+                reverse_action,
+                self.space.waypoint(&child_reverse_state).borrow(),
+            )
+            .map(|(action, waypoint)| {
+                let state = self.update_state_waypoint(waypoint, child_reverse_state);
+                (action, state)
+            })
     }
 }
-
 
 #[derive(ThisError, Debug)]
 pub enum GraphMotionError<K, E> {
@@ -262,7 +266,7 @@ mod tests {
     use super::*;
     use crate::{
         graph::SimpleGraph,
-        motion::r2::{Position, DiscreteSpaceTimeR2, LineFollow},
+        motion::r2::{DiscreteSpaceTimeR2, LineFollow, Position},
     };
     use std::sync::Arc;
 
@@ -274,12 +278,7 @@ mod tests {
                 Position::new(1.0, 0.0),
                 Position::new(3.0, -1.0),
             ],
-            [
-                (0, 1, ()),
-                (1, 0, ()),
-                (0, 2, ()),
-                (2, 1, ()),
-            ],
+            [(0, 1, ()), (1, 0, ()), (0, 2, ()), (2, 1, ())],
         );
         let graph = Arc::new(graph);
 

@@ -66,7 +66,7 @@ pub trait Graph {
 
     /// The return type that allows users to iterate over the edges that come
     /// out of a vertex.
-    type EdgeIter<'a>: IntoIterator<Item=Self::Edge<'a>> + 'a
+    type EdgeIter<'a>: IntoIterator<Item = Self::Edge<'a>> + 'a
     where
         Self: 'a,
         Self::Vertex: 'a,
@@ -85,7 +85,7 @@ pub trait Graph {
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type LazyEdgeIter<'a>: IntoIterator<Item=Self::Edge<'a>> + 'a
+    type LazyEdgeIter<'a>: IntoIterator<Item = Self::Edge<'a>> + 'a
     where
         Self: 'a,
         Self::Vertex: 'a,
@@ -109,7 +109,7 @@ pub trait Graph {
     fn lazy_edges_between<'a>(
         &'a self,
         from_key: &Self::Key,
-        to_key: &Self::Key
+        to_key: &Self::Key,
     ) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,

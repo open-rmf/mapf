@@ -30,11 +30,11 @@ pub trait Domain {
 
 pub mod action_map;
 pub mod activity;
-pub mod conflict;
-pub mod configurable;
-pub mod cost;
 pub mod closable;
+pub mod configurable;
+pub mod conflict;
 pub mod connectable;
+pub mod cost;
 pub mod define_trait;
 pub mod domain_map;
 pub mod extrapolator;
@@ -49,11 +49,12 @@ pub mod weighted;
 
 pub use action_map::*;
 pub use activity::*;
-pub use conflict::*;
-pub use configurable::*;
-pub use cost::Cost;
 pub use closable::*;
+pub use closable::*;
+pub use configurable::*;
+pub use conflict::*;
 pub use connectable::*;
+pub use cost::Cost;
 pub use define_trait::*;
 pub use domain_map::*;
 pub use extrapolator::*;
@@ -65,4 +66,3 @@ pub use satisfiable::*;
 pub use space::*;
 pub use state_map::*;
 pub use weighted::*;
-pub use closable::*;
