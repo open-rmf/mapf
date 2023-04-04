@@ -30,12 +30,16 @@ pub struct TravelEffortCost {
 
 impl TravelEffortCost {
     /// Use this function to intuitively set the weights for travel effort.
-    /// Allow the agent to arrive at its goal one second later than the
-    /// time-optimal path if doing so will avoid a detour of `meters` of
-    /// translation and `radians` of spinning. This is proportional, so an
-    /// arrival delay of `t` seconds will be permitted to avoid a detour of
-    /// `t * meters` translation and `t * radians` rotation.
-    pub fn delay_one_second_instead_of_detouring_by(
+    /// Allow the agent to take a detour of up to `meters` translation and
+    /// `radians` spinning from the shortest path in order to arrive at the goal
+    /// one second earlier. These measures are proportional, so in general a
+    /// detour of `t * meters` translation and `t * radians` spinning will be
+    /// allowed to arrive at the goal `t` seconds earlier.
+    ///
+    /// The `meters` and `radians` weights will only have an effect in the
+    /// presence of moving obstacles which would delay the agent if it were to
+    /// move along its shortest path.
+    pub fn save_one_second_with_detour_of(
         meters: f64,
         radians: f64,
     ) -> Self {
@@ -47,14 +51,14 @@ impl TravelEffortCost {
     }
 }
 
-/// Allow 1s of delay to avoid 1m of detour.
-const DEFAULT_TRANSLATION_EFFORT_ALLOWANCE: f64 = 1.0;
-/// Allow 1s of delay to avoid 180-degrees of excess rotation.
-const DEFAULT_ROTATION_EFFORT_ALLOWANCE: f64 = 180.0 * std::f64::consts::PI / 180.0;
+/// Detour by up to 5m to arrive one second earlier.
+const DEFAULT_TRANSLATION_EFFORT_ALLOWANCE: f64 = 5.0;
+/// Spin by up to 360 degrees to arrive one second earlier.
+const DEFAULT_ROTATION_EFFORT_ALLOWANCE: f64 = 360.0 * std::f64::consts::PI / 180.0;
 
 impl Default for TravelEffortCost {
     fn default() -> Self {
-        TravelEffortCost::delay_one_second_instead_of_detouring_by(
+        TravelEffortCost::save_one_second_with_detour_of(
             DEFAULT_TRANSLATION_EFFORT_ALLOWANCE,
             DEFAULT_ROTATION_EFFORT_ALLOWANCE,
         )

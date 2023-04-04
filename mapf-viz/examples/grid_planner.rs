@@ -36,7 +36,7 @@ use mapf::{
     },
     motion::{
         Trajectory, Motion, OverlayedDynamicEnvironment, DynamicEnvironment,
-        CircularProfile, DynamicCircularObstacle,
+        CircularProfile, DynamicCircularObstacle, TravelEffortCost,
         se2::{
             Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
             DifferentialDriveLineFollow, StartSE2, Orientation,
@@ -222,12 +222,14 @@ impl<Message> EndpointSelector<Message> {
             show_details: false,
             // start_cell: None,
             // start_cell: Some(Cell::new(-7, -4)),
-            start_cell: Some(Cell::new(0, 0)),
+            // start_cell: Some(Cell::new(0, 0)),
+            start_cell: Some(Cell::new(-1, -13)),
             start_angle: None,
             start_valid: true,
             // goal_cell: None,
             // goal_cell: Some(Cell::new(18, 3)),
-            goal_cell: Some(Cell::new(10, 0)),
+            // goal_cell: Some(Cell::new(10, 0)),
+            goal_cell: Some(Cell::new(-1, 6)),
             goal_angle: None,
             goal_valid: true,
             start_visibility: Vec::new(),
@@ -848,7 +850,14 @@ impl App {
                 );
 
                 let domain = InformedSearch::new_sipp_se2(
-                    activity_graph, heuristic_graph, extrapolator, environment,
+                    activity_graph,
+                    heuristic_graph,
+                    extrapolator,
+                    environment,
+                    TravelEffortCost::delay_one_second_instead_of_detouring_by(
+                        5.0,
+                        360_f64.to_radians(),
+                    ),
                 ).unwrap();
 
                 let start = StartSE2 {
@@ -886,6 +895,12 @@ impl App {
                             self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap();
                             println!(" ======================= ");
                             println!("Trajectory: {:#?}", self.canvas.program.layers.3.solution);
+                            println!(
+                                "Arrival time: {:?}, cost: {:?}",
+                                self.canvas.program.layers.3.solution.as_ref()
+                                    .map(|t| t.motion_duration().as_secs_f64()).unwrap_or(0.0),
+                                solution.total_cost.0,
+                            );
                             self.canvas.cache.clear();
                         },
                         SearchStatus::Impossible => {
