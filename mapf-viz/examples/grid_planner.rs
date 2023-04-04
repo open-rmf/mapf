@@ -854,7 +854,7 @@ impl App {
                     heuristic_graph,
                     extrapolator,
                     environment,
-                    TravelEffortCost::delay_one_second_instead_of_detouring_by(
+                    TravelEffortCost::save_one_second_with_detour_up_to(
                         5.0,
                         360_f64.to_radians(),
                     ),

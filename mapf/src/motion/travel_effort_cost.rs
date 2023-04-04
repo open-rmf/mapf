@@ -36,10 +36,30 @@ impl TravelEffortCost {
     /// detour of `t * meters` translation and `t * radians` spinning will be
     /// allowed to arrive at the goal `t` seconds earlier.
     ///
-    /// The `meters` and `radians` weights will only have an effect in the
-    /// presence of moving obstacles which would delay the agent if it were to
-    /// move along its shortest path.
-    pub fn save_one_second_with_detour_of(
+    /// "Detour" in this context means taking a path which is longer than the
+    /// shortest available path to the goal. This can be advantageous if the
+    /// shortest possible path is crowded with moving obstacles that will slow
+    /// down the agent's ability to make progress. Therefore the `meters` and
+    /// `radians` weights will only have an effect in the presence of moving
+    /// obstacles which would delay the agent if it were to move along the
+    /// shortest possible path to its goal.
+    ///
+    /// Broadly speaking, larger values tend to result in longer planning times
+    /// in environments cluttered with dynamic obstacles or other moving agents.
+    /// That's because they allow for longer detours and finding those detours
+    /// requires more exploration. Using small values here can make planning
+    /// times faster, but then the agent is less likely to search for time-saving
+    /// detours, for better or worse.
+    ///
+    /// # Arguments
+    ///
+    /// * `meters` - The agent will accept a detour of up to `t * meters` where
+    /// `t` is how many seconds the agent can arrive earlier by detouring.
+    ///
+    /// * `radians` - The agent will accept a detour that involves `t * radians`
+    /// spinning where `t` is how many seconds the agent can arrive earlier by
+    /// allowing the spinning.
+    pub fn save_one_second_with_detour_up_to(
         meters: f64,
         radians: f64,
     ) -> Self {
@@ -58,7 +78,7 @@ const DEFAULT_ROTATION_EFFORT_ALLOWANCE: f64 = 360.0 * std::f64::consts::PI / 18
 
 impl Default for TravelEffortCost {
     fn default() -> Self {
-        TravelEffortCost::save_one_second_with_detour_of(
+        TravelEffortCost::save_one_second_with_detour_up_to(
             DEFAULT_TRANSLATION_EFFORT_ALLOWANCE,
             DEFAULT_ROTATION_EFFORT_ALLOWANCE,
         )
