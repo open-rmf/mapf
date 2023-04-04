@@ -356,7 +356,7 @@ mod tests {
             .solution().unwrap();
         let expected_cost = expected_cost + expected_delay;
         // TODO(@mxgrey): Make a more specific expectation.
-        assert!(solution.total_cost.0 >= expected_cost);
+        assert_relative_eq!(solution.total_cost.0, expected_cost, epsilon=0.5);
     }
 
     #[test]

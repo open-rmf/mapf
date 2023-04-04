@@ -1132,6 +1132,29 @@ where
                         }
                     }
                 }
+            } else {
+                // The obstacle may be moving towards a head-to-head collision
+                // with the agent. If it does not have enough perpendicular
+                // motion, then there won't be any quadratic hints available.
+                // There isn't any waiting that the agent can do along the line
+                // to avoid a head-to-head collision. However, if the obstacle
+                // "vanishes" at the end of its trajectory and its trajectory
+                // ends before reaching the agent's initial position then there
+                // will be a clearance available for the agent. This is not a
+                // physically realistic scenario but it could arise in practice
+                // from pseudo obstacles or limited horizon obstacles.
+                if let Some((t, _)) = compute_stationary_proximity(
+                    obs_r, q, agent_v, min_distance_squared,
+                ) {
+                    if t >= 0.0 {
+                        let at_point = q + agent_v * t;
+                        wait_hints.push(WaitHint {
+                            at_point,
+                            for_obstacle,
+                            until: obs_wp1.time,
+                        })
+                    }
+                }
             }
         }
     }
