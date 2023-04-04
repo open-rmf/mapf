@@ -15,7 +15,8 @@
  *
 */
 
-use super::{timed, Interpolation};
+use super::{timed, Interpolation, r2::Positioned, se2::MaybeOriented};
+use arrayvec::ArrayVec;
 
 pub trait Waypoint:
     timed::Timed + Interpolation<Self::Position, Self::Velocity> + Clone + std::fmt::Debug
@@ -27,6 +28,7 @@ pub trait Waypoint:
     type Velocity;
 }
 
+/// A trait for states and actions to yield their waypoints
 pub trait IntegrateWaypoints<W> {
     type WaypointIntegrationError;
 
@@ -46,4 +48,53 @@ pub trait IntegrateWaypoints<W> {
         Self: 'a,
         Self::WaypointIntegrationError: 'a,
         W: 'a;
+}
+
+/// A trait for actions to provide a measurement of the distance travelled
+/// between its initial and final states.
+pub trait Measurable<State> {
+    fn arclength(&self, from_state: &State, to_state: &State) -> Arclength;
+}
+
+/// The total distance travelled during a motion, as measured by arclength of
+/// the path. Translational and rotational distance covered are separated as
+/// independent measures. If a space has no rotational component (e.g. R2), then
+/// the rotational will always be zero.
+pub struct Arclength {
+    /// Translational arclength travelled in meters
+    pub translational: f64,
+    /// Rotational arclength travelled in radians
+    pub rotational: f64,
+}
+
+impl<S, W, const N: usize> Measurable<S> for ArrayVec<W, N>
+where
+    S: Positioned + MaybeOriented,
+    W: Positioned + MaybeOriented,
+{
+    fn arclength(&self, from_state: &S, to_state: &S) -> Arclength {
+        let mut translational = 0.0;
+        let mut rotational = 0.0;
+        let mut last_p = from_state.point();
+        let mut last_yaw = from_state.maybe_oriented();
+
+        for wp in self {
+            let p = wp.point();
+            translational += (p - last_p).norm();
+            last_p = p;
+
+            let yaw = wp.maybe_oriented();
+            if let (Some(yaw), Some(last_yaw)) = (yaw, last_yaw) {
+                rotational += (yaw / last_yaw).angle().abs();
+            }
+
+            if let Some(yaw) = yaw {
+                last_yaw = Some(yaw);
+            }
+        }
+
+        // The final state should be almost exactly the same as the last move
+        assert!((to_state.point() - last_p).norm() < 1e-3);
+        Arclength { translational, rotational }
+    }
 }

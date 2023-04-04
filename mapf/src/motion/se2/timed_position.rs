@@ -19,6 +19,8 @@ use super::{Position, Vector, Velocity};
 use crate::{
     motion::{
         self, timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
+        r2::{Positioned, MaybePositioned},
+        se2::{Oriented, MaybeOriented, Orientation},
     },
     error::NoError,
 };
@@ -53,6 +55,30 @@ impl WaypointSE2 {
             time: TimePoint::from_secs_f64(time),
             position: Position::new(Vector::new(x, y), yaw),
         }
+    }
+}
+
+impl Positioned for WaypointSE2 {
+    fn point(&self) -> motion::r2::Point {
+        self.position.point()
+    }
+}
+
+impl MaybePositioned for WaypointSE2 {
+    fn maybe_point(&self) -> Option<motion::r2::Point> {
+        Some(self.position.point())
+    }
+}
+
+impl Oriented for WaypointSE2 {
+    fn oriented(&self) -> Orientation {
+        self.position.rotation
+    }
+}
+
+impl MaybeOriented for WaypointSE2 {
+    fn maybe_oriented(&self) -> Option<Orientation> {
+        Some(self.position.rotation)
     }
 }
 
@@ -187,6 +213,7 @@ where
         .collect()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

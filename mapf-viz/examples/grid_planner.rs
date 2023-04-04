@@ -882,7 +882,10 @@ impl App {
                         SearchStatus::Solved(solution) => {
 
                             println!("Solution: {:#?}", solution);
+                            println!(" ======================= ");
                             self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap();
+                            println!(" ======================= ");
+                            println!("Trajectory: {:#?}", self.canvas.program.layers.3.solution);
                             self.canvas.cache.clear();
                         },
                         SearchStatus::Impossible => {

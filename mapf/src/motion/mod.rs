@@ -30,6 +30,9 @@ pub use waypoint::*;
 pub mod trajectory;
 pub use trajectory::{Trajectory, FindWaypoint};
 
+pub mod travel_effort_cost;
+pub use travel_effort_cost::*;
+
 pub mod travel_time_cost;
 pub use travel_time_cost::*;
 

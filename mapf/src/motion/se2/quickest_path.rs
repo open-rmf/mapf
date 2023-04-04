@@ -18,7 +18,7 @@
 use crate::{
     Graph, Planner,
     motion::{
-        SpeedLimiter, Trajectory,
+        SpeedLimiter,
         se2::{
             KeySE2, StateSE2,
             MaybeOriented, DifferentialDriveLineFollow, WaypointSE2,
@@ -383,9 +383,8 @@ mod tests {
             orientation: None,
         };
 
-        let remaining_cost_estimate = heuristic.estimate_remaining_cost(
+        heuristic.estimate_remaining_cost(
             &from_state, &goal
         ).unwrap().unwrap();
-        dbg!(remaining_cost_estimate);
     }
 }

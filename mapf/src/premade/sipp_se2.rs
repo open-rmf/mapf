@@ -19,7 +19,7 @@ use crate::{
     templates::{InformedSearch, ConflictAvoidance, GraphMotion, LazyGraphMotion},
     premade::{SafeIntervalMotion, SafeIntervalCloser, SafeIntervalCache},
     motion::{
-        TravelTimeCost, SpeedLimiter, OverlayedDynamicEnvironment,
+        TravelEffortCost, SpeedLimiter, OverlayedDynamicEnvironment,
         se2::{*, quickest_path::QuickestPathSearch},
         r2::Positioned,
     },
@@ -44,8 +44,8 @@ const DEFAULT_RES: u32 = 360;
 /// goal.
 pub type SippSE2<G, H=G> = InformedSearch<
     SafeIntervalMotion<SharedGraph<G>, DEFAULT_RES>,
-    TravelTimeCost,
-    QuickestPathHeuristic<SharedGraph<H>, TravelTimeCost, TravelTimeCost, DEFAULT_RES>,
+    TravelEffortCost,
+    QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_RES>,
     SafeIntervalCloser<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
         SharedGraph<G>,
@@ -64,7 +64,7 @@ pub type SippSE2<G, H=G> = InformedSearch<
     >,
 >;
 
-pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelTimeCost> as Reversible>::ReversalError;
+pub type NewSippSE2Error<H> = <QuickestPathSearch<SharedGraph<H>, TravelEffortCost> as Reversible>::ReversalError;
 
 impl<G, H> SippSE2<G, H>
 where
@@ -81,6 +81,7 @@ where
         heuristic_graph: SharedGraph<H>,
         extrapolator: DifferentialDriveLineFollow,
         environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+        weight: TravelEffortCost,
     ) -> Result<Self, NewSippSE2Error<H>> {
         let cache = Arc::new(SafeIntervalCache::new(
             environment.clone(),
@@ -104,11 +105,11 @@ where
         Ok(
             InformedSearch::new(
                 activity_motion,
-                TravelTimeCost(1.0),
+                weight,
                 QuickestPathHeuristic::new(
                         heuristic_graph,
-                        TravelTimeCost(1.0),
-                        TravelTimeCost(1.0),
+                        weight,
+                        weight,
                         extrapolator,
                     )?,
                 SafeIntervalCloser::new(
@@ -132,6 +133,7 @@ pub struct SippSE2Configuration<G, H> {
     pub heuristic_graph: SharedGraph<H>,
     pub motion: DifferentialDriveLineFollow,
     pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+    pub weight: TravelEffortCost,
 }
 
 impl<G, H> SippSE2Configuration<G, H> {
@@ -177,6 +179,7 @@ where
                 heuristic_graph: scoped_self.heuristic.planner().algorithm().backward().domain().activity.graph.clone(),
                 motion: scoped_self.connector.motion.extrapolator.avoider,
                 environment: scoped_self.activity.safe_intervals.environment.clone(),
+                weight: scoped_self.weight,
             }
         };
 
@@ -185,7 +188,8 @@ where
             config.activity_graph,
             config.heuristic_graph,
             config.motion,
-            config.environment
+            config.environment,
+            config.weight,
         )
     }
 
@@ -269,6 +273,7 @@ mod tests {
             graph.clone(),
             DifferentialDriveLineFollow::new(2.0, 1.0).unwrap(),
             environment,
+            TravelEffortCost::default(),
         ).unwrap()
     }
 
@@ -282,8 +287,9 @@ mod tests {
             .solution().unwrap();
 
         // Note: Vertex 4 is blocked until 10s.
-        let expected_cost = 10.2 + (135_f64 + 2.0*90.0).to_radians() + 3.0/2.0;
-        assert_relative_eq!(solution.total_cost.0, expected_cost, max_relative=0.1);
+        let expected_arrival = 10.2 + (135_f64 + 2.0*90.0).to_radians() + 3.0/2.0;
+        let arrival_time = solution.sequence.last().unwrap().1.waypoint.time.as_secs_f64();
+        assert_relative_eq!(arrival_time, expected_arrival, max_relative=0.1);
 
         let trajectory: Trajectory<WaypointSE2> = solution.make_trajectory().unwrap().unwrap();
         assert!(trajectory.len() >= 11);
@@ -308,8 +314,9 @@ mod tests {
             .solve().unwrap()
             .solution().unwrap();
 
-        let expected_cost = (5.0 + f64::sqrt(2.0))/2.0 + (2.0 * 135_f64 + 2.0 * 90_f64).to_radians();
-        assert_relative_eq!(solution.total_cost.0, expected_cost, max_relative=0.01);
+        let expected_arrival = (5.0 + f64::sqrt(2.0))/2.0 + (2.0 * 135_f64 + 2.0 * 90_f64).to_radians();
+        let arrival_time = solution.sequence.last().unwrap().1.waypoint.time.as_secs_f64();
+        assert_relative_eq!(arrival_time, expected_arrival, max_relative=0.01);
 
         let planner = planner.configure(|mut domain| {
             domain.motion.set_translational_speed(
@@ -328,8 +335,9 @@ mod tests {
             .solve().unwrap()
             .solution().unwrap();
 
-        let expected_cost = expected_cost/2.0;
-        assert_relative_eq!(solution.total_cost.0, expected_cost, max_relative=0.01);
+        let expected_arrival = expected_arrival/2.0;
+        let arrival_time = solution.sequence.last().unwrap().1.waypoint.time.as_secs_f64();
+        assert_relative_eq!(arrival_time, expected_arrival, max_relative=0.01);
 
         let expected_delay = 5.0;
         let planner = planner.configure(|domain| {
@@ -354,9 +362,10 @@ mod tests {
             .plan((0usize, 0.0), 8usize).unwrap()
             .solve().unwrap()
             .solution().unwrap();
-        let expected_cost = expected_cost + expected_delay;
+        let expected_arrival = expected_arrival + expected_delay;
+        let arrival_time = solution.sequence.last().unwrap().1.waypoint.time.as_secs_f64();
         // TODO(@mxgrey): Make a more specific expectation.
-        assert_relative_eq!(solution.total_cost.0, expected_cost, epsilon=0.5);
+        assert_relative_eq!(arrival_time, expected_arrival, epsilon=0.5);
     }
 
     #[test]
@@ -374,7 +383,8 @@ mod tests {
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
                 Arc::new(OverlayedDynamicEnvironment::new(
                     Arc::new(DynamicEnvironment::new(profile))
-                ))
+                )),
+                TravelEffortCost::default(),
             ).unwrap()
         ));
 
@@ -393,7 +403,6 @@ mod tests {
         .solution().unwrap();
 
         let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
-        dbg!(&trajectory);
         assert_eq!(3, trajectory.len());
     }
 
@@ -416,7 +425,8 @@ mod tests {
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
                 Arc::new(OverlayedDynamicEnvironment::new(
                     Arc::new(DynamicEnvironment::new(profile))
-                ))
+                )),
+                TravelEffortCost::default(),
             ).unwrap()
         ));
 

@@ -15,11 +15,11 @@
  *
 */
 
-use super::{Position, Velocity};
+use super::{Position, Velocity, Positioned, MaybePositioned};
 use crate::{
     motion::{
-        self, timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
-        se2::WaypointSE2 as WaypointSE2,
+        self, Timed, InterpError, Interpolation, TimePoint, IntegrateWaypoints,
+        se2::{MaybeOriented, WaypointSE2},
     },
     error::NoError,
 };
@@ -61,13 +61,31 @@ impl WaypointR2 {
     }
 }
 
-impl timed::Timed for WaypointR2 {
+impl Timed for WaypointR2 {
     fn time(&self) -> &TimePoint {
         return &self.time;
     }
 
     fn set_time(&mut self, new_time: TimePoint) {
         self.time = new_time;
+    }
+}
+
+impl Positioned for WaypointR2 {
+    fn point(&self) -> super::Point {
+        self.position.point()
+    }
+}
+
+impl MaybePositioned for WaypointR2 {
+    fn maybe_point(&self) -> Option<super::Point> {
+        Some(self.point())
+    }
+}
+
+impl MaybeOriented for WaypointR2 {
+    fn maybe_oriented(&self) -> Option<motion::se2::Orientation> {
+        None
     }
 }
 

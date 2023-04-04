@@ -19,8 +19,9 @@ use crate::{
     motion::{
         Trajectory, Waypoint, TimePoint, Interpolation, Motion, Timed, Duration,
         Environment, CircularProfile, DynamicCircularObstacle, BoundingBox,
-        IntegrateWaypoints,
-        r2::{WaypointR2 as WaypointR2, Point},
+        IntegrateWaypoints, Measurable, Arclength,
+        r2::{WaypointR2, Point, Positioned},
+        se2::MaybeOriented,
     },
     error::ThisError,
 };
@@ -108,6 +109,40 @@ where
         }
 
         waypoints
+    }
+}
+
+impl<S, M> Measurable<S> for SmallVec<[SafeAction<M, WaitForObstacle>; 5]>
+where
+    S: Positioned + MaybeOriented,
+    M: Positioned + MaybeOriented,
+{
+    fn arclength(&self, from_state: &S, to_state: &S) -> Arclength {
+        let mut translational = 0.0;
+        let mut rotational = 0.0;
+        let mut last_p = from_state.point();
+        let mut last_yaw = from_state.maybe_oriented();
+
+        for action in self {
+            if let SafeAction::Move(wp) = action {
+                let p = wp.point();
+                translational += (p - last_p).norm();
+                last_p = p;
+
+                let yaw = wp.maybe_oriented();
+                if let (Some(yaw), Some(last_yaw)) = (yaw, last_yaw) {
+                    rotational += (yaw / last_yaw).angle().abs();
+                }
+
+                if let Some(yaw) = yaw {
+                    last_yaw = Some(yaw);
+                }
+            }
+        }
+
+        // The final state should be almost exactly the same as the last move
+        assert!((to_state.point() - last_p).norm() < 1e-3);
+        Arclength { translational, rotational }
     }
 }
 

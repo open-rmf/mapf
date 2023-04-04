@@ -15,8 +15,6 @@
  *
 */
 
-
-
 use crate::{
     domain::{Weighted, Cost, Reversible},
     motion::Timed,

@@ -20,7 +20,11 @@ use crate::{
         Key, Keyed, Keyring, SelfKey, Space, KeyedSpace, Initializable,
         Reversible
     },
-    motion::{Timed, TimePoint, IntegrateWaypoints, r2::*, se2::StateSE2},
+    motion::{
+        Timed, TimePoint, IntegrateWaypoints,
+        r2::*,
+        se2::{StateSE2, MaybeOriented, Orientation},
+    },
     graph::Graph,
     error::{ThisError, NoError},
 };
@@ -106,6 +110,24 @@ impl<K> Reversible for DiscreteSpaceTimeR2<K> {
 pub struct StateR2<K> {
     pub key: K,
     pub waypoint: timed_position::WaypointR2,
+}
+
+impl<K> Positioned for StateR2<K> {
+    fn point(&self) -> Point {
+        self.waypoint.point()
+    }
+}
+
+impl<K> MaybePositioned for StateR2<K> {
+    fn maybe_point(&self) -> Option<Point> {
+        self.waypoint.maybe_point()
+    }
+}
+
+impl<K> MaybeOriented for StateR2<K> {
+    fn maybe_oriented(&self) -> Option<Orientation> {
+        None
+    }
 }
 
 impl<W: From<WaypointR2>, K> IntegrateWaypoints<W> for StateR2<K> {

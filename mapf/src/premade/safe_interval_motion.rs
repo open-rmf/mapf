@@ -181,7 +181,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         };
 
         let maybe_oriented = to_target.maybe_oriented();
-        let from_point: WaypointR2 = from_state.waypoint.into();
+        let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
         let ranked_hints = compute_safe_linear_path_wait_hints(

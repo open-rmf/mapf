@@ -153,6 +153,7 @@ impl DifferentialDriveLineFollow {
         let mut output: ArrayVec<WaypointSE2, 3> = ArrayVec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
+        let mut facing_target = *from_waypoint;
 
         let translational_speed = speed_limiter
             .speed_limit()
@@ -172,13 +173,14 @@ impl DifferentialDriveLineFollow {
                 current_time += time_point::Duration::from_secs_f64(
                     self.direction * delta_yaw_abs / self.rotational_speed
                 );
-                output.push(WaypointSE2 {
+                facing_target = WaypointSE2 {
                     time: current_time,
                     position: Position::from_parts(
                         from_waypoint.position.translation,
                         approach_yaw,
                     ),
-                });
+                };
+                output.push(facing_target);
             }
 
             current_yaw = approach_yaw;
@@ -195,6 +197,7 @@ impl DifferentialDriveLineFollow {
             waypoints: output,
             time: current_time,
             yaw: current_yaw,
+            facing_target,
         });
     }
 }
@@ -203,6 +206,7 @@ pub(crate) struct ReachedTarget {
     pub(crate) waypoints: ArrayVec<WaypointSE2, 3>,
     pub(crate) time: TimePoint,
     pub(crate) yaw: nalgebra::UnitComplex<f64>,
+    pub(crate) facing_target: WaypointSE2,
 }
 
 impl<Target, Guidance> Extrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow
@@ -417,7 +421,7 @@ where
         };
 
         let maybe_oriented = to_target.maybe_oriented();
-        let from_point: r2::WaypointR2 = from_state.clone().into();
+        let from_point: r2::WaypointR2 = arrival.facing_target.into();
         let to_point: r2::WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
         let paths: SmallVec<[_; 3]> = compute_safe_linear_paths(
