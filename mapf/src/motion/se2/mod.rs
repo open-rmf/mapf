@@ -17,6 +17,7 @@
 
 pub type Position = nalgebra::geometry::Isometry2<f64>;
 pub type Point = nalgebra::geometry::Point2<f64>;
+pub type Orientation = nalgebra::geometry::UnitComplex<f64>;
 pub type Vector = nalgebra::Vector2<f64>;
 pub type Rotation = nalgebra::UnitComplex<f64>;
 
@@ -27,9 +28,18 @@ pub struct Velocity {
 }
 
 pub mod timed_position;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+pub use timed_position::*;
+
+pub mod space;
+pub use space::*;
+
+pub mod oriented;
+pub use oriented::*;
+
+pub type LinearTrajectorySE2 = super::Trajectory<WaypointSE2>;
 
 pub mod quickest_path;
-pub use quickest_path::QuickestPath;
+pub use quickest_path::QuickestPathHeuristic;
 
-pub mod graph_search;
+pub mod differential_drive_line_follow;
+pub use differential_drive_line_follow::*;

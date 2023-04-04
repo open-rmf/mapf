@@ -14,38 +14,32 @@
  * limitations under the License.
  *
 */
-#![feature(associated_type_bounds, type_alias_impl_trait)]
+#![feature(associated_type_bounds, type_alias_impl_trait, result_flattening)]
 
-pub mod progress;
+pub mod domain;
 
 pub mod planner;
 pub use planner::Planner;
 
-pub mod expander;
-pub use expander::Expander;
-
 pub mod graph;
 pub use graph::Graph;
 
-pub mod heuristic;
-pub use heuristic::Heuristic;
-
-pub mod node;
-
 pub mod algorithm;
-pub use algorithm::{Algorithm, InitError, StepError};
 
-pub mod trace;
-pub use trace::Trace;
+pub mod templates;
 
-pub mod tree;
-
-pub mod directed;
 pub mod motion;
 
-pub mod a_star;
-
 pub mod error;
-pub mod occupancy;
+
+pub mod premade;
 
 mod util;
+
+pub mod prelude {
+    pub use super::algorithm::*;
+    pub use super::domain::*;
+    pub use super::graph::*;
+    pub use super::planner::*;
+    pub use super::premade::*;
+}

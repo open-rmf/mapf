@@ -15,21 +15,20 @@
  *
 */
 
-use super::{
-    timed::{TimeCmp, Timed},
-    waypoint, Duration, InterpError, Motion, TimePoint, Waypoint,
-};
+use super::{timed::TimeCmp, Duration, InterpError, Motion, TimePoint, Waypoint};
 use cached::{Cached, UnboundCache};
 use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Find {
+pub enum FindWaypoint {
     /// The requested time is exactly on the waypoint at this index
     Exact(usize),
 
-    /// The requested time is approaching the waypoint of this index
+    /// The requested time is approaching the waypoint of this index. This is
+    /// always greater than 0. If the time point was less than the initial time
+    /// of the trajectory then BeforeStart will be returned instead.
     Approaching(usize),
 
     /// The requested time is before the start of the trajectory
@@ -64,9 +63,11 @@ pub enum MutateError {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Trajectory<W: Waypoint> {
     waypoints: SortedSet<TimeCmp<W>>,
+    indefinite_initial_time: bool,
+    indefinite_finish_time: bool,
 }
 
-impl<'a, W: Waypoint> Trajectory<W> {
+impl<W: Waypoint> Trajectory<W> {
     /// Create a new trajectory, starting with the given endpoints. If the
     /// endpoints have the same time value then this will return an Err.
     pub fn new(start: W, finish: W) -> Result<Self, ()> {
@@ -76,11 +77,31 @@ impl<'a, W: Waypoint> Trajectory<W> {
 
         let mut result = Self {
             waypoints: SortedSet::new(),
+            indefinite_initial_time: false,
+            indefinite_finish_time: false,
         };
 
         result.waypoints.push(TimeCmp(start));
         result.waypoints.push(TimeCmp(finish));
         return Result::Ok(result);
+    }
+
+    pub fn with_indefinite_initial_time(mut self, value: bool) -> Self {
+        self.indefinite_initial_time = value;
+        self
+    }
+
+    pub fn has_indefinite_initial_time(&self) -> bool {
+        self.indefinite_initial_time
+    }
+
+    pub fn with_indefinite_finish_time(mut self, value: bool) -> Self {
+        self.indefinite_finish_time = value;
+        self
+    }
+
+    pub fn has_indefinite_finish_time(&self) -> bool {
+        self.indefinite_finish_time
     }
 
     /// Create a new trajectory that holds at a waypoint until a certain time.
@@ -102,6 +123,8 @@ impl<'a, W: Waypoint> Trajectory<W> {
     pub fn from_iter<I: std::iter::IntoIterator<Item = W>>(iter: I) -> Result<Self, ()> {
         let mut result = Self {
             waypoints: SortedSet::new(),
+            indefinite_initial_time: false,
+            indefinite_finish_time: false,
         };
         for element in iter {
             result.waypoints.push(TimeCmp(element));
@@ -148,19 +171,19 @@ impl<'a, W: Waypoint> Trajectory<W> {
     }
 
     /// Find the segment of the trajectory that matches this point in time.
-    pub fn find(&self, time: &TimePoint) -> Find {
+    pub fn find(&self, time: &TimePoint) -> FindWaypoint {
         match self
             .waypoints
             .binary_search_by(|x| x.partial_cmp(time).unwrap())
         {
-            Result::Ok(index) => return Find::Exact(index),
+            Result::Ok(index) => return FindWaypoint::Exact(index),
             Result::Err(index) => {
                 if index == 0 {
-                    return Find::BeforeStart;
+                    return FindWaypoint::BeforeStart;
                 } else if index == self.waypoints.len() {
-                    return Find::AfterFinish;
+                    return FindWaypoint::AfterFinish;
                 } else {
-                    return Find::Approaching(index);
+                    return FindWaypoint::Approaching(index);
                 }
             }
         }
@@ -182,34 +205,58 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// Get the waypoint at the requested index if it is available, otherwise
     /// get None.
     pub fn get(&self, index: usize) -> Option<&W> {
-        // TODO(MXG): Investigate how SliceIndex can be used here. The TimeCmp
+        // TODO(@mxgrey): Investigate how SliceIndex can be used here. The TimeCmp
         // wrapper complicates this.
         return self.waypoints.get(index).map(|x| &x.0);
     }
 
-    /// Get the time duration of the trajectory.
-    pub fn duration(&self) -> Duration {
-        return self.finish_time() - self.initial_time();
+    /// Get the time duration of the trajectory. If the start or finish are
+    pub fn duration(&self) -> Option<Duration> {
+        if let (Some(initial), Some(finish)) = (self.initial_time(), self.finish_time()) {
+            Some(finish - initial)
+        } else {
+            None
+        }
+    }
+
+    pub fn motion_duration(&self) -> Duration {
+        *self.finish_motion().time() - *self.initial_motion().time()
     }
 
     /// Trajectories always have at least two values, so we can always get the
     /// first waypoint.
-    pub fn initial(&self) -> &W {
+    pub fn initial_motion(&self) -> &W {
         &self.waypoints.first().unwrap().0
     }
 
-    pub fn finish(&self) -> &W {
+    pub fn finish_motion(&self) -> &W {
         &self.waypoints.last().unwrap().0
     }
 
     /// Get the time that the trajectory starts.
-    pub fn initial_time(&self) -> TimePoint {
-        *self.initial().time()
+    pub fn initial_time(&self) -> Option<TimePoint> {
+        if self.indefinite_initial_time {
+            None
+        } else {
+            Some(self.initial_motion_time())
+        }
+    }
+
+    pub fn initial_motion_time(&self) -> TimePoint {
+        *self.initial_motion().time()
     }
 
     /// Get the time that the trajectory finishes.
-    pub fn finish_time(&self) -> TimePoint {
-        *self.finish().time()
+    pub fn finish_time(&self) -> Option<TimePoint> {
+        if self.indefinite_finish_time {
+            None
+        } else {
+            Some(self.finish_motion_time())
+        }
+    }
+
+    pub fn finish_motion_time(&self) -> TimePoint {
+        *self.finish_motion().time()
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -264,11 +311,6 @@ impl<'a, W: Waypoint> Trajectory<W> {
         return Result::Ok(());
     }
 
-    /// Unsafe access to a waypoint in the trajectory
-    pub unsafe fn get_unchecked(&self, index: usize) -> &W {
-        &self.waypoints.get_unchecked(index).0
-    }
-
     /// Get the number of Waypoint elements in the trajectory.
     pub fn len(&self) -> usize {
         return self.waypoints.len();
@@ -289,7 +331,7 @@ impl<'a, W: Waypoint> Trajectory<W> {
     }
 
     /// Get a motion for this trajectory
-    pub fn motion(&'a self) -> TrajectoryMotion<'a, W> {
+    pub fn motion<'a>(&'a self) -> TrajectoryMotion<'a, W> {
         return TrajectoryMotion {
             trajectory: self,
             motion_cache: RefCell::new(UnboundCache::new()),
@@ -303,8 +345,30 @@ impl<'a, W: Waypoint> Trajectory<W> {
     /// convenient because you will need to dereference it, but it allows us to
     /// provide all the functionality of a slice without any custom
     /// implementations and without any unsafe blocks.
-    pub fn iter(&self) -> std::slice::Iter<'_, TimeCmp<W>> {
-        self.waypoints.iter()
+    pub fn iter(&self) -> TrajectoryIter<'_, W> {
+        TrajectoryIter::new(self, self.initial_motion_time(), None)
+    }
+
+    /// Iterate through this trajectory, starting at the requested time.
+    ///
+    /// If the requested time is in between two waypoints, the iterator will
+    /// begin with the waypoint that comes immediately before the requested
+    /// time.
+    ///
+    /// If the requested time is before the time of the trajectory's initial
+    /// waypoint and the trajectory has an indefinite initial time, then the
+    /// iterator will begin with a waypoint that is a clone of the initial
+    /// waypoint but with the input `time` as its time value.
+    ///
+    /// If the trajectory has a definite initial time which comes after the
+    /// requested time, then the iterator will begin with the first waypoint
+    /// in the trajectory.
+    pub fn iter_from(&self, time: TimePoint) -> TrajectoryIter<'_, W> {
+        TrajectoryIter::new(self, time, None)
+    }
+
+    pub fn iter_range(&self, from_time: TimePoint, to_time: TimePoint) -> TrajectoryIter<'_, W> {
+        TrajectoryIter::new(self, from_time, Some(to_time))
     }
 }
 
@@ -335,18 +399,26 @@ pub struct TrajectoryMotion<'a, W: Waypoint> {
 impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
         match self.trajectory.find(time) {
-            Find::Exact(index) => {
+            FindWaypoint::Exact(index) => {
                 if index == 0 {
                     return Ok(self.get_motion_segment(index + 1));
                 } else {
                     return Ok(self.get_motion_segment(index));
                 }
             }
-            Find::Approaching(index) => {
+            FindWaypoint::Approaching(index) => {
                 return Ok(self.get_motion_segment(index));
             }
-            Find::BeforeStart | Find::AfterFinish => {
-                return Err(InterpError::OutOfBounds);
+            FindWaypoint::BeforeStart | FindWaypoint::AfterFinish => {
+                // TODO(@mxgrey): Handle this differently for trajectories with
+                // indefinite initial/final times.
+                return Err(InterpError::OutOfBounds {
+                    range: [
+                        self.trajectory.initial_motion_time(),
+                        self.trajectory.finish_motion_time(),
+                    ],
+                    request: *time,
+                });
             }
         }
     }
@@ -379,108 +451,233 @@ impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, 
     }
 }
 
-pub trait CostCalculator<W: Waypoint>: std::fmt::Debug {
-    type Cost: crate::node::Cost;
-
-    fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost;
+pub struct TrajectoryIter<'a, W: Waypoint> {
+    trajectory: &'a Trajectory<W>,
+    next_element: TrajectoryIterNext,
+    begin: TimePoint,
+    until: Option<TimePoint>,
 }
 
-#[derive(Debug)]
-pub struct DurationCostCalculator;
-impl<W: Waypoint> CostCalculator<W> for DurationCostCalculator {
-    type Cost = i64;
-    fn compute_cost(&self, trajectory: &Trajectory<W>) -> Self::Cost {
-        trajectory.duration().nanos
+impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
+    pub fn pairs(self) -> TrajectoryIterPairs<'a, W> {
+        TrajectoryIterPairs {
+            base: self,
+            previous: None,
+        }
+    }
+
+    fn new(trajectory: &'a Trajectory<W>, begin: TimePoint, until: Option<TimePoint>) -> Self {
+        let next_element = match trajectory.find(&begin) {
+            FindWaypoint::BeforeStart => {
+                if trajectory.indefinite_initial_time {
+                    TrajectoryIterNext::PreInitial(begin)
+                } else {
+                    TrajectoryIterNext::Index(0)
+                }
+            }
+            FindWaypoint::Exact(index) => TrajectoryIterNext::Index(index),
+            FindWaypoint::Approaching(index) => TrajectoryIterNext::Index(index - 1),
+            FindWaypoint::AfterFinish => TrajectoryIterNext::Depleted,
+        };
+
+        Self {
+            trajectory,
+            next_element,
+            begin,
+            until,
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::motion::se2;
-    use crate::motion::se2::timed_position::Waypoint as WaypointSE2;
-    use crate::motion::Motion;
-    use approx::assert_relative_eq;
+enum TrajectoryIterNext {
+    PreInitial(TimePoint),
+    Index(usize),
+    PostFinish(TimePoint),
+    Depleted,
+}
 
-    #[test]
-    fn test_valid_motion() {
-        let t0 = time_point::TimePoint::new(0);
-        let mut trajectory = se2::LinearTrajectory::new(
-            WaypointSE2::new(t0, 0.0, 0.0, 0.0),
-            WaypointSE2::new(
-                t0 + time_point::Duration::from_secs(2),
-                1.0,
-                0.0,
-                90f64.to_radians(),
-            ),
-        )
-        .expect("Trajectory failed to be created");
+impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
+    type Item = W;
 
-        let insertion = trajectory.insert(WaypointSE2::new(
-            t0 + time_point::Duration::from_secs(3),
-            1.0,
-            1.0,
-            180f64.to_radians(),
-        ));
-        assert_eq!(insertion.ok(), Some(2));
+    fn next(&mut self) -> Option<W> {
+        match self.next_element {
+            TrajectoryIterNext::PreInitial(t) => {
+                if let Some(t_f) = self.until {
+                    if t_f < t {
+                        self.next_element = TrajectoryIterNext::Depleted;
+                        return None;
+                    }
+                }
 
-        let insertion = trajectory.insert(WaypointSE2::new(
-            t0 + time_point::Duration::from_secs(1),
-            0.0,
-            1.0,
-            -45f64.to_radians(),
-        ));
-        assert_eq!(insertion.ok(), Some(1));
+                let mut wp = self.trajectory.initial_motion().clone();
+                wp.set_time(t);
+                self.next_element = TrajectoryIterNext::Index(0);
+                Some(wp)
+            }
+            TrajectoryIterNext::Index(index) => {
+                let wp = self.trajectory.get(index).map(|wp| wp.clone());
+                if let (Some(t_f), Some(wp)) = (self.until, &wp) {
+                    if t_f <= *wp.time() {
+                        // We only include the first element that exceeds the
+                        // finish time.
+                        self.next_element = TrajectoryIterNext::Depleted;
+                        if *wp.time() < self.begin {
+                            // This element comes before the begin time.
+                            // This is not supposed to happen, but let's handle
+                            // it gracefully anyway.
+                            return None;
+                        }
+                        return Some(wp.clone());
+                    }
+                }
 
-        assert_eq!(trajectory.len(), 4);
+                self.next_element = if wp.is_some() {
+                    TrajectoryIterNext::Index(index + 1)
+                } else {
+                    if let Some(t_f) = self.until {
+                        TrajectoryIterNext::PostFinish(t_f)
+                    } else {
+                        TrajectoryIterNext::Depleted
+                    }
+                };
 
-        let motion = trajectory.motion();
-        let p = motion
-            .compute_position(&(t0 + time_point::Duration::from_secs_f64(0.5)))
-            .expect("Failed to calculate position");
-        assert_relative_eq!(p.translation.vector[0], 0.0);
-        assert_relative_eq!(p.translation.vector[1], 0.5);
-        assert_relative_eq!(p.rotation.angle(), (-45f64 / 2.0).to_radians());
+                wp
+            }
+            TrajectoryIterNext::PostFinish(t) => {
+                if !self.trajectory.has_indefinite_finish_time() {
+                    self.next_element = TrajectoryIterNext::Depleted;
+                    return None;
+                }
 
-        let v = motion
-            .compute_velocity(&(t0 + time_point::Duration::from_secs_f64(0.6788612)))
-            .expect("Failed to calculate velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, -45f64.to_radians());
-
-        let p = motion
-            .compute_position(&(t0 + time_point::Duration::from_secs(3)))
-            .expect("Failed to calculate position");
-        assert_relative_eq!(p.translation.vector[0], 1.0);
-        assert_relative_eq!(p.translation.vector[1], 1.0);
-        assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
-
-        let v = motion
-            .compute_velocity(&(t0 + time_point::Duration::from_secs(3)))
-            .expect("Failed to compute velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, 90f64.to_radians());
-
-        let p = motion
-            .compute_position(&t0)
-            .expect("Failed to compute velocity");
-        assert_relative_eq!(p.translation.vector[0], 0.0);
-        assert_relative_eq!(p.translation.vector[1], 0.0);
-        assert_relative_eq!(p.rotation.angle(), 0.0);
-
-        let v = motion
-            .compute_velocity(&t0)
-            .expect("Failed to calculate velocity");
-        assert_relative_eq!(v.translational[0], 0.0);
-        assert_relative_eq!(v.translational[1], 1.0);
-        assert_relative_eq!(v.rotational, -45f64.to_radians());
-
-        let err = motion.compute_position(&(t0 - time_point::Duration::new(1)));
-        assert_eq!(err, Err(InterpError::OutOfBounds));
-
-        let err = motion.compute_velocity(&(t0 - time_point::Duration::new(1)));
-        assert_eq!(err, Err(InterpError::OutOfBounds));
+                let mut wp = self.trajectory.finish_motion().clone();
+                if *wp.time() < t {
+                    wp.set_time(t);
+                    return Some(wp);
+                }
+                None
+            }
+            TrajectoryIterNext::Depleted => None,
+        }
     }
 }
+
+// TODO(@mxgrey): Consider how to make this more general so that it can work on
+// N-sized windows. E.g. use a circular buffer array of a fixed size to store
+// N previous waypoints.
+pub struct TrajectoryIterPairs<'a, W: Waypoint> {
+    base: TrajectoryIter<'a, W>,
+    previous: Option<W>,
+}
+
+impl<'a, W: Waypoint> Iterator for TrajectoryIterPairs<'a, W> {
+    type Item = [W; 2];
+
+    fn next(&mut self) -> Option<[W; 2]> {
+        let previous = match &self.previous {
+            Some(wp) => wp.clone(),
+            None => match self.base.next() {
+                Some(wp) => wp,
+                None => return None,
+            },
+        };
+
+        match self.base.next() {
+            Some(wp) => {
+                self.previous = Some(wp.clone());
+                Some([previous, wp])
+            }
+            None => None,
+        }
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::motion::se2;
+//     use crate::motion::se2::timed_position::Waypoint as WaypointSE2;
+//     use crate::motion::Motion;
+//     use approx::assert_relative_eq;
+
+//     #[test]
+//     fn test_valid_motion() {
+//         let t0 = time_point::TimePoint::new(0);
+//         let mut trajectory = se2::LinearTrajectory::new(
+//             WaypointSE2::new(t0, 0.0, 0.0, 0.0),
+//             WaypointSE2::new(
+//                 t0 + time_point::Duration::from_secs(2),
+//                 1.0,
+//                 0.0,
+//                 90f64.to_radians(),
+//             ),
+//         )
+//         .expect("Trajectory failed to be created");
+
+//         let insertion = trajectory.insert(WaypointSE2::new(
+//             t0 + time_point::Duration::from_secs(3),
+//             1.0,
+//             1.0,
+//             180f64.to_radians(),
+//         ));
+//         assert_eq!(insertion.ok(), Some(2));
+
+//         let insertion = trajectory.insert(WaypointSE2::new(
+//             t0 + time_point::Duration::from_secs(1),
+//             0.0,
+//             1.0,
+//             -45f64.to_radians(),
+//         ));
+//         assert_eq!(insertion.ok(), Some(1));
+
+//         assert_eq!(trajectory.len(), 4);
+
+//         let motion = trajectory.motion();
+//         let p = motion
+//             .compute_position(&(t0 + time_point::Duration::from_secs_f64(0.5)))
+//             .expect("Failed to calculate position");
+//         assert_relative_eq!(p.translation.vector[0], 0.0);
+//         assert_relative_eq!(p.translation.vector[1], 0.5);
+//         assert_relative_eq!(p.rotation.angle(), (-45f64 / 2.0).to_radians());
+
+//         let v = motion
+//             .compute_velocity(&(t0 + time_point::Duration::from_secs_f64(0.6788612)))
+//             .expect("Failed to calculate velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, -45f64.to_radians());
+
+//         let p = motion
+//             .compute_position(&(t0 + time_point::Duration::from_secs(3)))
+//             .expect("Failed to calculate position");
+//         assert_relative_eq!(p.translation.vector[0], 1.0);
+//         assert_relative_eq!(p.translation.vector[1], 1.0);
+//         assert_relative_eq!(p.rotation.angle(), 180f64.to_radians());
+
+//         let v = motion
+//             .compute_velocity(&(t0 + time_point::Duration::from_secs(3)))
+//             .expect("Failed to compute velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, 90f64.to_radians());
+
+//         let p = motion
+//             .compute_position(&t0)
+//             .expect("Failed to compute velocity");
+//         assert_relative_eq!(p.translation.vector[0], 0.0);
+//         assert_relative_eq!(p.translation.vector[1], 0.0);
+//         assert_relative_eq!(p.rotation.angle(), 0.0);
+
+//         let v = motion
+//             .compute_velocity(&t0)
+//             .expect("Failed to calculate velocity");
+//         assert_relative_eq!(v.translational[0], 0.0);
+//         assert_relative_eq!(v.translational[1], 1.0);
+//         assert_relative_eq!(v.rotational, -45f64.to_radians());
+
+//         let err = motion.compute_position(&(t0 - time_point::Duration::new(1)));
+//         assert_eq!(err, Err(InterpError::OutOfBounds));
+
+//         let err = motion.compute_velocity(&(t0 - time_point::Duration::new(1)));
+//         assert_eq!(err, Err(InterpError::OutOfBounds));
+//     }
+// }

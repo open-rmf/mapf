@@ -15,29 +15,37 @@
  *
 */
 
+pub mod environment;
+pub use environment::*;
+
 pub mod timed;
+pub use timed::*;
 
 pub mod r2;
 pub mod se2;
 
 pub mod waypoint;
-pub use waypoint::Waypoint;
+pub use waypoint::*;
 
 pub mod trajectory;
-pub use trajectory::Trajectory;
+pub use trajectory::{FindWaypoint, Trajectory};
 
-pub mod extrapolator;
-pub use extrapolator::Extrapolator;
+pub mod travel_effort_cost;
+pub use travel_effort_cost::*;
 
-pub mod graph_search;
+pub mod travel_time_cost;
+pub use travel_time_cost::*;
 
-pub mod hold;
-pub mod movable;
+pub mod speed_limit;
+pub use speed_limit::*;
 pub mod reach;
 
-pub mod collide;
+pub mod conflict;
+pub use conflict::*;
 
 pub use time_point::{Duration, TimePoint};
+
+use crate::error::ThisError;
 
 /// The default translational threshold is 1mm
 pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
@@ -45,14 +53,16 @@ pub const DEFAULT_TRANSLATIONAL_THRESHOLD: f64 = 0.001;
 /// The default rotational threshold is 1-degree.
 pub const DEFAULT_ROTATIONAL_THRESHOLD: f64 = 1.0f64 * std::f64::consts::PI / 180.0;
 
-// TODO(MXG): Should each implementation of Interpolation be allowed to specify
+// TODO(@mxgrey): Should each implementation of Interpolation be allowed to specify
 // its own error types?
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ThisError)]
 pub enum InterpError {
-    /// The requested time is outside the time range of the motion
-    OutOfBounds,
-
-    /// The requested interpolation does not have a unique solution
+    #[error("The requested time [{request:?}] is outside the time range of the motion {range:?}")]
+    OutOfBounds {
+        range: [TimePoint; 2],
+        request: TimePoint,
+    },
+    #[error("The requested interpolation does not have a unique solution")]
     Indeterminate,
 }
 

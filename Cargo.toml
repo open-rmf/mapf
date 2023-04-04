@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "mapf",
+    "mapf-viz",
+]
+
+resolver = "2"

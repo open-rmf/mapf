@@ -17,10 +17,22 @@
 
 pub type Position = nalgebra::geometry::Point2<f64>;
 pub type Point = Position;
+pub type Vector = nalgebra::Vector2<f64>;
 pub type Velocity = nalgebra::Vector2<f64>;
 
 pub mod timed_position;
-pub type LinearTrajectory = super::Trajectory<timed_position::Waypoint>;
+pub use timed_position::*;
+
+pub type LinearTrajectory = super::Trajectory<WaypointR2>;
+
+pub mod space;
+pub use space::*;
 
 pub mod direct_travel;
-pub mod graph_search;
+pub use direct_travel::*;
+
+pub mod positioned;
+pub use positioned::*;
+
+pub mod line_follow;
+pub use line_follow::*;

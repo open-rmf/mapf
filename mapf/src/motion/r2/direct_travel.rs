@@ -16,69 +16,110 @@
 */
 
 use crate::{
+    domain::{Extrapolator, Informed, Key, KeyedSpace, Reversible, SelfKey, Weighted},
     graph::Graph,
-    heuristic::Heuristic,
-    motion::{r2, trajectory::CostCalculator, Extrapolator, TimePoint},
-    node::Keyed,
+    motion::r2::{DiscreteSpaceTimeR2, LineFollow, LineFollowError, Position, StateR2, WaypointR2},
 };
-use num::Zero;
-use std::sync::Arc;
+use arrayvec::ArrayVec;
+use std::borrow::Borrow;
+use thiserror::Error as ThisError;
 
-#[derive(Debug)]
-pub struct DirectTravelHeuristic<
-    G: Graph<Vertex = r2::Position>,
-    C: CostCalculator<r2::timed_position::Waypoint>,
-> {
-    pub graph: Arc<G>,
-    pub cost_calculator: Arc<C>,
-    pub extrapolator: r2::timed_position::LineFollow,
+#[derive(Debug, Clone)]
+pub struct DirectTravelHeuristic<G: Graph, W> {
+    pub space: DiscreteSpaceTimeR2<G::Key>,
+    pub graph: G,
+    pub weight: W,
+    pub extrapolator: LineFollow,
 }
 
-impl<G, C, S, Goal> Heuristic<S, Goal, C::Cost> for DirectTravelHeuristic<G, C>
+impl<G, W, Goal> Informed<StateR2<G::Key>, Goal> for DirectTravelHeuristic<G, W>
 where
-    G: Graph<Vertex = r2::Position>,
-    C: CostCalculator<r2::timed_position::Waypoint>,
-    S: Into<G::Key> + Clone,
-    Goal: Keyed<Key = G::Key>,
+    G: Graph,
+    G::Key: Key + Clone,
+    G::Vertex: Borrow<Position>,
+    W: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    Goal: SelfKey<Key = G::Key>,
 {
-    type Error = <r2::timed_position::LineFollow as Extrapolator<
-        r2::timed_position::Waypoint,
-        r2::Position,
-    >>::Error;
+    type CostEstimate = W::Cost;
+    type InformedError = DirectTravelError<W::WeightedError>;
 
-    fn estimate_cost(
+    fn estimate_remaining_cost(
         &self,
-        from_state: &S,
+        from_state: &StateR2<G::Key>,
         to_goal: &Goal,
-    ) -> Result<Option<C::Cost>, Self::Error> {
-        let p0 = {
-            // Should this be an error instead? The current state is off the
-            // graph entirely.
-            if let Some(p) = self.graph.vertex(from_state.clone().into()) {
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+        let p_target = {
+            if let Some(p) = self.graph.vertex(to_goal.key().borrow()) {
                 p
             } else {
                 return Ok(None);
             }
         };
 
-        let p1 = {
-            if let Some(p) = self.graph.vertex(to_goal.key().clone()) {
-                p
-            } else {
-                return Ok(None);
-            }
-        };
-
-        let wp0 = r2::timed_position::Waypoint {
-            time: TimePoint::zero(),
-            position: p0,
-        };
-
-        let cost = self
-            .extrapolator
-            .make_trajectory(wp0, &p1)?
-            .map(|t| self.cost_calculator.compute_cost(&t))
-            .unwrap_or(C::Cost::zero());
-        Ok(Some(cost))
+        self.extrapolator
+            .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
+            .transpose()
+            .map_err(DirectTravelError::Extrapolator)
+            .map(|action| {
+                action
+                    .map(|(action, child_wp)| {
+                        let child_state = self
+                            .space
+                            .make_keyed_state(to_goal.key().borrow().clone(), child_wp);
+                        self.weight
+                            .cost(from_state, &action, &child_state)
+                            .map_err(DirectTravelError::Weighted)
+                    })
+                    .transpose()
+                    .map(|x| x.flatten())
+            })
+            .flatten()
     }
+}
+
+// NOTE(MXG): With this implementation, we assume that the reverse graph's
+// vertices are in the same locations as the forward graph's vertices. We could
+// consider loosening this assumption in the future.
+impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<G, W> {
+    type ReversalError = DirectTravelReversalError<
+        G::ReversalError,
+        W::ReversalError,
+        <LineFollow as Reversible>::ReversalError,
+    >;
+
+    fn reversed(&self) -> Result<Self, Self::ReversalError> {
+        Ok(DirectTravelHeuristic {
+            space: DiscreteSpaceTimeR2::new(),
+            graph: self
+                .graph
+                .reversed()
+                .map_err(DirectTravelReversalError::Graph)?,
+            weight: self
+                .weight
+                .reversed()
+                .map_err(DirectTravelReversalError::Weighted)?,
+            extrapolator: self
+                .extrapolator
+                .reversed()
+                .map_err(DirectTravelReversalError::Extrapolator)?,
+        })
+    }
+}
+
+#[derive(ThisError, Debug, Clone)]
+pub enum DirectTravelError<W> {
+    #[error("The cost calculator had an error:\n{0}")]
+    Weighted(W),
+    #[error("The extrapolator had an error:\n{0}")]
+    Extrapolator(LineFollowError),
+}
+
+#[derive(ThisError, Debug, Clone)]
+pub enum DirectTravelReversalError<G, W, E> {
+    #[error("The graph had an error while reversing:\n{0}")]
+    Graph(G),
+    #[error("The cost calculator had an error while reversing:\n{0}")]
+    Weighted(W),
+    #[error("The extrapolator had an error while reversing:\n{0}")]
+    Extrapolator(E),
 }

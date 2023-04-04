@@ -22,4 +22,4 @@ jobs:
         rustup component add rustfmt
 
     - name: style
-      run: cd mapf && rustfmt --check --edition 2021 src/*
+      run: rustfmt --check --edition 2021 mapf/src/lib.rs mapf-viz/src/lib.rs
