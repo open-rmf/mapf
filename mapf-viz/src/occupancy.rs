@@ -68,49 +68,30 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
     ) -> Self {
         Self {
-            occupancy: {
-                let mut vis = Visibility::new(grid, robot_radius as f64);
-                // vis.change_cells(
-                //     &(-10..=-1_i64)
-                //     .into_iter()
-                //     .map(|y| (Cell::new(3, y), true))
-                //     .collect()
-                // );
-                // vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
-
-                // vis.change_cells(
-                //     &(-10..10).into_iter()
-                //     .map(|y| (Cell::new(5, y), true))
-                //     .collect()
-                // );
-
-                for x in [-3, 1] {
-                    vis.change_cells(
-                        &(-14..=-1)
-                            .into_iter()
-                            .map(|y| (Cell::new(x, y), true))
-                            .collect(),
-                    );
-                }
-                vis
-            },
+            occupancy: Visibility::new(grid, robot_radius as f64),
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
             default_visibility_color: iced::Color::from_rgb8(230, 166, 33),
             special_visibility_color: Default::default(),
             show_visibility_graph: true,
             show_details: false,
             cell_toggler: Some(Box::new(FillToggler::new(
-                DragToggler::new(Some(mouse::Button::Left), None),
                 DragToggler::new(
                     None,
                     Some((keyboard::Modifiers::SHIFT, mouse::Button::Left)),
                 ),
-            ))),
-            corner_select_toggler: Some(Box::new(FillToggler::new(
-                DragToggler::new(Some(mouse::Button::Right), None),
                 DragToggler::new(
                     None,
                     Some((keyboard::Modifiers::SHIFT, mouse::Button::Right)),
+                ),
+            ))),
+            corner_select_toggler: Some(Box::new(FillToggler::new(
+                DragToggler::new(
+                    None,
+                    Some((keyboard::Modifiers::ALT, mouse::Button::Left)),
+                ),
+                DragToggler::new(
+                    None,
+                    Some((keyboard::Modifiers::ALT, mouse::Button::Right)),
                 ),
             ))),
             on_corner_select,
@@ -133,6 +114,10 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
 
     pub fn grid(&self) -> &G {
         &self.occupancy.grid()
+    }
+
+    pub fn set_grid(&mut self, grid: G) {
+        self.occupancy = Visibility::new(grid, self.occupancy.agent_radius());
     }
 
     /// The cache of the spatial canvas needs to be cleared after changing this

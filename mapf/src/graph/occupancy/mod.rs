@@ -92,6 +92,18 @@ impl From<(i64, i64)> for Cell {
     }
 }
 
+impl From<Cell> for [i64; 2] {
+    fn from(value: Cell) -> Self {
+        [value.x, value.y]
+    }
+}
+
+impl From<Cell> for (i64, i64) {
+    fn from(value: Cell) -> Self {
+        (value.x, value.y)
+    }
+}
+
 impl Sub for Cell {
     type Output = (i64, i64);
     fn sub(self, other: Self) -> Self::Output {
