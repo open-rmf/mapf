@@ -106,6 +106,11 @@ impl InclusionZone {
         }
     }
 
+    pub fn with(mut self, p: iced::Point) -> Self {
+        self.include(p);
+        self
+    }
+
     pub fn merge(&mut self, other: Self) {
         match self {
             Self::Empty => *self = other,
@@ -158,16 +163,21 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
         }
     }
 
-    pub fn fit_to_bounds(&mut self) {
-        self.fit_to_zone(self.program.estimate_bounds());
+    pub fn fit_to_bounds(&mut self) -> bool {
+        self.fit_to_zone(self.program.estimate_bounds())
     }
 
-    pub fn fit_to_zone(&mut self, zone: InclusionZone) {
-        let bounds = if let Some(bounds) = &mut self.bounds {
-            bounds
-        } else {
-            return;
-        };
+    pub fn camera_bounds(&self) -> InclusionZone {
+        let Some(bounds) = &self.bounds else { return InclusionZone::Empty };
+        let Some(s_inv) = Transform::scale(self.zoom, -self.zoom).inverse() else { return InclusionZone::Empty };
+        let bound_center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+        let p0 = s_inv.transform_point(bound_center - self.offset) - bound_center / self.zoom;
+        let p1 = iced::Point::new(bounds.width/self.zoom + p0.x, bounds.height/self.zoom + p0.y);
+        InclusionZone::Empty.with(iced::Point::new(p0.x, p0.y)).with(p1)
+    }
+
+    pub fn fit_to_zone(&mut self, zone: InclusionZone) -> bool {
+        let Some(bounds) = &mut self.bounds else { return false };
 
         if let InclusionZone::Some { lower, upper } = zone {
             let x_zoom = bounds.width / (upper.x - lower.x);
@@ -181,6 +191,8 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
             self.offset = bound_center - s.transform_point(space_center);
             self.cache.clear();
         }
+
+        true
     }
 
     pub fn view<'a>(&'a mut self) -> Element<'a, Message>

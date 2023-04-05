@@ -82,6 +82,15 @@ fn generate_robot_name(mut index: usize) -> String {
     String::from_iter(chars.into_iter().map(|i| ASCII_UPPER[i]))
 }
 
+const MIN_AGENT_RADIUS: f64 = 0.05;
+const MAX_AGENT_RADIUS: f64 = 5.0;
+const MIN_AGENT_SPEED: f64 = 0.01;
+const MAX_AGENT_SPEED: f64 = 10.0;
+const MIN_AGENT_SPIN: f64 = 1.0 * std::f64::consts::PI / 180.0;
+const MAX_AGENT_SPIN: f64 = 360.0 * std::f64::consts::PI / 180.0;
+const MIN_AGENT_YAW: f64 = -std::f64::consts::PI;
+const MAX_AGENT_YAW: f64 = std::f64::consts::PI;
+
 #[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 struct Agent {
     /// Start cell
@@ -132,18 +141,20 @@ struct Scenario {
     occupancy: HashMap<i64, Vec<i64>>,
     #[serde(default = "default_cell_size")]
     cell_size: f64,
+    #[serde(skip_serializing_if="Option::is_none", default)]
+    camera_bounds: Option<[[f32; 2]; 2]>,
 }
 
 pub fn default_radius() -> f64 {
-    0.25
+    0.45
 }
 
 pub fn default_speed() -> f64 {
-    0.5
+    0.75
 }
 
 pub fn default_spin() -> f64 {
-    45_f64.to_radians()
+    60_f64.to_radians()
 }
 
 pub fn default_cell_size() -> f64 {
@@ -473,25 +484,12 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
 
     fn draw_in_space(&self, frame: &mut canvas::Frame, _spatial_bounds: iced::Rectangle, _spatial_cursor: canvas::Cursor) {
         for (_, ctx) in &self.agents {
-            for (cell, angle, color, valid, visibility) in [
-                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid, &ctx.start_visibility),
-                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid, &ctx.goal_visibility)
-            ] {
-                let radius = ctx.agent.radius as f32;
-                let cell: Cell = cell.into();
-                let p = cell.to_center_point(self.cell_size);
-                draw_agent(frame, p, angle, radius, color);
-                if !valid {
-                    frame.stroke(
-                        &Path::circle([p.x as f32, p.y as f32].into(), radius),
-                        Stroke{
-                            color: self.invalid_color,
-                            width: 5_f32,
-                            ..Default::default()
-                        },
-                    );
-                }
 
+            for (cell, color, visibility) in [
+                (ctx.agent.start, self.start_color, &ctx.start_visibility),
+                (ctx.agent.goal, self.goal_color, &ctx.goal_visibility)
+            ] {
+                let cell: Cell = cell.into();
                 let p = cell.to_center_point(self.cell_size);
                 for v_cell in visibility {
                     let p_v = v_cell.to_center_point(self.cell_size);
@@ -508,7 +506,6 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                     );
                 }
             }
-
             if ctx.start_sees_goal {
                 let cell_s: Cell = ctx.agent.start.into();
                 let cell_g: Cell = ctx.agent.goal.into();
@@ -525,6 +522,30 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                         ..Default::default()
                     }
                 );
+            }
+        }
+
+        // Draw all of these after the visibility lines so that the agent
+        // locations are always rendered on top of everything else.
+        for (_, ctx) in &self.agents {
+            for (cell, angle, color, valid) in [
+                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid),
+                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid)
+            ] {
+                let radius = ctx.agent.radius as f32;
+                let cell: Cell = cell.into();
+                let p = cell.to_center_point(self.cell_size);
+                draw_agent(frame, p, angle, radius, color);
+                if !valid {
+                    frame.stroke(
+                        &Path::circle([p.x as f32, p.y as f32].into(), radius),
+                        Stroke{
+                            color: self.invalid_color,
+                            width: 5_f32,
+                            ..Default::default()
+                        },
+                    );
+                }
             }
         }
     }
@@ -800,12 +821,12 @@ struct App {
     select_file_button: button::State,
     file_text_input: text_input::State,
     file_text_input_value: String,
-    robot_size_slider: slider::State,
+    agent_yaw_slider: slider::State,
+    agent_radius_slider: slider::State,
+    agent_speed_slider: slider::State,
+    agent_spin_slider: slider::State,
     add_agent_button: button::State,
     pick_agent_state: pick_list::State<String>,
-    max_robot_radius: f32,
-    max_radius_input: text_input::State,
-    max_radius_input_value: String,
     reset_view_button: button::State,
     canvas: SpatialCanvas<Message, GridLayers>,
     node_list_scroll: scrollable::State,
@@ -821,6 +842,14 @@ struct App {
 
 impl App {
     const TICK_COUNT: u32 = 1000;
+
+    fn get_tick(x: f64, min: f64, max: f64) -> u32 {
+        ((x - min)/(max - min) * Self::TICK_COUNT as f64) as u32
+    }
+
+    fn from_tick(x: u32, min: f64, max: f64) -> f64 {
+        x as f64 * (max - min)/(Self::TICK_COUNT as f64) + min
+    }
 
     fn default_invalid_color() -> iced::Color {
         iced::Color::from_rgb(1.0, 0.0, 0.0)
@@ -871,16 +900,15 @@ impl App {
         return false;
     }
 
-    fn set_robot_radius(&mut self, radius: f32) {
-        self.canvas.program.layers.1.set_robot_radius(radius);
+    fn set_robot_radius(&mut self, radius: f64) {
+        self.canvas.program.layers.1.set_robot_radius(radius as f32);
         let endpoint_selector = &mut self.canvas.program.layers.2;
-        let r = radius as f64;
-        if endpoint_selector.set_agent_radius(r) {
+        if endpoint_selector.set_agent_radius(radius) {
             for endpoint in [Endpoint::Start, Endpoint::Goal] {
                 if let Some(cell) = endpoint_selector.endpoint_cell(endpoint) {
                     let cell: Cell = (*cell).into();
                     let p = cell.to_center_point(endpoint_selector.cell_size);
-                    let valid = self.canvas.program.layers.1.grid().is_square_occupied(p, 2.0*r).is_none();
+                    let valid = self.canvas.program.layers.1.grid().is_square_occupied(p, 2.0*radius).is_none();
                     endpoint_selector.set_endpoint_valid(endpoint, valid);
                 }
             }
@@ -992,7 +1020,7 @@ impl App {
                 shared_visibility, [],
             ));
 
-            let extrapolator = DifferentialDriveLineFollow::new(3.0, 1.0).expect("Bad speeds");
+            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
             let agent_radius = ctx.agent.radius;
             let profile = CircularProfile::new(
                 agent_radius, agent_radius, agent_radius,
@@ -1028,7 +1056,7 @@ impl App {
             let start = StartSE2 {
                 time: TimePoint::from_secs_f64(0.0),
                 key: start_cell,
-                orientation: Orientation::new(0_f64),
+                orientation: Orientation::new(ctx.agent.yaw),
             };
 
             let goal = GoalSE2 {
@@ -1094,8 +1122,7 @@ impl App {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Filename to load on startup
-    #[arg(short, long)]
+    /// Scenario to load on startup
     filename: Option<String>,
 }
 
@@ -1121,11 +1148,13 @@ fn load_scenario(filename: Option<&String>) -> (
     BTreeMap<String, Agent>,
     Vec<(f64, Trajectory<WaypointSE2>)>,
     SparseGrid,
+    InclusionZone,
     bool,
 ) {
     let mut agents = BTreeMap::new();
     let mut obstacles = Vec::new();
     let mut grid = SparseGrid::new(1.0);
+    let mut zone = InclusionZone::Empty;
     let mut success = false;
     if let Some(filename) = filename {
         if let Some(scenario) = load_file(filename) {
@@ -1148,10 +1177,16 @@ fn load_scenario(filename: Option<&String>) -> (
                     );
                 }
             }
+
+            if let Some(bounds) = scenario.camera_bounds {
+                for p in bounds {
+                    zone.include(iced::Point::new(p[0], p[1]));
+                }
+            }
             success = true;
         }
     }
-    (agents, obstacles, grid, success)
+    (agents, obstacles, grid, zone, success)
 }
 
 impl Application for App {
@@ -1161,8 +1196,7 @@ impl Application for App {
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let cell_size = 1.0_f32;
-        let robot_radius = 0.75_f32;
-        let (agents, obstacles, grid, _) = load_scenario(flags.filename.as_ref());
+        let (agents, obstacles, grid, mut zone, _) = load_scenario(flags.filename.as_ref());
 
         let mut canvas = SpatialCanvas::new(
             GridLayers{
@@ -1170,7 +1204,7 @@ impl Application for App {
                     InfiniteGrid::new(cell_size),
                     SparseGridOccupancyVisual::new(
                         grid,
-                        robot_radius,
+                        default_radius() as f32,
                         None,
                         Some(Box::new(|| { Message::OccupancyChanged })),
                     ),
@@ -1198,12 +1232,12 @@ impl Application for App {
             select_file_button: button::State::new(),
             file_text_input: text_input::State::new(),
             file_text_input_value: String::new(),
-            robot_size_slider: slider::State::new(),
+            agent_yaw_slider: slider::State::new(),
+            agent_radius_slider: slider::State::new(),
+            agent_speed_slider: slider::State::new(),
+            agent_spin_slider: slider::State::new(),
             add_agent_button: button::State::new(),
             pick_agent_state: pick_list::State::new(),
-            max_robot_radius: 10_f32*cell_size,
-            max_radius_input: text_input::State::default(),
-            max_radius_input_value: String::new(),
             reset_view_button: button::State::new(),
             canvas,
             node_list_scroll: scrollable::State::new(),
@@ -1220,11 +1254,22 @@ impl Application for App {
         if app.canvas.program.layers.2.agents.is_empty() {
             // Calling add_agent also recalculates visibility
             app.add_agent();
+            zone.include(iced::Point::new(-10.0, -10.0));
+            zone.include(iced::Point::new(10.0, 10.0));
         } else {
             app.recalculate_visibility();
         }
 
-        (app, Command::none())
+        let set_view = Command::perform(async move {}, move |_| Message::SetView(zone));
+        let top_agent = app.canvas.program.layers.2.agents.iter().next();
+        let set_agent = if let Some((top_agent, _)) = top_agent {
+            let top_agent = top_agent.clone();
+            Some(Command::perform(async move {}, move |_| Message::SelectAgent(top_agent.clone())))
+        } else {
+            None
+        };
+
+        (app, Command::batch([set_view].into_iter().chain(set_agent.into_iter())))
     }
 
     fn title(&self) -> String {
@@ -1261,12 +1306,18 @@ impl Application for App {
                     }
                 };
 
+                let camera_bounds = match self.canvas.camera_bounds() {
+                    InclusionZone::Empty => None,
+                    InclusionZone::Some { lower, upper } => Some([[lower.x, lower.y], [upper.x, upper.y]])
+                };
+
                 let cell_size = self.canvas.program.layers.2.cell_size;
                 let scenario = Scenario {
                     agents: self.canvas.program.layers.2.agents.iter().map(|(n, a)| (n.clone(), a.agent.clone())).collect(),
                     obstacles: self.canvas.program.layers.3.obstacles.iter().map(|obs| Obstacle::new(obs.0, &obs.1, cell_size)).collect(),
                     occupancy: serialize_grid(self.canvas.program.layers.1.grid()),
                     cell_size,
+                    camera_bounds,
                 };
 
                 match serde_yaml::to_writer(out_file, &scenario) {
@@ -1289,7 +1340,7 @@ impl Application for App {
                     }
                 }
 
-                let (agents, obstacles, grid, success) = load_scenario(Some(&self.file_text_input_value));
+                let (agents, obstacles, grid, zone, success) = load_scenario(Some(&self.file_text_input_value));
                 if !success {
                     return Command::none();
                 }
@@ -1299,7 +1350,7 @@ impl Application for App {
                 self.canvas.program.layers.3.obstacles = obstacles;
                 self.recalculate_visibility();
                 self.canvas.cache.clear();
-                self.canvas.fit_to_bounds();
+                return Command::perform(async move {}, move |_| Message::SetView(zone));
             }
             Message::ScenarioFileInput(value) => {
                 self.file_text_input_value = value;
@@ -1316,28 +1367,42 @@ impl Application for App {
                     None => {}
                 }
             }
-            Message::RobotRadiusInput(value) => {
-                self.max_radius_input_value = value;
-                if let Ok(radius) = self.max_radius_input_value.parse::<f32>() {
-                    if radius > 0.0 {
-                        self.max_robot_radius = radius;
-
-                        let current_robot_radius = self.canvas.program.layers.1.visibility().agent_radius() as f32;
-                        if self.max_robot_radius < current_robot_radius {
-                            self.set_robot_radius(radius);
-                        }
-                    }
+            Message::AgentYawSlide(value) => {
+                if let Some(ctx) = self.canvas.program.layers.2.selected_agent_mut() {
+                    ctx.agent.yaw = Self::from_tick(value, MIN_AGENT_YAW, MAX_AGENT_YAW);
+                    self.generate_plan();
                 }
-            },
-            Message::RobotSizeSlide(value) => {
-                let min_size = self.canvas.program.layers.1.grid().cell_size() as f32/10_f32;
-                let new_robot_radius = value as f32 * (self.max_robot_radius - min_size)/(Self::TICK_COUNT as f32) + min_size;
-                self.set_robot_radius(new_robot_radius);
+            }
+            Message::AgentRadiusSlide(value) => {
+                self.set_robot_radius(Self::from_tick(value, MIN_AGENT_RADIUS, MAX_AGENT_RADIUS));
                 self.generate_plan();
-            },
+            }
+            Message::AgentSpeedSlide(value) => {
+                if let Some(ctx) = self.canvas.program.layers.2.selected_agent_mut() {
+                    ctx.agent.speed = Self::from_tick(value, MIN_AGENT_SPEED, MAX_AGENT_SPEED);
+                    self.generate_plan();
+                }
+            }
+            Message::AgentSpinSlide(value) => {
+                if let Some(ctx) = self.canvas.program.layers.2.selected_agent_mut() {
+                    ctx.agent.spin = Self::from_tick(value, MIN_AGENT_SPIN, MAX_AGENT_SPIN);
+                    self.generate_plan();
+                }
+            }
             Message::ResetView => {
-                self.canvas.fit_to_bounds();
-            },
+                if !self.canvas.fit_to_bounds() {
+                    // The canvas was not ready to fit the view, so we need to
+                    // issue this message again
+                    return Command::perform(async move {}, move |_| Message::ResetView);
+                }
+            }
+            Message::SetView(zone) => {
+                if !self.canvas.fit_to_zone(zone) {
+                    // The canvas was not ready to fit the view, so we need to
+                    // issue this message again
+                    return Command::perform(async move {}, move |_| Message::SetView(zone));
+                }
+            }
             Message::EventOccurred(event) => {
                 if let iced_native::Event::Keyboard(event) = event {
                     match self.show_details.key_toggle(event) {
@@ -1451,9 +1516,17 @@ impl Application for App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let min_size = self.canvas.program.layers.1.grid().cell_size() as f32/10_f32;
-        let robot_radius = self.canvas.program.layers.1.visibility().agent_radius() as f32;
-        let robot_tick = ((robot_radius - min_size)/(self.max_robot_radius - min_size) * Self::TICK_COUNT as f32) as u32;
+        // let agent_radius = self.canvas.program.layers.1.visibility().agent_radius() as f32;
+        let (agent_yaw, agent_radius, agent_speed, agent_spin) = if let Some(ctx) = self.canvas.program.layers.2.selected_agent() {
+            (ctx.agent.yaw, ctx.agent.radius, ctx.agent.speed, ctx.agent.spin)
+        } else {
+            (0.0, default_radius(), default_speed(), default_spin())
+        };
+        let yaw_tick = Self::get_tick(agent_yaw, MIN_AGENT_YAW, MAX_AGENT_YAW);
+        let radius_tick = Self::get_tick(agent_radius, MIN_AGENT_RADIUS, MAX_AGENT_RADIUS);
+        let speed_tick = Self::get_tick(agent_speed, MIN_AGENT_SPEED, MAX_AGENT_SPEED);
+        let spin_tick = Self::get_tick(agent_spin, MIN_AGENT_SPIN, MAX_AGENT_SPIN);
+
         let file_row = Row::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -1496,7 +1569,6 @@ impl Application for App {
         let robot_row = Row::new()
             .spacing(20)
             .align_items(Alignment::Center)
-            .width(Length::Fill)
             .push(
                 Button::new(
                     &mut self.add_agent_button,
@@ -1512,23 +1584,56 @@ impl Application for App {
                 )
             )
             .push(
-                Slider::new(
-                    &mut self.robot_size_slider,
-                    0..=Self::TICK_COUNT,
-                    robot_tick,
-                    Message::RobotSizeSlide,
+                Column::new()
+                .width(Length::FillPortion(1))
+                .push(Text::new(format!("Yaw: {:.2} deg", agent_yaw)))
+                .push(
+                    Slider::new(
+                        &mut self.agent_yaw_slider,
+                        0..=Self::TICK_COUNT,
+                        yaw_tick,
+                        Message::AgentYawSlide
+                    )
                 )
             )
-            .push(Text::new(format!("{:.2}", robot_radius)))
             .push(
-                TextInput::new(
-                    &mut self.max_radius_input,
-                    "Max Robot Radius",
-                    &mut self.max_radius_input_value,
-                    Message::RobotRadiusInput
+                Column::new()
+                .width(Length::FillPortion(1))
+                .push(Text::new(format!("Radius: {:.2} m", agent_radius)))
+                .push(
+                    Slider::new(
+                        &mut self.agent_radius_slider,
+                        0..=Self::TICK_COUNT,
+                        radius_tick,
+                        Message::AgentRadiusSlide,
+                    )
                 )
-                .padding(10)
-                .width(Length::Fill)
+            )
+            .push(
+                Column::new()
+                .width(Length::FillPortion(1))
+                .push(Text::new(format!("Speed: {:.2} m/s", agent_speed)))
+                .push(
+                    Slider::new(
+                        &mut self.agent_speed_slider,
+                        0..=Self::TICK_COUNT,
+                        speed_tick,
+                        Message::AgentSpeedSlide,
+                    )
+                )
+            )
+            .push(
+                Column::new()
+                .width(Length::FillPortion(1))
+                .push(Text::new(format!("Spin: {:.2} deg/sec", agent_spin.to_degrees())))
+                .push(
+                    Slider::new(
+                        &mut self.agent_spin_slider,
+                        0..=Self::TICK_COUNT,
+                        spin_tick,
+                        Message::AgentSpinSlide,
+                    )
+                )
             );
 
         let instruction_row = Row::<Message>::new()
@@ -1639,8 +1744,10 @@ impl Application for App {
 
 #[derive(Debug, Clone)]
 enum Message {
-    RobotRadiusInput(String),
-    RobotSizeSlide(u32),
+    AgentYawSlide(u32),
+    AgentRadiusSlide(u32),
+    AgentSpeedSlide(u32),
+    AgentSpinSlide(u32),
     AddAgent,
     SelectAgent(String),
     SaveFileAs,
@@ -1648,6 +1755,7 @@ enum Message {
     LoadFile,
     ScenarioFileInput(String),
     ResetView,
+    SetView(InclusionZone),
     EventOccurred(iced_native::Event),
     EndpointSelected(EndpointSelection),
     OccupancyChanged,
