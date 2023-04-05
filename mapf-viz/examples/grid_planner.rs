@@ -484,57 +484,50 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
 
     fn draw_in_space(&self, frame: &mut canvas::Frame, _spatial_bounds: iced::Rectangle, _spatial_cursor: canvas::Cursor) {
         for (_, ctx) in &self.agents {
-
-            for (cell, color, visibility) in [
-                (ctx.agent.start, self.start_color, &ctx.start_visibility),
-                (ctx.agent.goal, self.goal_color, &ctx.goal_visibility)
-            ] {
-                let cell: Cell = cell.into();
-                let p = cell.to_center_point(self.cell_size);
-                for v_cell in visibility {
-                    let p_v = v_cell.to_center_point(self.cell_size);
+            if self.show_details {
+                if ctx.start_sees_goal {
+                    let cell_s: Cell = ctx.agent.start.into();
+                    let cell_g: Cell = ctx.agent.goal.into();
+                    let p_start = cell_s.to_center_point(self.cell_size);
+                    let p_goal = cell_g.to_center_point(self.cell_size);
                     frame.stroke(
                         &Path::line(
-                            [p.x as f32, p.y as f32].into(),
-                            [p_v.x as f32, p_v.y as f32].into()
+                            [p_start.x as f32, p_start.y as f32].into(),
+                            [p_goal.x as f32, p_goal.y as f32].into()
                         ),
                         Stroke{
-                            color,
+                            color: iced::Color::from_rgb(0.1, 1.0, 1.0),
                             width: 5_f32,
                             ..Default::default()
                         }
                     );
                 }
             }
-            if ctx.start_sees_goal {
-                let cell_s: Cell = ctx.agent.start.into();
-                let cell_g: Cell = ctx.agent.goal.into();
-                let p_start = cell_s.to_center_point(self.cell_size);
-                let p_goal = cell_g.to_center_point(self.cell_size);
-                frame.stroke(
-                    &Path::line(
-                        [p_start.x as f32, p_start.y as f32].into(),
-                        [p_goal.x as f32, p_goal.y as f32].into()
-                    ),
-                    Stroke{
-                        color: iced::Color::from_rgb(0.1, 1.0, 1.0),
-                        width: 5_f32,
-                        ..Default::default()
-                    }
-                );
-            }
-        }
 
-        // Draw all of these after the visibility lines so that the agent
-        // locations are always rendered on top of everything else.
-        for (_, ctx) in &self.agents {
-            for (cell, angle, color, valid) in [
-                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid),
-                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid)
+            for (cell, angle, color, valid, visibility) in [
+                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid, &ctx.start_visibility),
+                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid, &ctx.goal_visibility)
             ] {
                 let radius = ctx.agent.radius as f32;
                 let cell: Cell = cell.into();
                 let p = cell.to_center_point(self.cell_size);
+                if self.show_details {
+                    for v_cell in visibility {
+                        let p_v = v_cell.to_center_point(self.cell_size);
+                        frame.stroke(
+                            &Path::line(
+                                [p.x as f32, p.y as f32].into(),
+                                [p_v.x as f32, p_v.y as f32].into()
+                            ),
+                            Stroke{
+                                color,
+                                width: 5_f32,
+                                ..Default::default()
+                            }
+                        );
+                    }
+                }
+
                 draw_agent(frame, p, angle, radius, color);
                 if !valid {
                     frame.stroke(
@@ -1207,7 +1200,7 @@ impl Application for App {
                         default_radius() as f32,
                         None,
                         Some(Box::new(|| { Message::OccupancyChanged })),
-                    ),
+                    ).showing_visibility_graph(false),
                     EndpointSelector::new(
                         agents,
                         cell_size as f64,
@@ -1407,11 +1400,13 @@ impl Application for App {
                 if let iced_native::Event::Keyboard(event) = event {
                     match self.show_details.key_toggle(event) {
                         Toggle::On => {
+                            self.canvas.program.layers.1.show_visibility_graph = true;
                             self.canvas.program.layers.1.show_details(true);
                             self.canvas.program.layers.2.show_details = true;
                             self.canvas.cache.clear();
                         },
                         Toggle::Off => {
+                            self.canvas.program.layers.1.show_visibility_graph = false;
                             self.canvas.program.layers.1.show_details(false);
                             self.canvas.program.layers.2.show_details = false;
                             self.canvas.cache.clear();

@@ -100,6 +100,11 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         }
     }
 
+    pub fn showing_visibility_graph(mut self, showing: bool) -> Self {
+        self.show_visibility_graph = showing;
+        self
+    }
+
     pub fn set_robot_radius(&mut self, radius: f32) {
         self.occupancy.change_agent_radius(radius as f64);
     }
