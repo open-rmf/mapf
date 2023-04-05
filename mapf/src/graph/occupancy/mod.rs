@@ -80,6 +80,18 @@ impl Cell {
     }
 }
 
+impl From<[i64; 2]> for Cell {
+    fn from(value: [i64; 2]) -> Self {
+        Cell::new(value[0], value[1])
+    }
+}
+
+impl From<(i64, i64)> for Cell {
+    fn from((x, y): (i64, i64)) -> Self {
+        Cell::new(x, y)
+    }
+}
+
 impl Sub for Cell {
     type Output = (i64, i64);
     fn sub(self, other: Self) -> Self::Output {
