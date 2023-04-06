@@ -393,34 +393,43 @@ impl<W: Waypoint> std::ops::Deref for Trajectory<W> {
 
 pub struct TrajectoryMotion<'a, W: Waypoint> {
     trajectory: &'a Trajectory<W>,
+    // TODO(@mxgrey): We could probably use references with explicit lifetimes
+    // instead of Rc.
     motion_cache: RefCell<UnboundCache<usize, Rc<W::Motion>>>,
 }
 
 impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
-    fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
+    fn find_motion_segment(&self, time: &TimePoint) -> Result<MotionSegment<W>, InterpError> {
         match self.trajectory.find(time) {
             FindWaypoint::Exact(index) => {
                 if index == 0 {
-                    return Ok(self.get_motion_segment(index + 1));
+                    return Ok(MotionSegment::Interp(self.get_motion_segment(index + 1)));
                 } else {
-                    return Ok(self.get_motion_segment(index));
+                    return Ok(MotionSegment::Interp(self.get_motion_segment(index)));
                 }
             }
             FindWaypoint::Approaching(index) => {
-                return Ok(self.get_motion_segment(index));
+                return Ok(MotionSegment::Interp(self.get_motion_segment(index)));
             }
-            FindWaypoint::BeforeStart | FindWaypoint::AfterFinish => {
-                // TODO(@mxgrey): Handle this differently for trajectories with
-                // indefinite initial/final times.
-                return Err(InterpError::OutOfBounds {
-                    range: [
-                        self.trajectory.initial_motion_time(),
-                        self.trajectory.finish_motion_time(),
-                    ],
-                    request: *time,
-                });
+            FindWaypoint::BeforeStart => {
+                if self.trajectory.has_indefinite_initial_time() {
+                    return Ok(MotionSegment::Holding(self.trajectory.initial_motion().position()));
+                }
+            }
+            FindWaypoint::AfterFinish => {
+                if self.trajectory.has_indefinite_finish_time() {
+                    return Ok(MotionSegment::Holding(self.trajectory.finish_motion().position()));
+                }
             }
         }
+
+        Err(InterpError::OutOfBounds {
+            range: [
+                self.trajectory.initial_motion_time(),
+                self.trajectory.finish_motion_time(),
+            ],
+            request: *time,
+        })
     }
 
     fn get_motion_segment(&self, index: usize) -> Rc<W::Motion> {
@@ -441,13 +450,24 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     }
 }
 
+enum MotionSegment<W: Waypoint> {
+    Interp(Rc<W::Motion>),
+    Holding(W::Position),
+}
+
 impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, W> {
     fn compute_position(&self, time: &TimePoint) -> Result<W::Position, InterpError> {
-        return self.find_motion_segment(time)?.compute_position(time);
+        match self.find_motion_segment(time)? {
+            MotionSegment::Interp(motion) => motion.compute_position(time),
+            MotionSegment::Holding(p) => Ok(p),
+        }
     }
 
     fn compute_velocity(&self, time: &TimePoint) -> Result<W::Velocity, InterpError> {
-        return self.find_motion_segment(time)?.compute_velocity(time);
+        match self.find_motion_segment(time)? {
+            MotionSegment::Interp(motion) => motion.compute_velocity(time),
+            MotionSegment::Holding(_) => Ok(W::zero_velocity()),
+        }
     }
 }
 

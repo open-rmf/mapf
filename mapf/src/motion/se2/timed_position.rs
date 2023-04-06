@@ -118,6 +118,13 @@ impl From<Position> for DebugPositionSE2 {
 impl motion::Waypoint for WaypointSE2 {
     type Position = Position;
     type Velocity = Velocity;
+    fn position(&self) -> Self::Position {
+        self.position
+    }
+
+    fn zero_velocity() -> Self::Velocity {
+        Velocity::zero()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

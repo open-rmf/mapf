@@ -138,6 +138,11 @@ impl<Cost: Eq> Eq for TreeQueueTicket<Cost> {}
 impl<Cost: PartialOrd> PartialOrd for TreeQueueTicket<Cost> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.evaluation.partial_cmp(&other.evaluation) {
+            // TODO(@mxgrey): Let downstream users to define criteria for
+            // deciding when two evaluations are close enough that the biases
+            // should be compared instead. Small floating point numerical
+            // residue could cause one evaluation to be unfairly favored over
+            // another that should be considered equal.
             Some(Ordering::Equal) => {
                 if let (Some(l), Some(r)) = (&self.bias, &other.bias) {
                     l.partial_cmp(r)

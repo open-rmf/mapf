@@ -27,6 +27,12 @@ pub struct Velocity {
     pub rotational: f64,
 }
 
+impl Velocity {
+    pub fn zero() -> Self {
+        Velocity { translational: Vector::zeros(), rotational: 0.0 }
+    }
+}
+
 pub mod timed_position;
 pub use timed_position::*;
 

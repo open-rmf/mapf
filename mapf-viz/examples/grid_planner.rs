@@ -73,11 +73,16 @@ const ASCII_UPPER: [char; 26] = [
 
 fn generate_robot_name(mut index: usize) -> String {
     let mut chars = Vec::new();
-    while index > 26 {
-        chars.push(index % 26);
+    println!(" ========= {index}");
+    let mut offset = 0;
+    while index >= 26 {
+        dbg!(index);
+        chars.push(dbg!(index % 26));
         index = index / 26;
+        offset = 1;
     }
-    chars.push(index % 26);
+    dbg!(index);
+    chars.push(dbg!(index % 26 - offset));
     chars.reverse();
     String::from_iter(chars.into_iter().map(|i| ASCII_UPPER[i]))
 }
@@ -292,6 +297,7 @@ struct EndpointSelector<Message> {
     pub agents: BTreeMap<String, AgentContext>,
     pub cell_size: f64,
     pub invalid_color: iced::Color,
+    pub selected_color: iced::Color,
     pub start_color: iced::Color,
     pub goal_color: iced::Color,
     pub show_details: bool,
@@ -341,6 +347,7 @@ impl<Message> EndpointSelector<Message> {
         agents: BTreeMap<String, Agent>,
         cell_size: f64,
         invalid_color: iced::Color,
+        selected_color: iced::Color,
         start_color: iced::Color,
         goal_color: iced::Color,
     ) -> Self {
@@ -350,6 +357,7 @@ impl<Message> EndpointSelector<Message> {
             selected_agent,
             cell_size,
             invalid_color,
+            selected_color,
             start_color,
             goal_color,
             show_details: false,
@@ -483,7 +491,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
     }
 
     fn draw_in_space(&self, frame: &mut canvas::Frame, _spatial_bounds: iced::Rectangle, _spatial_cursor: canvas::Cursor) {
-        for (_, ctx) in &self.agents {
+        for (name, ctx) in &self.agents {
             if self.show_details {
                 if ctx.start_sees_goal {
                     let cell_s: Cell = ctx.agent.start.into();
@@ -496,7 +504,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                             [p_goal.x as f32, p_goal.y as f32].into()
                         ),
                         Stroke{
-                            color: iced::Color::from_rgb(0.1, 1.0, 1.0),
+                            color: self.selected_color,
                             width: 5_f32,
                             ..Default::default()
                         }
@@ -529,11 +537,18 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                 }
 
                 draw_agent(frame, p, angle, radius, color);
-                if !valid {
+                let is_selected = self.selected_agent.as_ref().filter(|n| **n == *name).is_some();
+                if !valid || is_selected {
+                    let color = if !valid {
+                        self.invalid_color
+                    } else {
+                        self.selected_color
+                    };
+
                     frame.stroke(
                         &Path::circle([p.x as f32, p.y as f32].into(), radius),
                         Stroke{
-                            color: self.invalid_color,
+                            color,
                             width: 5_f32,
                             ..Default::default()
                         },
@@ -591,7 +606,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
 struct SolutionVisual<Message> {
     pub cell_size: f64,
     pub solution_color: iced::Color,
-    pub solution: Option<(f64, LinearTrajectorySE2)>,
+    pub solutions: Vec<(f64, LinearTrajectorySE2)>,
     pub search_color: iced::Color,
     pub searches: Vec<(f64, LinearTrajectorySE2)>,
     pub obstacles: Vec<(f64, LinearTrajectorySE2)>,
@@ -620,7 +635,7 @@ impl SolutionVisual<Message> {
         Self {
             cell_size,
             solution_color,
-            solution: None,
+            solutions: Vec::new(),
             search_color,
             searches: Vec::new(),
             obstacles,
@@ -646,10 +661,13 @@ impl SolutionVisual<Message> {
         }
 
         if !earliest.has_value() || !latest.has_value() {
-            if let Some((_, solution)) = &self.solution {
-                return Some((solution.initial_motion_time(), solution.finish_motion_time()));
+            for (_, solution) in &self.solutions {
+                earliest.consider(&solution.initial_motion_time());
+                latest.consider(&solution.finish_motion_time());
             }
+        }
 
+        if !earliest.has_value() || !latest.has_value() {
             for (_, obs) in &self.obstacles {
                 earliest.consider(&obs.initial_motion_time());
                 latest.consider(&obs.finish_motion_time());
@@ -700,7 +718,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
                 draw_trajectory(frame, trajectory, self.search_color);
             }
 
-            if let Some((_, trajectory)) = &self.solution {
+            for (_, trajectory) in &self.solutions {
                 draw_trajectory(frame, trajectory, self.solution_color);
             }
 
@@ -734,7 +752,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
                     }
                 }
 
-                if let Some((radius, trajectory)) = &self.solution {
+                for (radius, trajectory) in &self.solutions {
                     if let Ok(p) = trajectory.motion().compute_position(&(t0 + now)) {
                         draw_agent(
                             frame,
@@ -755,7 +773,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         bound: iced::Rectangle,
         _spatial_cursor: canvas::Cursor
     ) {
-        if let Some((radius, trajectory)) = &self.solution {
+        for (radius, trajectory) in &self.solutions {
             let mut sequence: HashMap<Cell, Vec<String>> = HashMap::new();
             for (i, wp) in trajectory.iter().enumerate() {
                 sequence.entry(
@@ -848,6 +866,10 @@ impl App {
         iced::Color::from_rgb(1.0, 0.0, 0.0)
     }
 
+    fn default_selected_color() -> iced::Color {
+        iced::Color::from_rgb(0.1, 1.0, 1.0)
+    }
+
     fn default_endpoint_color(endpoint: Endpoint) -> iced::Color {
         match endpoint {
             Endpoint::Start => iced::Color::from_rgba(0.1, 0.8, 0.1, 0.9),
@@ -933,7 +955,8 @@ impl App {
 
             if let SearchStatus::Solved(solution) = search.step().unwrap() {
                 println!("Solution: {:#?}", solution);
-                self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap().map(|t| (*radius, t));
+                self.canvas.program.layers.3.solutions.clear();
+                self.canvas.program.layers.3.solutions.extend(solution.make_trajectory().unwrap().map(|t| (*radius, t)).into_iter());
                 self.debug_node_selected = None;
                 self.search = None;
             } else {
@@ -946,7 +969,8 @@ impl App {
                             .make_trajectory()
                             .unwrap();
 
-                        self.canvas.program.layers.3.solution = solution.map(|s| (*radius, s));
+                        self.canvas.program.layers.3.solutions.clear();
+                        self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*radius, s)).into_iter());
                     }
                 }
             }
@@ -989,18 +1013,32 @@ impl App {
     }
 
     fn generate_plan(&mut self) {
-        self.canvas.program.layers.3.solution = None;
+        // Clear all history
+        self.memory.clear();
+        self.search = None;
+        self.canvas.program.layers.3.solutions.clear();
+        self.canvas.program.layers.3.searches.clear();
+        self.canvas.cache.clear();
+
         let endpoints = &self.canvas.program.layers.2;
         let visibility = self.canvas.program.layers.1.visibility();
-        let ctx = match endpoints.selected_agent() {
-            Some(ctx) => ctx,
-            None => return,
-        };
+        let mut other_agents: Vec<(f64, LinearTrajectorySE2)> = Vec::new();
+        for (name, ctx) in &endpoints.agents {
+            let start_cell: Cell = ctx.agent.start.into();
+            let goal_cell: Cell = ctx.agent.goal.into();
 
-        let start_cell: Cell = ctx.agent.start.into();
-        let goal_cell: Cell = ctx.agent.goal.into();
+            if !ctx.start_valid || !ctx.goal_valid {
+                print!("Cannot plan for {name}:");
+                if !ctx.start_valid {
+                    print!(" invalid start");
+                }
+                if !ctx.goal_valid {
+                    print!(" invalid goal");
+                }
+                println!("");
+                continue;
+            }
 
-        if ctx.start_valid && ctx.goal_valid {
             let r = ctx.agent.radius;
             self.canvas.program.layers.3.vertex_lookup.clear();
 
@@ -1023,7 +1061,7 @@ impl App {
                 OverlayedDynamicEnvironment::new(
                     Arc::new({
                         let mut env = DynamicEnvironment::new(profile);
-                        for (obs_size, obs_traj) in &self.canvas.program.layers.3.obstacles {
+                        for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter().chain(other_agents.iter()) {
                             env.obstacles.push(
                                 DynamicCircularObstacle::new(
                                     CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
@@ -1057,7 +1095,7 @@ impl App {
                 orientation: None,
             };
 
-            println!("About to plan:\nStart: {start:#?}\nGoal: {goal:#?}");
+            println!("About to plan for {name}:\nStart: {start:#?}\nGoal: {goal:#?}");
 
             let start_time = std::time::Instant::now();
             let planner = Planner::new(AStarConnect(domain));
@@ -1075,16 +1113,21 @@ impl App {
                 let elapsed_time = start_time.elapsed();
                 match result {
                     SearchStatus::Solved(solution) => {
-
-                        println!("Solution: {:#?}", solution);
-                        println!(" ======================= ");
-                        self.canvas.program.layers.3.solution = solution.make_trajectory().unwrap().map(|s| (r, s));
-                        println!(" ======================= ");
-                        println!("Trajectory: {:#?}", self.canvas.program.layers.3.solution);
+                        // println!("Solution: {:#?}", solution);
+                        // println!(" ======================= ");
+                        let trajectory = solution.make_trajectory().unwrap().map(|t|
+                            t
+                            .with_indefinite_initial_time(true)
+                            .with_indefinite_finish_time(true)
+                        );
+                        let arrival_time = trajectory.as_ref().map(|t| t.motion_duration().as_secs_f64()).unwrap_or(0.0);
+                        let presence = trajectory.map(|t| (r, t));
+                        self.canvas.program.layers.3.solutions.extend(presence.as_ref().into_iter().cloned());
+                        other_agents.extend(presence.into_iter());
+                        // println!(" ======================= ");
+                        // println!("Trajectory: {:#?}", self.canvas.program.layers.3.solutions);
                         println!(
-                            "Arrival time: {:?}, cost: {:?}",
-                            self.canvas.program.layers.3.solution.as_ref()
-                                .map(|(_, t)| t.motion_duration().as_secs_f64()).unwrap_or(0.0),
+                            "{name} Arrival time: {arrival_time:?}, cost: {:?}",
                             solution.total_cost.0,
                         );
                         self.canvas.cache.clear();
@@ -1099,16 +1142,7 @@ impl App {
                 println!("Planning took {:?}s", elapsed_time.as_secs_f64());
             }
             self.debug_node_selected = None;
-
-            return;
         }
-
-        // If the attempt to plan falls through, then clear out all these fields.
-        self.memory.clear();
-        self.search = None;
-        self.canvas.program.layers.3.solution = None;
-        self.canvas.program.layers.3.searches.clear();
-        self.canvas.cache.clear();
     }
 }
 
@@ -1205,6 +1239,7 @@ impl Application for App {
                         agents,
                         cell_size as f64,
                         Self::default_invalid_color(),
+                        Self::default_selected_color(),
                         Self::default_endpoint_color(Endpoint::Start),
                         Self::default_endpoint_color(Endpoint::Goal),
                     ),
@@ -1276,6 +1311,7 @@ impl Application for App {
         match message {
             Message::AddAgent => {
                 self.add_agent();
+                self.generate_plan();
             }
             Message::SaveFile | Message::SaveFileAs => {
                 if matches!(message, Message::SaveFileAs) {
@@ -1479,7 +1515,7 @@ impl Application for App {
                             .unwrap()
                             .make_trajectory()
                             .unwrap();
-                        self.canvas.program.layers.3.solution = solution.map(|s| (*r, s));
+                        self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s)).into_iter());
                         self.canvas.cache.clear();
                     }
                 }

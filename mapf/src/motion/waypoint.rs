@@ -26,6 +26,12 @@ pub trait Waypoint:
 
     /// How does the waypoint represent the time derivative of its position
     type Velocity;
+
+    /// Get the position of a waypoint
+    fn position(&self) -> Self::Position;
+
+    /// Provide a zero-valued velocity vector for your waypoint type.
+    fn zero_velocity() -> Self::Velocity;
 }
 
 /// A trait for states and actions to yield their waypoints

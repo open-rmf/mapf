@@ -30,6 +30,8 @@ pub mod templates;
 
 pub mod motion;
 
+pub mod negotiation;
+
 pub mod error;
 
 pub mod premade;

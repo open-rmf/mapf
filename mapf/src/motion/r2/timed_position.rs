@@ -102,6 +102,13 @@ impl From<WaypointSE2> for WaypointR2 {
 impl motion::Waypoint for WaypointR2 {
     type Position = Position;
     type Velocity = Velocity;
+    fn position(&self) -> Self::Position {
+        self.position
+    }
+
+    fn zero_velocity() -> Self::Velocity {
+        Velocity::zeros()
+    }
 }
 
 pub struct Motion {
