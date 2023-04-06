@@ -171,10 +171,9 @@ impl<Algo, Halting> Planner<Algo, Halting> {
 
 impl<A: Configurable, H> Configurable for Planner<A, H> {
     type Configuration = A::Configuration;
-    type ConfigurationError = A::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>
     {
         Ok(Self {
             algorithm: self.algorithm.configure(f)?,

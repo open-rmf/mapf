@@ -22,7 +22,7 @@ use crate::{
         ClosedStatusForKey, Configurable, Connectable, Domain, Initializable, Keyed, Keyring,
         Weighted,
     },
-    error::ThisError,
+    error::{ThisError, Anyhow},
 };
 use std::{
     borrow::Borrow,
@@ -483,10 +483,9 @@ where
         + Closable<D::State>,
 {
     type Configuration = D::Configuration;
-    type ConfigurationError = D::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         // We have to assume that all caches are invalidated when the domain
         // gets configured.

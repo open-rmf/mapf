@@ -338,10 +338,9 @@ where
 
 impl<D: Configurable> Configurable for AStar<D> {
     type Configuration = D::Configuration;
-    type ConfigurationError = D::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         Ok(AStar(self.0.configure(f)?))
     }
@@ -436,10 +435,9 @@ where
 
 impl<D: Configurable> Configurable for AStarConnect<D> {
     type Configuration = D::Configuration;
-    type ConfigurationError = D::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         Ok(AStarConnect(self.0.configure(f)?))
     }

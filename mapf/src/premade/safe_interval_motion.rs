@@ -42,8 +42,8 @@ use std::{
 };
 
 pub struct SafeIntervalCache<G: Graph> {
-    pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
-    pub graph: G,
+    graph: G,
+    environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
     earliest_time: Option<TimePoint>,
     safe_intervals: RwLock<HashMap<G::Key, SafeArrivalTimes>>,
 }
@@ -64,6 +64,14 @@ impl<G: Graph> SafeIntervalCache<G> {
             earliest_time,
             safe_intervals: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn graph(&self) -> &G {
+        &self.graph
+    }
+
+    pub fn environment(&self) -> &Arc<OverlayedDynamicEnvironment<WaypointSE2>> {
+        &self.environment
     }
 
     pub fn safe_intervals_for(

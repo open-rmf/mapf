@@ -15,12 +15,17 @@
  *
 */
 
+use crate::error::Anyhow;
+
 /// Configure the parameters of a domain
 pub trait Configurable {
     type Configuration;
-    type ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
         Self: Sized;
+    // TODO(@mxgrey): Consider whether it's possible to support custom strongly
+    // typed error structs. The main challenge is that callbacks used inside the
+    // configuration callback could have arbitrary error structs. That's why we
+    // roll it all into Anyhow for now.
 }

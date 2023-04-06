@@ -39,7 +39,7 @@ pub use oriented::*;
 pub type LinearTrajectorySE2 = super::Trajectory<WaypointSE2>;
 
 pub mod quickest_path;
-pub use quickest_path::QuickestPathHeuristic;
+pub use quickest_path::{QuickestPathHeuristic, QuickestPathPlanner};
 
 pub mod differential_drive_line_follow;
 pub use differential_drive_line_follow::*;

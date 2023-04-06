@@ -25,6 +25,7 @@ use crate::{
     },
     premade::{SafeIntervalCache, SafeIntervalCloser, SafeIntervalMotion},
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
+    error::{StdError, Anyhow},
 };
 use std::sync::Arc;
 
@@ -119,79 +120,275 @@ where
     }
 }
 
-pub struct SippSE2Configuration<G, H> {
-    pub activity_graph: SharedGraph<G>,
-    pub heuristic_graph: SharedGraph<H>,
-    pub motion: DifferentialDriveLineFollow,
-    pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
-    pub weight: TravelEffortCost,
+pub struct SippSE2Configuration<G, H>
+where
+    G: Graph,
+    H: Graph + Reversible,
+    H::Key: Key + Clone,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
+{
+    safe_intervals: Arc<SafeIntervalCache<SharedGraph<G>>>,
+    cache: SippSE2ManageCache<H>,
 }
 
-impl<G, H> SippSE2Configuration<G, H> {
-    pub fn modify_environment<F>(mut self, f: F) -> Self
+impl<G, H> SippSE2Configuration<G, H>
+where
+    G: Graph + Clone,
+    H: Graph + Reversible,
+    H::Key: Key + Clone,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
+    H::ReversalError: StdError + Send + Sync,
+{
+    /// Modify the environment of the domain. This allows dynamic obstacles to
+    /// be modified.
+    ///
+    /// ### Warning
+    ///
+    /// Using this function will invalidate the [`SafeIntervalCache`] so safe
+    /// intervals will be recalculated during the next search. This is a
+    /// relatively inexpensive cache to repopulate, but it's still a hit to
+    /// performance, so you should not call this function needlessly.
+    pub fn modify_environment<F>(mut self, f: F) -> Result<Self, Anyhow>
     where
         F: FnOnce(
-            OverlayedDynamicEnvironment<WaypointSE2>,
-        ) -> OverlayedDynamicEnvironment<WaypointSE2>,
+            OverlayedDynamicEnvironment<WaypointSE2>
+        ) -> Result<OverlayedDynamicEnvironment<WaypointSE2>, Anyhow>,
     {
-        // Attempt to reclaim the data held by the Arc, as long as it's not
-        // being shared anywhere else. Otherwise we have to make a clone of it.
-        let env = match Arc::try_unwrap(self.environment) {
-            Ok(env) => env,
-            Err(arc_env) => (*arc_env).clone(),
+        let (env, graph) = {
+            let (environment, graph) = {
+                let scoped = self.safe_intervals;
+                (scoped.environment().clone(), scoped.graph().clone())
+            };
+
+            // Attempt to reclaim the data held by the Arc, as long as it's not
+            // being shared anywhere else. Otherwise we have to make a clone of it.
+            match Arc::try_unwrap(environment) {
+                Ok(env) => (env, graph),
+                Err(arc_env) => ((*arc_env).clone(), graph),
+            }
         };
 
-        self.environment = Arc::new(f(env));
-        self
+        match f(env) {
+            Ok(env) => {
+                self.safe_intervals = Arc::new(SafeIntervalCache::new(Arc::new(env), graph));
+                Ok(self)
+            }
+            Err(err) => Err(err),
+        }
     }
+
+    /// Modify the graph used to define the activity. This allows you to close
+    /// or open lanes, toggle occupancy of cells, etc.
+    ///
+    /// ### Warning
+    ///
+    /// This does not modify the graph used to calculate the heuristic. To
+    /// access that graph, use [`discard_cache`]. If the activity graph and the
+    /// heuristic graph are too far out of sync then you may get sub-optimal
+    /// results or worse performance.
+    ///
+    /// Using this function will invalidate the [`SafeIntervalCache`] so safe
+    /// intervals will be recalculated during the next search. This is a
+    /// relatively inexpensive cache to repopulate, but it's still a hit to
+    /// performance, so you should not call this function needlessly.
+    pub fn modify_activity_graph<F>(mut self, f: F) -> Result<Self, Anyhow>
+    where
+        F: FnOnce(G) -> Result<G, Anyhow>,
+    {
+        let (env, graph) = {
+            // Move the values out of self so that they are not owned elsewhere.
+            let scoped = self.safe_intervals;
+            (scoped.environment().clone(), scoped.graph().clone())
+        };
+
+        match graph.modify(f) {
+            Ok(graph) => {
+                self.safe_intervals = Arc::new(SafeIntervalCache::new(env, graph));
+                Ok(self)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Replace the graph used to define the activity. With this function, you
+    /// can provide a graph that is shared with other stakeholders. In contrast,
+    /// `modify_activity_graph` will allow you to change the graph `G` instance
+    /// itself, either by cloning a new one or by handing over sole ownership if
+    /// the graph was not being shared.
+    ///
+    /// ### Warning
+    ///
+    /// This does not modify the graph used to calculate the heuristic. To
+    /// access that graph, use [`discard_cache`]. If the activity graph and the
+    /// heuristic graph are too far out of sync then you may get sub-optimal
+    /// results or worse performance.
+    ///
+    /// Using this function will invalidate the [`SafeIntervalCache`] so safe
+    /// intervals will be recalculated during the next search. This is a
+    /// relatively inexpensive cache to repopulate, but it's still a hit to
+    /// performance, so you should not call this function needlessly.
+    pub fn replace_activity_graph(mut self, graph: SharedGraph<G>) -> Result<Self, Anyhow> {
+        self.safe_intervals = Arc::new(SafeIntervalCache::new(
+            self.safe_intervals.environment().clone(),
+            graph,
+        ));
+        Ok(self)
+    }
+
+    /// Get access to parts of the configuration that cannot be modified without
+    /// discarding the whole heuristic cache. Recalculating the heuristic cache
+    /// can incur a substantial performance cost, potentially doubling the
+    /// planning time or worse.
+    ///
+    /// Before using this function in production software, it is recommended
+    /// that you run benchmarks to test your usage strategy, unless maximum
+    /// performance is not a prevailing concern for your use case.
+    pub fn discard_cache<F>(mut self, f: F) -> Result<Self, Anyhow>
+    where
+        F: FnOnce(SippSE2DiscardCache<H>) -> Result<SippSE2DiscardCache<H>, Anyhow>,
+        H: Reversible,
+        H::ReversalError: Into<Anyhow> + 'static,
+    {
+        let discard = match self.cache {
+            SippSE2ManageCache::Preserve(cache) => {
+                let backward_domain = cache.heuristic.planner().algorithm().backward().domain();
+                SippSE2DiscardCache {
+                    motion: cache.motion,
+                    weight: cache.weight,
+                    heuristic_graph: backward_domain.activity.graph.reversed()
+                        .map_err(|e| Anyhow::from(e))?,
+                }
+            }
+            SippSE2ManageCache::Discard(discard) => discard,
+        };
+
+        match f(discard) {
+            Ok(discard) => {
+                self.cache = SippSE2ManageCache::Discard(discard);
+                Ok(self)
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub enum SippSE2ManageCache<H>
+where
+    H: Graph + Reversible,
+    H::Key: Key + Clone,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
+{
+    Preserve(SippSE2PreserveCache<H>),
+    Discard(SippSE2DiscardCache<H>),
+}
+
+pub struct SippSE2PreserveCache<H>
+where
+    H: Graph + Reversible,
+    H::Key: Key + Clone,
+    H::Vertex: Positioned + MaybeOriented,
+    H::EdgeAttributes: SpeedLimiter + Clone,
+{
+    motion: DifferentialDriveLineFollow,
+    weight: TravelEffortCost,
+    heuristic: QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_RES>,
+}
+
+pub struct SippSE2DiscardCache<H> {
+    pub motion: DifferentialDriveLineFollow,
+    pub heuristic_graph: SharedGraph<H>,
+    pub weight: TravelEffortCost,
 }
 
 impl<G, H> Configurable for SippSE2<G, H>
 where
-    G: Graph,
+    G: Graph + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
     H: Graph<Key = G::Key> + Reversible,
     H::Vertex: Positioned + MaybeOriented,
     H::EdgeAttributes: SpeedLimiter + Clone,
+    H::ReversalError: StdError + Send + Sync + 'static,
 {
     type Configuration = SippSE2Configuration<G, H>;
-    type ConfigurationError = NewSippSE2Error<H>;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         let config = {
             // Move from the self variable into a temporary that will die at the
             // end of this scope, allowing us to potentially transfer all shared
             // data ownership into the config.
             let scoped_self = self;
-            SippSE2Configuration {
-                activity_graph: scoped_self.activity.safe_intervals.graph.clone(),
-                heuristic_graph: scoped_self
-                    .heuristic
-                    .planner()
-                    .algorithm()
-                    .backward()
-                    .domain()
-                    .activity
-                    .graph
-                    .clone(),
+            let preserve = SippSE2PreserveCache {
                 motion: scoped_self.connector.motion.extrapolator.avoider,
-                environment: scoped_self.activity.safe_intervals.environment.clone(),
                 weight: scoped_self.weight,
+                heuristic: scoped_self.heuristic.clone(),
+            };
+
+            SippSE2Configuration {
+                safe_intervals: scoped_self.activity.safe_intervals,
+                cache: SippSE2ManageCache::Preserve(preserve),
             }
         };
 
-        let config = f(config);
-        Self::new_sipp_se2(
-            config.activity_graph,
-            config.heuristic_graph,
-            config.motion,
-            config.environment,
-            config.weight,
-        )
+        let config = match f(config) {
+            Ok(config) => config,
+            Err(err) => return Err(err),
+        };
+
+        let domain = match config.cache {
+            SippSE2ManageCache::Preserve(preserve) => {
+                let activity_graph = config.safe_intervals.graph().clone();
+                let environment = config.safe_intervals.environment().clone();
+                let connect_motion = GraphMotion {
+                    space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                    graph: activity_graph.clone(),
+                    extrapolator: ConflictAvoidance {
+                        avoider: preserve.motion,
+                        environment: environment.clone(),
+                    }
+                };
+
+                let closer = SafeIntervalCloser::new(
+                    DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                    config.safe_intervals.clone()
+                );
+
+                let activity_motion = SafeIntervalMotion {
+                    extrapolator: preserve.motion,
+                    safe_intervals: config.safe_intervals,
+                };
+
+                InformedSearch::new(
+                    activity_motion,
+                    preserve.weight,
+                    preserve.heuristic,
+                    closer,
+                )
+                .with_initializer(InitializeSE2(activity_graph.clone()))
+                .with_satisfier(SatisfySE2::from(preserve.motion))
+                .with_connector(LazyGraphMotion {
+                    motion: connect_motion,
+                    keyring: (),
+                    chain: SafeMergeIntoGoal::new(preserve.motion, environment),
+                })
+            }
+            SippSE2ManageCache::Discard(discard) => {
+                Self::new_sipp_se2(
+                    config.safe_intervals.graph().clone(),
+                    discard.heuristic_graph,
+                    discard.motion,
+                    config.safe_intervals.environment().clone(),
+                    discard.weight,
+                ).map_err(|e| Anyhow::new(e))?
+            }
+        };
+        Ok(domain)
     }
 }
 
@@ -317,7 +514,7 @@ mod tests {
             .configure(|domain| {
                 domain.modify_environment(|mut env| {
                     env.overlay_trajectory(0, None).unwrap();
-                    env
+                    Ok(env)
                 })
             })
             .unwrap();
@@ -345,16 +542,18 @@ mod tests {
         assert_relative_eq!(arrival_time, expected_arrival, max_relative = 0.01);
 
         let planner = planner
-            .configure(|mut domain| {
-                domain
-                    .motion
-                    .set_translational_speed(2.0 * domain.motion.translational_speed())
-                    .unwrap();
-                domain
-                    .motion
-                    .set_rotational_speed(2.0 * domain.motion.rotational_speed())
-                    .unwrap();
-                domain
+            .configure(|domain| {
+                Ok(domain.discard_cache(|mut params| {
+                    params.motion.set_translational_speed(
+                        2.0 * params.motion.translational_speed()
+                    ).unwrap();
+
+                    params.motion.set_rotational_speed(
+                        2.0 * params.motion.rotational_speed()
+                    ).unwrap();
+
+                    Ok(params)
+                }).unwrap())
             })
             .unwrap();
 
@@ -383,7 +582,7 @@ mod tests {
         let planner = planner
             .configure(|domain| {
                 domain.modify_environment(|env| {
-                    env.modify_base(|base| {
+                    Ok(env.modify_base(|base| {
                         base.obstacles.push(
                             DynamicCircularObstacle::new(
                                 CircularProfile::new(0.1, 1.0, 1.0).unwrap(),
@@ -393,10 +592,10 @@ mod tests {
                                     WaypointSE2::new_f64(0.0, 2.0, 0.0, 0.0),
                                     WaypointSE2::new_f64(0.25 + expected_delay, 1.5, 0.0, 0.0),
                                 ])
-                                .unwrap(),
+                                .unwrap()
                             )),
                         );
-                    })
+                    }))
                 })
             })
             .unwrap();

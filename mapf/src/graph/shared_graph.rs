@@ -54,6 +54,21 @@ impl<G> SharedGraph<G> {
             reverse: Arc::new(RwLock::new(Some(reverse))),
         }
     }
+
+    pub fn modify<F, E>(self, f: F) -> Result<Self, E>
+    where
+        F: FnOnce(G) -> Result<G, E>,
+        G: Clone,
+    {
+        // If this is the only instance that shares a reference to this
+        // graph, then we will not have to make a clone of the graph.
+        let graph = match Arc::try_unwrap(self.graph) {
+            Ok(graph) => graph,
+            Err(arc_graph) => (*arc_graph).clone(),
+        };
+
+        f(graph).map(|graph| Self::new(graph))
+    }
 }
 
 impl<G: Graph> Graph for SharedGraph<G> {
