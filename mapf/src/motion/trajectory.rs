@@ -497,7 +497,7 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
             }
             FindWaypoint::Exact(index) => TrajectoryIterNext::Index(index),
             FindWaypoint::Approaching(index) => TrajectoryIterNext::Index(index - 1),
-            FindWaypoint::AfterFinish => TrajectoryIterNext::Depleted,
+            FindWaypoint::AfterFinish => TrajectoryIterNext::StartPostFinish(begin),
         };
 
         Self {
@@ -512,7 +512,8 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
 enum TrajectoryIterNext {
     PreInitial(TimePoint),
     Index(usize),
-    PostFinish(TimePoint),
+    StartPostFinish(TimePoint),
+    ReachedPostFinish(TimePoint),
     Depleted,
 }
 
@@ -551,11 +552,11 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
                     }
                 }
 
-                self.next_element = if wp.is_some() {
+                self.next_element = if index + 1 < self.trajectory.len() {
                     TrajectoryIterNext::Index(index + 1)
                 } else {
                     if let Some(t_f) = self.until {
-                        TrajectoryIterNext::PostFinish(t_f)
+                        TrajectoryIterNext::ReachedPostFinish(t_f)
                     } else {
                         TrajectoryIterNext::Depleted
                     }
@@ -563,18 +564,31 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
 
                 wp
             }
-            TrajectoryIterNext::PostFinish(t) => {
+            TrajectoryIterNext::StartPostFinish(t) => {
                 if !self.trajectory.has_indefinite_finish_time() {
                     self.next_element = TrajectoryIterNext::Depleted;
                     return None;
                 }
 
                 let mut wp = self.trajectory.finish_motion().clone();
-                if *wp.time() < t {
-                    wp.set_time(t);
-                    return Some(wp);
+                wp.set_time(t);
+                if let Some(t_f) = self.until {
+                    self.next_element = TrajectoryIterNext::ReachedPostFinish(t_f);
+                } else {
+                    self.next_element = TrajectoryIterNext::Depleted;
                 }
-                None
+                return Some(wp);
+            }
+            TrajectoryIterNext::ReachedPostFinish(t) => {
+                if !self.trajectory.has_indefinite_finish_time() {
+                    self.next_element = TrajectoryIterNext::Depleted;
+                    return None;
+                }
+
+                let mut wp = self.trajectory.finish_motion().clone();
+                wp.set_time(t);
+                self.next_element = TrajectoryIterNext::Depleted;
+                return Some(wp);
             }
             TrajectoryIterNext::Depleted => None,
         }

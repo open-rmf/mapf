@@ -717,6 +717,7 @@ fn detect_proximity(
     };
 }
 
+#[derive(Debug)]
 struct CandidateAdjustment {
     pushed: bool,
     result: Option<TimePoint>,
@@ -866,7 +867,7 @@ pub fn is_safe_segment<Env, W>(
     in_environment: &Env,
 ) -> bool
 where
-    W: Into<WaypointR2> + Waypoint,
+    W: Into<WaypointR2> + Waypoint + std::fmt::Debug,
     Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
     let profile = in_environment.agent_profile();
@@ -915,6 +916,7 @@ where
                 let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
                 let a = dv.dot(&dv);
                 let b = 2.0 * dv.dot(&dp0);
+                // let deriv = 2.0 * a * t + b;
                 let deriv = 2.0 * a * t + b;
                 // Allow for a little floating point error. When the derivative
                 // is very very close to zero (which is a perfectly acceptable
@@ -1605,6 +1607,29 @@ mod tests {
                 assert!(obs_tf < tf);
                 assert!(tf < obs_tf + 1.0);
             }
+        }
+    }
+
+    #[test]
+    fn test_indefinite_finish_safety() {
+        for expect_safe in [true, false] {
+            let obstacle = Trajectory::from_iter([
+                WaypointR2::new_f64(0.0, 0.0, 0.0),
+                WaypointR2::new_f64(1.0, 0.0, 0.0),
+            ])
+            .unwrap()
+            .with_indefinite_finish_time(!expect_safe);
+
+            let profile = CircularProfile::new(1.0, 0.0, 0.0).unwrap();
+            let mut environment = DynamicEnvironment::new(profile);
+            environment.obstacles.push(
+                DynamicCircularObstacle::new(profile)
+                .with_trajectory(Some(obstacle))
+            );
+
+            let p0 = WaypointR2::new_f64(0.0, -5.0, 0.0);
+            let p1 = WaypointR2::new_f64(20.0, 5.0, 0.0);
+            assert_eq!(expect_safe, is_safe_segment((&p0, &p1), None, &environment));
         }
     }
 }

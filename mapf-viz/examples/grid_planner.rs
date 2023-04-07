@@ -47,6 +47,7 @@ use mapf::{
     planner::{Planner, Search},
     premade::SippSE2,
     algorithm::{AStarConnect, SearchStatus, tree::NodeContainer},
+    planner::halt::MeasureLimit,
 };
 use mapf_viz::{
     SparseGridOccupancyVisual, InfiniteGrid,
@@ -73,16 +74,13 @@ const ASCII_UPPER: [char; 26] = [
 
 fn generate_robot_name(mut index: usize) -> String {
     let mut chars = Vec::new();
-    println!(" ========= {index}");
     let mut offset = 0;
     while index >= 26 {
-        dbg!(index);
-        chars.push(dbg!(index % 26));
+        chars.push(index % 26);
         index = index / 26;
         offset = 1;
     }
-    dbg!(index);
-    chars.push(dbg!(index % 26 - offset));
+    chars.push(index % 26 - offset);
     chars.reverse();
     String::from_iter(chars.into_iter().map(|i| ASCII_UPPER[i]))
 }
@@ -95,6 +93,18 @@ const MIN_AGENT_SPIN: f64 = 1.0 * std::f64::consts::PI / 180.0;
 const MAX_AGENT_SPIN: f64 = 360.0 * std::f64::consts::PI / 180.0;
 const MIN_AGENT_YAW: f64 = -std::f64::consts::PI;
 const MAX_AGENT_YAW: f64 = std::f64::consts::PI;
+
+fn triangular_for<Item>(
+    mut outer_iter: impl Iterator<Item = Item> + Clone,
+    mut f: impl FnMut(&Item, Item),
+) {
+    while let Some(outer_value) = outer_iter.next() {
+        let mut inner_iter = outer_iter.clone();
+        while let Some(inner_value) = inner_iter.next() {
+            f(&outer_value, inner_value);
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 struct Agent {
@@ -122,6 +132,10 @@ struct Obstacle {
     /// Radius of the obstacle
     #[serde(default = "default_radius")]
     radius: f64,
+    #[serde(default = "bool_false", skip_serializing_if="is_false")]
+    indefinite_start: bool,
+    #[serde(default = "bool_false", skip_serializing_if="is_false")]
+    indefinite_finish: bool,
 }
 
 impl Obstacle {
@@ -133,7 +147,9 @@ impl Obstacle {
                     (wp.time.as_secs_f64(), cell.x, cell.y)
                 })
                 .collect(),
-            radius: radius
+            radius: radius,
+            indefinite_start: trajectory.has_indefinite_initial_time(),
+            indefinite_finish: trajectory.has_indefinite_finish_time(),
         }
     }
 }
@@ -164,6 +180,14 @@ pub fn default_spin() -> f64 {
 
 pub fn default_cell_size() -> f64 {
     1.0
+}
+
+pub fn bool_false() -> bool {
+    false
+}
+
+pub fn is_false(b: &bool) -> bool {
+    !b
 }
 
 type SparseVisibility = Visibility<SparseGrid>;
@@ -311,8 +335,10 @@ struct AgentContext {
     agent: Agent,
     start_visibility: Vec<Cell>,
     goal_visibility: Vec<Cell>,
-    start_valid: bool,
-    goal_valid: bool,
+    start_open: bool,
+    start_available: bool,
+    goal_open: bool,
+    goal_available: bool,
     start_sees_goal: bool,
 }
 
@@ -322,10 +348,24 @@ impl AgentContext {
             agent,
             start_visibility: Vec::new(),
             goal_visibility: Vec::new(),
-            start_valid: false,
-            goal_valid: false,
+            start_open: false,
+            start_available: false,
+            goal_open: false,
+            goal_available: false,
             start_sees_goal: false,
         }
+    }
+
+    fn endpoints_valid(&self) -> bool {
+        self.start_valid() && self.goal_valid()
+    }
+
+    fn start_valid(&self) -> bool {
+        self.start_open && self.start_available
+    }
+
+    fn goal_valid(&self) -> bool {
+        self.goal_open && self.goal_available
     }
 }
 
@@ -335,10 +375,25 @@ enum Endpoint {
     Goal,
 }
 
+impl Endpoint {
+    fn of(&self, agent: &Agent) -> Cell {
+        match self {
+            Endpoint::Start => agent.start.into(),
+            Endpoint::Goal => agent.goal.into(),
+        }
+    }
+
+    fn set_availability(&self, ctx: &mut AgentContext, value: bool) {
+        match self {
+            Endpoint::Start => ctx.start_available = value,
+            Endpoint::Goal => ctx.goal_available = value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EndpointSelection {
     Cell(Endpoint),
-    Orientation(Endpoint),
 }
 
 impl<Message> EndpointSelector<Message> {
@@ -382,6 +437,52 @@ impl<Message> EndpointSelector<Message> {
         }
     }
 
+    fn update_endpoint_conflicts(
+        &mut self, endpoint: Endpoint,
+        visibility: &SparseVisibility,
+    ) {
+        println!(" vvvvvvvvvvvvvvvvvvvvvvvvvv ");
+        let Some(selected) = &self.selected_agent else { return };
+        let cell: Cell = if let Some(ctx) = self.agents.get(selected) {
+            endpoint.of(&ctx.agent)
+        } else {
+            return
+        };
+
+        // Start by assuming all are valid
+        for (_, ctx) in &mut self.agents {
+            endpoint.set_availability(ctx, true);
+        }
+
+        let cs = visibility.grid().cell_size();
+        let p = cell.to_center_point(cs);
+        if visibility.grid().is_square_occupied(p, 2.0*visibility.agent_radius()).is_some() {
+            endpoint.set_availability(self.agents.get_mut(selected).unwrap(), false);
+        }
+
+        // Test O(N^2) for invalidity. We could make this way more efficient.
+        let mut invalidated = Vec::new();
+        triangular_for(self.agents.iter(), |(name_i, ctx_i), (name_j, ctx_j)| {
+            let p_i = endpoint.of(&ctx_i.agent).to_center_point(cs);
+            let p_j = endpoint.of(&ctx_j.agent).to_center_point(cs);
+            let dist = (p_i - p_j).norm();
+            let min_dist = ctx_i.agent.radius + ctx_j.agent.radius;
+            dbg!(dist, min_dist);
+            if dist < min_dist {
+                invalidated.push((*name_i).clone());
+                invalidated.push(name_j.clone());
+            }
+        });
+
+        dbg!(&invalidated);
+        for name in invalidated {
+            let Some(ctx) = self.agents.get_mut(&name) else { continue };
+            endpoint.set_availability(ctx, false);
+            dbg!((name, ctx.start_open, ctx.goal_open));
+        }
+        println!(" ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ");
+    }
+
     fn endpoint_cell(&self, choice: Endpoint) -> Option<&[i64; 2]> {
         if let Some(ctx) = self.selected_agent() {
             match choice {
@@ -407,8 +508,8 @@ impl<Message> EndpointSelector<Message> {
     fn set_endpoint_valid(&mut self, choice: Endpoint, valid: bool) {
         if let Some(ctx) = self.selected_agent_mut() {
             match choice {
-                Endpoint::Start => { ctx.start_valid = valid; },
-                Endpoint::Goal => { ctx.goal_valid = valid; },
+                Endpoint::Start => { ctx.start_open = valid; },
+                Endpoint::Goal => { ctx.goal_open = valid; },
             }
         }
     }
@@ -426,8 +527,8 @@ impl<Message> EndpointSelector<Message> {
     pub fn calculate_visibility(&mut self, visibility: &SparseVisibility) {
         for (_, ctx) in &mut self.agents {
             for (cell, validity, visible) in [
-                (ctx.agent.start, &mut ctx.start_valid, &mut ctx.start_visibility),
-                (ctx.agent.goal, &mut ctx.goal_valid, &mut ctx.goal_visibility),
+                (ctx.agent.start, &mut ctx.start_open, &mut ctx.start_visibility),
+                (ctx.agent.goal, &mut ctx.goal_open, &mut ctx.goal_visibility),
             ] {
                 let cell: Cell = cell.into();
                 let p = cell.to_center_point(visibility.grid().cell_size());
@@ -438,7 +539,7 @@ impl<Message> EndpointSelector<Message> {
             }
 
             ctx.start_sees_goal = false;
-            if ctx.start_valid && ctx.goal_valid {
+            if ctx.start_open && ctx.goal_open {
                 let cell_start: Cell = ctx.agent.start.into();
                 let cell_goal: Cell = ctx.agent.goal.into();
                 let p_start = cell_start.to_center_point(self.cell_size);
@@ -513,8 +614,8 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
             }
 
             for (cell, angle, color, valid, visibility) in [
-                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid, &ctx.start_visibility),
-                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid, &ctx.goal_visibility)
+                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid(), &ctx.start_visibility),
+                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid(), &ctx.goal_visibility)
             ] {
                 let radius = ctx.agent.radius as f32;
                 let cell: Cell = cell.into();
@@ -843,7 +944,7 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, ()>)>,
+    search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, MeasureLimit>)>,
     step_progress: button::State,
     debug_on: bool,
     memory: Vec<TreeTicket>,
@@ -885,36 +986,6 @@ impl App {
         iced::Color::from_rgb8(191, 148, 228)
     }
 
-    fn visibility(&self) -> &SparseVisibility {
-        self.canvas.program.layers.1.visibility()
-    }
-
-    fn grid(&self) -> &SparseGrid {
-        self.canvas.program.layers.1.grid()
-    }
-
-    fn endpoint_selector(&self) -> &EndpointSelector<Message> {
-        &self.canvas.program.layers.2
-    }
-
-    fn endpoint_selector_mut(&mut self) -> &mut EndpointSelector<Message> {
-        &mut self.canvas.program.layers.2
-    }
-
-    fn is_valid_endpoint(&self, endpoint: Endpoint) -> bool {
-        if let Some(cell) = self.endpoint_selector().endpoint_cell(endpoint) {
-            let cell: Cell = (*cell).into();
-            let p = cell.to_center_point(self.grid().cell_size());
-            if self.grid().is_square_occupied(p, 2.0*self.visibility().agent_radius()).is_some() {
-                return false;
-            } else {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     fn set_robot_radius(&mut self, radius: f64) {
         self.canvas.program.layers.1.set_robot_radius(radius as f32);
         let endpoint_selector = &mut self.canvas.program.layers.2;
@@ -930,6 +1001,19 @@ impl App {
             self.recalculate_visibility();
             self.canvas.cache.clear();
         }
+
+        self.update_all_endpoints();
+    }
+
+    fn update_all_endpoints(&mut self) {
+        self.canvas.program.layers.2.update_endpoint_conflicts(
+            Endpoint::Start,
+            &self.canvas.program.layers.1.visibility(),
+        );
+        self.canvas.program.layers.2.update_endpoint_conflicts(
+            Endpoint::Goal,
+            &self.canvas.program.layers.1.visibility(),
+        );
     }
 
     fn recalculate_visibility(&mut self) {
@@ -1027,13 +1111,20 @@ impl App {
             let start_cell: Cell = ctx.agent.start.into();
             let goal_cell: Cell = ctx.agent.goal.into();
 
-            if !ctx.start_valid || !ctx.goal_valid {
+            dbg!((name, ctx.start_open, ctx.goal_open));
+            if !ctx.endpoints_valid() {
                 print!("Cannot plan for {name}:");
-                if !ctx.start_valid {
+                if !ctx.start_open {
                     print!(" invalid start");
                 }
-                if !ctx.goal_valid {
+                if !ctx.start_available {
+                    print!(" start conflict");
+                }
+                if !ctx.goal_open {
                     print!(" invalid goal");
+                }
+                if !ctx.goal_available {
+                    print!(" goal conflict");
                 }
                 println!("");
                 continue;
@@ -1098,7 +1189,9 @@ impl App {
             println!("About to plan for {name}:\nStart: {start:#?}\nGoal: {goal:#?}");
 
             let start_time = std::time::Instant::now();
-            let planner = Planner::new(AStarConnect(domain));
+            let planner = Planner::new(AStarConnect(domain))
+                .with_halting(MeasureLimit(Some(10000000)));
+                // .with_halting(MeasureLimit(None));
             let mut search = planner.plan(start, goal).unwrap();
 
             self.canvas.program.layers.3.searches.clear();
@@ -1188,14 +1281,19 @@ fn load_scenario(filename: Option<&String>) -> (
             let cell_size = scenario.cell_size;
             agents = scenario.agents;
             obstacles = scenario.obstacles.into_iter().filter_map(|obs| {
-                let traj = LinearTrajectorySE2::from_iter(
+                LinearTrajectorySE2::from_iter(
                     obs.trajectory.into_iter()
                     .map(|(t, x, y)| {
                         let p = Cell::new(x, y).to_center_point(cell_size);
                         WaypointSE2::new_f64(t, p.x, p.y, 0.0)
                     })
-                ).ok();
-                traj.map(|t| (obs.radius, t))
+                ).ok()
+                .map(|t|
+                    t
+                    .with_indefinite_initial_time(obs.indefinite_start)
+                    .with_indefinite_finish_time(obs.indefinite_finish)
+                )
+                .map(|t| (obs.radius, t))
             }).collect();
             for (y, row) in scenario.occupancy {
                 for x in row {
@@ -1284,9 +1382,10 @@ impl Application for App {
             app.add_agent();
             zone.include(iced::Point::new(-10.0, -10.0));
             zone.include(iced::Point::new(10.0, 10.0));
-        } else {
-            app.recalculate_visibility();
         }
+
+        app.update_all_endpoints();
+        app.recalculate_visibility();
 
         let set_view = Command::perform(async move {}, move |_| Message::SetView(zone));
         let top_agent = app.canvas.program.layers.2.agents.iter().next();
@@ -1377,8 +1476,10 @@ impl Application for App {
                 self.canvas.program.layers.1.set_grid(grid);
                 self.canvas.program.layers.2.agents = agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
                 self.canvas.program.layers.3.obstacles = obstacles;
+                self.update_all_endpoints();
                 self.recalculate_visibility();
                 self.canvas.cache.clear();
+                self.generate_plan();
                 return Command::perform(async move {}, move |_| Message::SetView(zone));
             }
             Message::ScenarioFileInput(value) => {
@@ -1484,14 +1585,11 @@ impl Application for App {
             Message::EndpointSelected(selection) => {
                 match selection {
                     EndpointSelection::Cell(endpoint) => {
-                        let valid = self.is_valid_endpoint(endpoint);
-                        self.endpoint_selector_mut().set_endpoint_valid(
-                            endpoint, valid
+                        self.canvas.program.layers.2.update_endpoint_conflicts(
+                            endpoint,
+                            self.canvas.program.layers.1.visibility(),
                         );
                         self.recalculate_visibility();
-                    }
-                    EndpointSelection::Orientation(_) => {
-                        // Do nothing
                     }
                 }
                 self.generate_plan();

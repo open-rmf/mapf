@@ -106,8 +106,11 @@ impl<G: Graph> SafeIntervalCache<G> {
             .borrow()
             .point();
 
+        let wp = WaypointR2::new(earliest_time, p.x, p.y);
         let safe_arrivals =
-            compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
+            compute_safe_arrival_times(wp, &self.environment);
+        // let safe_arrivals =
+        //     compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
         match self.safe_intervals.write() {
             Ok(mut guard) => {
                 guard.insert(key.clone(), safe_arrivals.clone());
