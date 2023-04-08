@@ -22,7 +22,7 @@ use crate::{
         self,
         r2::{MaybePositioned, Positioned},
         se2::{MaybeOriented, Orientation, Oriented},
-        timed, IntegrateWaypoints, InterpError, Interpolation, TimePoint,
+        Timed, MaybeTimed, IntegrateWaypoints, InterpError, Interpolation, TimePoint,
     },
 };
 use arrayvec::ArrayVec;
@@ -33,13 +33,19 @@ pub struct WaypointSE2 {
     pub position: Position,
 }
 
-impl timed::Timed for WaypointSE2 {
-    fn time(&self) -> &TimePoint {
-        return &self.time;
+impl Timed for WaypointSE2 {
+    fn time(&self) -> TimePoint {
+        self.time
     }
 
     fn set_time(&mut self, new_time: TimePoint) {
         self.time = new_time;
+    }
+}
+
+impl MaybeTimed for WaypointSE2 {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.time)
     }
 }
 

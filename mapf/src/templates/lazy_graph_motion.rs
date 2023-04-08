@@ -204,7 +204,6 @@ pub enum LazyGraphMotionReversalError<M, R, C> {
 mod tests {
     use super::*;
     use crate::{graph::occupancy::*, motion::se2::*};
-    use arrayvec::ArrayVec;
     use std::sync::Arc;
 
     #[test]
@@ -241,7 +240,7 @@ mod tests {
             (Cell::new(-30, -30), 1),
             (Cell::new(-60, 20), 1),
         ] {
-            let r: Result<Vec<(ArrayVec<WaypointSE2, 3>, _)>, _> =
+            let r: Result<Vec<(DifferentialDriveLineFollowMotion, _)>, _> =
                 lazy.connect(from_state, &to_cell).into_iter().collect();
 
             let connections = r.unwrap();

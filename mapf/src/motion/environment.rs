@@ -23,6 +23,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
+use slotmap::{SlotMap, new_key_type};
 
 type Vector2 = nalgebra::Vector2<f64>;
 
@@ -88,6 +89,7 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
 pub struct OverlayedDynamicEnvironment<W: Waypoint> {
     base: Arc<DynamicEnvironment<W>>,
     overlay: DynamicEnvironmentOverlay<W>,
+    insertions: SlotMap<OverlayInsertionKey, DynamicCircularObstacle<W>>,
 }
 
 impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
@@ -95,7 +97,16 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         Self {
             base,
             overlay: Default::default(),
+            insertions: Default::default(),
         }
+    }
+
+    pub fn overlay_profile(&mut self, profile: CircularProfile) {
+        self.overlay.profile = Some(profile);
+    }
+
+    pub fn revert_profile(&mut self) {
+        self.overlay.profile = None;
     }
 
     /// Overlay an obstacle. If there was already an overlay for this obstacle
@@ -107,6 +118,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     /// However, the overlaid data will be retained and will become applicable
     /// if the base environment is changed to one that does contain the obstacle
     /// entry.
+    ///
+    /// To add an entirely new obstacle that does not exist in the underlay, use
+    /// `insert_obstacle`.
     pub fn overlay_obstacle(
         &mut self,
         index: usize,
@@ -204,7 +218,33 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         self.base = Arc::new(env);
         self
     }
+
+    /// Add an entirely new obstacle to the environment. Get back a key to
+    /// identify this insertion so you can chose to remove it later.
+    ///
+    /// This is to add entirely new obstacles that do not exist in the underlay.
+    /// If you instead want to modify the perceived trajectory or profile of an
+    /// obstacle that is in the underlay, use `overlay_obstacle` or
+    /// `overlay_trajectory` instead.
+    pub fn insert_obstacle(
+        &mut self,
+        obstacle: DynamicCircularObstacle<W>,
+    ) -> OverlayInsertionKey {
+        self.insertions.insert(obstacle)
+    }
+
+    /// Remove an insertion from the overlay. You must provide a key that was
+    /// given to you by `insert_obstacle`. If you receive a `None` then the
+    /// obstacle was already removed before you called this function.
+    pub fn remove_insertion(
+        &mut self,
+        overlay_key: OverlayInsertionKey,
+    ) -> Option<DynamicCircularObstacle<W>> {
+        self.insertions.remove(overlay_key)
+    }
 }
+
+new_key_type! { pub struct OverlayInsertionKey; }
 
 impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for OverlayedDynamicEnvironment<W>
@@ -223,6 +263,7 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
             .iter()
             .enumerate()
             .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(self.insertions.values())
     }
 }
 

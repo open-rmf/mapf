@@ -256,7 +256,7 @@ where
         });
     }
 
-    ranked_hints.sort_by(|a, b| match a.contour.cmp(&b.contour) {
+    ranked_hints.sort_unstable_by(|a, b| match a.contour.cmp(&b.contour) {
         Ordering::Equal => {
             if a.reach <= b.reach {
                 Ordering::Less
@@ -737,7 +737,7 @@ where
     let mut this_obs_violated = false;
     let mut new_candidate_time: Option<TimePoint> = None;
     for [wp0, wp1] in obs_traj.iter_from(candidate_time).pairs() {
-        if candidate_time < *wp0.time() && !this_obs_violated {
+        if candidate_time < wp0.time() && !this_obs_violated {
             break;
         }
 
@@ -888,7 +888,7 @@ where
         }
 
         for [wp0_b, wp1_b] in obs_traj.iter_range(line_a.0.time, line_a.1.time).pairs() {
-            if line_a.1.time < *wp0_b.time() {
+            if line_a.1.time < wp0_b.time() {
                 // The trajectories are no longer overlapping in time so there
                 // is no longer a risk.
                 return true;
@@ -897,46 +897,74 @@ where
             let wp0_b: WaypointR2 = wp0_b.into();
             let wp1_b: WaypointR2 = wp1_b.into();
             let line_b = (&wp0_b, &wp1_b);
-
-            if !bb.overlaps(Some(
-                BoundingBox::for_line(obs.profile(), &wp0_b, &wp1_b).inflated_by(1e-3),
-            )) {
-                continue;
-            }
-
-            let in_time_range = |t: &TimePoint| -> bool {
-                line_a.0.time < *t && *t < line_a.1.time && line_b.0.time < *t && *t < line_b.1.time
-            };
-
-            let proximity = detect_proximity(conflict_distance_squared, line_a, line_b);
-
-            if let Some(t) = proximity.enter.filter(in_time_range) {
-                let t_range = compute_t_range(line_a, line_b);
-                let t = (t - t_range.0).as_secs_f64();
-                let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
-                let a = dv.dot(&dv);
-                let b = 2.0 * dv.dot(&dp0);
-                // let deriv = 2.0 * a * t + b;
-                let deriv = 2.0 * a * t + b;
-                // Allow for a little floating point error. When the derivative
-                // is very very close to zero (which is a perfectly acceptable
-                // value), floating point calculation errors can cause its
-                // calculated value to dip into the negative.
-                //
-                // TODO(@mxgrey): Consider if there are more robust ways (not
-                // sensitive to floating point error) to determine whether the
-                // segment is safe.
-                if deriv < -1e-6 {
-                    // The distance between the agents is reducing while they
-                    // are already within an unsafe proximity, so we will call
-                    // this situation unsafe.
-                    return false;
-                }
+            if have_conflict(
+                line_a, Some(bb), in_environment.agent_profile(),
+                line_b, None, obs.profile(),
+                conflict_distance_squared,
+            ) {
+                return false;
             }
         }
     }
 
     true
+}
+
+#[inline]
+pub fn have_conflict(
+    line_a: (&WaypointR2, &WaypointR2),
+    bb_a: Option<BoundingBox>,
+    profile_a: &CircularProfile,
+    line_b: (&WaypointR2, &WaypointR2),
+    bb_b: Option<BoundingBox>,
+    profile_b: &CircularProfile,
+    conflict_distance_squared: f64,
+) -> bool {
+    let bb_a = match bb_a {
+        Some(bb_a) => bb_a,
+        None => BoundingBox::for_line(profile_a, line_a.0, line_a.1),
+    };
+
+    let bb_b = match bb_b {
+        Some(bb_b) => bb_b,
+        None => BoundingBox::for_line(profile_b, line_b.0, line_b.1),
+    };
+
+    if !bb_a.overlaps(Some(bb_b)) {
+        return false;
+    }
+
+    let in_time_range = |t: &TimePoint| -> bool {
+        line_a.0.time < *t && *t < line_a.1.time && line_b.0.time < *t && *t < line_b.1.time
+    };
+
+    let proximity = detect_proximity(conflict_distance_squared, line_a, line_b);
+
+    if let Some(t) = proximity.enter.filter(in_time_range) {
+        let t_range = compute_t_range(line_a, line_b);
+        let t = (t - t_range.0).as_secs_f64();
+        let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
+        let a = dv.dot(&dv);
+        let b = 2.0 * dv.dot(&dp0);
+        // let deriv = 2.0 * a * t + b;
+        let deriv = 2.0 * a * t + b;
+        // Allow for a little floating point error. When the derivative
+        // is very very close to zero (which is a perfectly acceptable
+        // value), floating point calculation errors can cause its
+        // calculated value to dip into the negative.
+        //
+        // TODO(@mxgrey): Consider if there are more robust ways (not
+        // sensitive to floating point error) to determine whether the
+        // segment is safe.
+        if deriv < -1e-6 {
+            // The distance between the agents is reducing while they
+            // are already within an unsafe proximity, so we will call
+            // this situation unsafe.
+            return true;
+        }
+    }
+
+    return false;
 }
 
 #[inline]

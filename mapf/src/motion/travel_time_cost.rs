@@ -44,7 +44,7 @@ impl<State: Timed, Action> Weighted<State, Action> for TravelTimeCost {
         // implementation to work both forwards and backwards in time. We are
         // assuming that any case where time is decreasing in the child state,
         // a reverse search is being performed.
-        let duration = (*to_state.time() - *from_state.time()).as_secs_f64().abs();
+        let duration = (to_state.time() - from_state.time()).as_secs_f64().abs();
         Ok(Some(Cost(duration * self.0)))
     }
 

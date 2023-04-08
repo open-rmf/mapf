@@ -15,7 +15,10 @@
  *
 */
 
-use crate::util::triangular_for;
+use crate::{
+    motion::{MaybeTimed, TimePoint},
+    util::triangular_for,
+};
 use bitfield::{bitfield, Bit, BitMut};
 use std::collections::{hash_map, HashMap, HashSet};
 use std::ops::Sub;
@@ -108,6 +111,12 @@ impl Sub for Cell {
     type Output = (i64, i64);
     fn sub(self, other: Self) -> Self::Output {
         (self.x - other.x, self.y - other.y)
+    }
+}
+
+impl MaybeTimed for Cell {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        None
     }
 }
 

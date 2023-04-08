@@ -269,7 +269,7 @@ mod tests {
             .unwrap(),
         ));
 
-        for i in 0..=8 {
+        for i in 0..=8usize {
             for angle in [0.0, 90.0, 180.0, 30.0, -140.0_f64] {
                 let start_key = KeySE2::new(i, angle.to_radians());
                 let result = planner.plan(start_key, i).unwrap().solve().unwrap();

@@ -23,7 +23,7 @@ use crate::{
     },
     error::{NoError, ThisError},
     motion::{
-        self,
+        self, Timed, MaybeTimed,
         conflict::{compute_safe_linear_paths, is_safe_segment, SafeAction, WaitForObstacle},
         r2::{self, MaybePositioned},
         CircularProfile, Duration, DynamicCircularObstacle, Environment,
@@ -144,7 +144,7 @@ impl DifferentialDriveLineFollow {
     ) -> Result<ReachedTarget, DifferentialDriveLineFollowError> {
         // NOTE: We trust that all properties in self have values greater
         // than zero because we enforce that for all inputs.
-        let mut output: ArrayVec<WaypointSE2, 3> = ArrayVec::new();
+        let mut output: DifferentialDriveLineFollowMotion = ArrayVec::new();
         let mut current_time = from_waypoint.time;
         let mut current_yaw = from_waypoint.position.rotation;
         let mut facing_target = *from_waypoint;
@@ -198,18 +198,20 @@ impl DifferentialDriveLineFollow {
 }
 
 pub(crate) struct ReachedTarget {
-    pub(crate) waypoints: ArrayVec<WaypointSE2, 3>,
+    pub(crate) waypoints: DifferentialDriveLineFollowMotion,
     pub(crate) time: TimePoint,
     pub(crate) yaw: nalgebra::UnitComplex<f64>,
     pub(crate) facing_target: WaypointSE2,
 }
+
+pub type DifferentialDriveLineFollowMotion = ArrayVec<WaypointSE2, 4>;
 
 impl<Target, Guidance> Extrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
 {
-    type Extrapolation = ArrayVec<WaypointSE2, 3>;
+    type Extrapolation = DifferentialDriveLineFollowMotion;
     type ExtrapolationError = DifferentialDriveLineFollowError;
     type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, WaypointSE2), Self::ExtrapolationError>>
     where
@@ -485,7 +487,7 @@ impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target
     for MergeIntoGoal<R>
 where
     Action: FromIterator<WaypointSE2>,
-    Target: MaybePositioned + MaybeOriented + Borrow<K>,
+    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K>,
     K: PartialEq,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
@@ -531,7 +533,13 @@ where
         self.0
             .extrapolate(&from_state.waypoint, &target_pos, &())
             .map(|r| {
-                r.map(|(action, wp)| {
+                r.map(|(mut action, mut wp)| {
+                    if let Some(t) = to_target.maybe_time() {
+                        if wp.time < t {
+                            wp.set_time(t);
+                            action.push(wp);
+                        }
+                    }
                     let output_action: Action = action.into_iter().collect();
                     (output_action, StateSE2::new(from_state.key.vertex, wp))
                 })
@@ -572,7 +580,7 @@ impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target
     for SafeMergeIntoGoal<R>
 where
     Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>>,
-    Target: MaybePositioned + MaybeOriented + Borrow<K>,
+    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K>,
     K: PartialEq,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
@@ -595,7 +603,7 @@ where
         Target: 'a,
     {
         let mut prev_wp = from_state.waypoint;
-        let (action, finish_state): (ArrayVec<WaypointSE2, 3>, _) =
+        let (action, finish_state): (DifferentialDriveLineFollowMotion, _) =
             match MergeIntoGoal(self.motion).connect(from_state, to_target)? {
                 Ok(connection) => connection,
                 Err(err) => return Some(Err(err)),

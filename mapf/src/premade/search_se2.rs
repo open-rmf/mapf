@@ -154,10 +154,8 @@ mod tests {
         let solution = planner
             .plan(
                 (0usize, 20_f64.to_radians()),
-                GoalSE2 {
-                    key: 8usize,
-                    orientation: Some(Orientation::from_angle(90_f64.to_radians())),
-                },
+                GoalSE2::new(8usize)
+                .with_orientation(Some(Orientation::from_angle(90_f64.to_radians()))),
             )
             .unwrap()
             .solve()
@@ -190,10 +188,7 @@ mod tests {
         let solution = planner
             .plan(
                 (Cell::new(-3, -3), 20_f64.to_radians()),
-                GoalSE2 {
-                    key: Cell::new(10, 10),
-                    orientation: None,
-                },
+                GoalSE2::new(Cell::new(10, 10)),
             )
             .unwrap()
             .solve()
@@ -204,10 +199,8 @@ mod tests {
         let solution = planner
             .plan(
                 (Cell::new(-3, -3), 20_f64.to_radians()),
-                GoalSE2 {
-                    key: Cell::new(10, 10),
-                    orientation: Some(Orientation::from_angle(-60_f64.to_radians())),
-                },
+                GoalSE2::new(Cell::new(10, 10))
+                .with_orientation(Some(Orientation::from_angle(-60_f64.to_radians()))),
             )
             .unwrap()
             .solve()

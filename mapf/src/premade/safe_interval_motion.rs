@@ -463,21 +463,21 @@ where
 {
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {
         match self.get_closed_intervals(state) {
-            Some(closed_intervals) => closed_intervals.close(*state.time(), value),
+            Some(closed_intervals) => closed_intervals.close(state.time(), value),
             None => CloseResult::Accepted,
         }
     }
 
     fn replace(&mut self, state: &State, value: T) -> Option<T> {
         match self.get_closed_intervals(state) {
-            Some(closed_intervals) => closed_intervals.replace(*state.time(), value),
+            Some(closed_intervals) => closed_intervals.replace(state.time(), value),
             None => Some(value),
         }
     }
 
     fn status<'a>(&'a self, state: &State) -> ClosedStatus<'a, T> {
         let key = self.keyring.key_for(state);
-        let time = *state.time();
+        let time = state.time();
         match self.container.get(key.borrow().borrow()) {
             Some(closed_intervals) => closed_intervals.status(time),
             None => ClosedStatus::Open,
@@ -512,7 +512,7 @@ impl<T> ClosedIntervals<T> {
         let mut intervals: SmallVec<[_; 5]> =
             safe_intervals.into_iter().map(|t| (t, None)).collect();
 
-        intervals.sort_by(|a, b| a.0.cmp(&b.0));
+        intervals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         Self {
             indefinite_start: None,

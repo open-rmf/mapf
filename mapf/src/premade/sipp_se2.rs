@@ -503,7 +503,7 @@ mod tests {
             .as_secs_f64();
         assert_relative_eq!(arrival_time, expected_arrival, max_relative = 0.1);
 
-        let trajectory: Trajectory<WaypointSE2> = solution.make_trajectory().unwrap().unwrap();
+        let trajectory: Trajectory<WaypointSE2> = solution.make_trajectory().unwrap().unwrap().trajectory;
         assert!(trajectory.len() >= 11);
     }
 
@@ -618,7 +618,6 @@ mod tests {
             .waypoint
             .time
             .as_secs_f64();
-        // TODO(@mxgrey): Make a more specific expectation.
         assert_relative_eq!(arrival_time, expected_arrival, epsilon = 0.5);
     }
 
@@ -650,10 +649,7 @@ mod tests {
                     key: Cell::new(0, 0),
                     orientation: Orientation::new(0.0),
                 },
-                GoalSE2 {
-                    key: Cell::new(10, 1),
-                    orientation: None,
-                },
+                GoalSE2::new(Cell::new(10, 1)),
             )
             .unwrap()
             .solve()
@@ -661,7 +657,7 @@ mod tests {
             .solution()
             .unwrap();
 
-        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
+        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap().trajectory;
         assert_eq!(3, trajectory.len());
     }
 
@@ -694,10 +690,7 @@ mod tests {
                     key: Cell::new(0, 0),
                     orientation: Orientation::new(0.0),
                 },
-                GoalSE2 {
-                    key: Cell::new(10, 0),
-                    orientation: None,
-                },
+                GoalSE2::new(Cell::new(10, 0)),
             )
             .unwrap()
             .solve()
@@ -705,7 +698,7 @@ mod tests {
             .solution()
             .unwrap();
 
-        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap();
+        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap().trajectory;
         assert_eq!(5, trajectory.len());
     }
 }

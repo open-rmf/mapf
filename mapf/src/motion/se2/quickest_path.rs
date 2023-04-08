@@ -21,7 +21,10 @@ use crate::{
     error::{Anyhow, ThisError},
     motion::{
         r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2},
-        se2::{DifferentialDriveLineFollow, KeySE2, MaybeOriented, StateSE2, WaypointSE2},
+        se2::{
+            DifferentialDriveLineFollow, DifferentialDriveLineFollowMotion,
+            KeySE2, MaybeOriented, StateSE2,
+        },
         SpeedLimiter,
     },
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
@@ -52,7 +55,7 @@ where
     WeightR2: Reversible,
     WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -71,7 +74,7 @@ where
     WeightR2: Reversible,
     WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -121,7 +124,7 @@ where
     WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
     WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
     WeightSE2::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
@@ -230,7 +233,7 @@ mod tests {
             SharedGraph, SimpleGraph,
         },
         motion::{
-            se2::{GoalSE2, Point},
+            se2::{GoalSE2, Point, WaypointSE2},
             CircularProfile, TimePoint, TravelTimeCost,
         },
     };
@@ -328,10 +331,7 @@ mod tests {
             WaypointSE2::new_f64(0.0, state_p.x, state_p.y, 0.0),
         );
 
-        let goal = GoalSE2 {
-            key: goal_cell,
-            orientation: None,
-        };
+        let goal = GoalSE2::new(goal_cell);
 
         let remaining_cost_estimate = heuristic
             .estimate_remaining_cost(&from_state, &goal)
@@ -373,10 +373,7 @@ mod tests {
             WaypointSE2::new_f64(1.256802684, -5.5, -2.5, 45_f64.to_radians()),
         );
 
-        let goal = GoalSE2 {
-            key: Cell::new(18, 3),
-            orientation: None,
-        };
+        let goal = GoalSE2::new(Cell::new(18, 3));
 
         heuristic
             .estimate_remaining_cost(&from_state, &goal)

@@ -91,6 +91,10 @@ impl<W: Waypoint> Trajectory<W> {
         self
     }
 
+    pub fn set_indefinite_initial_time(&mut self, value: bool) {
+        self.indefinite_initial_time = value;
+    }
+
     pub fn has_indefinite_initial_time(&self) -> bool {
         self.indefinite_initial_time
     }
@@ -98,6 +102,10 @@ impl<W: Waypoint> Trajectory<W> {
     pub fn with_indefinite_finish_time(mut self, value: bool) -> Self {
         self.indefinite_finish_time = value;
         self
+    }
+
+    pub fn set_indefinite_finish_time(&mut self, value: bool) {
+        self.indefinite_finish_time = value;
     }
 
     pub fn has_indefinite_finish_time(&self) -> bool {
@@ -108,7 +116,7 @@ impl<W: Waypoint> Trajectory<W> {
     /// If the finish time is equal to the start time, then this will return an
     /// Err.
     pub fn hold(from: W, until: TimePoint) -> Result<Self, ()> {
-        if *from.time() == until {
+        if from.time() == until {
             return Result::Err(());
         }
 
@@ -196,7 +204,7 @@ impl<W: Waypoint> Trajectory<W> {
         unsafe {
             let vec = self.waypoints.get_unchecked_mut_vec();
             for element in vec.iter_mut() {
-                let new_time = *element.0.time() + by;
+                let new_time = element.0.time() + by;
                 element.0.set_time(new_time);
             }
         }
@@ -220,7 +228,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn motion_duration(&self) -> Duration {
-        *self.finish_motion().time() - *self.initial_motion().time()
+        self.finish_motion().time() - self.initial_motion().time()
     }
 
     /// Trajectories always have at least two values, so we can always get the
@@ -243,7 +251,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn initial_motion_time(&self) -> TimePoint {
-        *self.initial_motion().time()
+        self.initial_motion().time()
     }
 
     /// Get the time that the trajectory finishes.
@@ -256,7 +264,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn finish_motion_time(&self) -> TimePoint {
-        *self.finish_motion().time()
+        self.finish_motion().time()
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -294,14 +302,14 @@ impl<W: Waypoint> Trajectory<W> {
             f(&mut wp.0);
 
             if let Some(lower_bound) = lower_bound_opt {
-                if *wp.0.time() <= lower_bound {
+                if wp.0.time() <= lower_bound {
                     wp.0.set_time(original_time);
                     return Result::Err(MutateError::InvalidTimeChange);
                 }
             }
 
             if let Some(upper_bound) = upper_bound_opt {
-                if *wp.0.time() >= upper_bound {
+                if wp.0.time() >= upper_bound {
                     wp.0.set_time(original_time);
                     return Result::Err(MutateError::InvalidTimeChange);
                 }
@@ -538,11 +546,11 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
             TrajectoryIterNext::Index(index) => {
                 let wp = self.trajectory.get(index).map(|wp| wp.clone());
                 if let (Some(t_f), Some(wp)) = (self.until, &wp) {
-                    if t_f <= *wp.time() {
+                    if t_f <= wp.time() {
                         // We only include the first element that exceeds the
                         // finish time.
                         self.next_element = TrajectoryIterNext::Depleted;
-                        if *wp.time() < self.begin {
+                        if wp.time() < self.begin {
                             // This element comes before the begin time.
                             // This is not supposed to happen, but let's handle
                             // it gracefully anyway.

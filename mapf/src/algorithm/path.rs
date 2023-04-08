@@ -18,8 +18,9 @@
 use crate::{
     domain::{Backtrack, Domain},
     error::ThisError,
-    motion::{IntegrateWaypoints, Trajectory, Waypoint},
+    motion::{IntegrateWaypoints, Trajectory, Waypoint, Duration},
 };
+use smallvec::SmallVec;
 
 #[derive(Debug, Clone)]
 pub struct Path<State, Action, Cost> {
@@ -73,16 +74,22 @@ impl<S, A, C> Path<S, A, C> {
         })
     }
 
+    /// Make a trajectory out of this path if possible. It might not be possible
+    /// to make a trajectory if the path does not involve any motion.
+    ///
+    /// To always get a trajectory out of the path (provided there are no errors),
+    /// then use [`make_trajectory_or_hold`].
     pub fn make_trajectory<W: Waypoint>(
         &self,
     ) -> Result<
-        Option<Trajectory<W>>,
+        Option<MetaTrajectory<W>>,
         WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>,
     >
     where
         S: IntegrateWaypoints<W>,
         A: IntegrateWaypoints<W>,
     {
+        let mut decision_points = Vec::new();
         let mut waypoints = self
             .initial_state
             .integrated_waypoints(None)
@@ -101,9 +108,112 @@ impl<S, A, C> Path<S, A, C> {
             );
 
             initial_wp = waypoints.last().cloned();
+            decision_points.push(waypoints.len() - 1);
         }
 
-        Ok(Trajectory::from_iter(waypoints).ok())
+        Ok(Trajectory::from_iter(waypoints).ok().map(|trajectory|
+            MetaTrajectory {
+                trajectory,
+                decision_points,
+            }
+        ))
+    }
+
+    /// Make a trajectory out of this path if possible. If producing a path is
+    /// not possible because no motion is necessary, then creating a trajectory
+    /// that holds the agent in place at the start location for the given
+    /// `hold_duration`.
+    ///
+    /// If an initial waypoint cannot be drawn out of the initial state, then
+    /// this will return an error instead of not returning a trajectory.
+    ///
+    /// If `hold_duration` is zero, 1ns will be used instead.
+    pub fn make_trajectory_or_hold<W: Waypoint>(
+        &self,
+        hold_duration: Duration,
+    ) -> Result<
+        MetaTrajectory<W>,
+        WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>
+    >
+    where
+        S: IntegrateWaypoints<W>,
+        A: IntegrateWaypoints<W>,
+    {
+        if let Some(mt) = self.make_trajectory()? {
+            return Ok(mt);
+        }
+
+        let wp0: W = match self
+            .initial_state
+            .integrated_waypoints(None)
+            .into_iter()
+            .last()
+        {
+            Some(r) => r.map_err(WaypointIntegrationError::State)?,
+            None => return Err(WaypointIntegrationError::EmptyInitialState),
+        };
+
+        let hold_duration = if hold_duration.nanos == 0 {
+            Duration::new(1)
+        } else {
+            hold_duration
+        };
+
+        Ok(MetaTrajectory {
+            trajectory: Trajectory::new(wp0.clone(), wp0.time_shifted_by(hold_duration)).unwrap(),
+            decision_points: Vec::new(),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct MetaTrajectory<W: Waypoint> {
+    pub trajectory: Trajectory<W>,
+    pub decision_points: Vec<usize>,
+}
+
+impl<W: Waypoint> MetaTrajectory<W> {
+    pub fn get_decision_range(&self, trajectory_index: usize) -> [usize; 2] {
+        for d in self.decision_points.windows(2) {
+            if d.len() < 2 {
+                break;
+            }
+            if d[0] < trajectory_index {
+                return [d[0], d[1]];
+            }
+        }
+
+        // If we couldn't find suitable decision points, then assume the conflict
+        // runs past the endo fthe trajectory and starts at the last decision
+        // point, which may be all the way to the beginning.
+        [self.decision_points.last().copied().unwrap_or(0), self.trajectory.len()]
+    }
+
+    pub fn get_trajectory_segment(&self, range: [usize; 2]) -> Trajectory<W> {
+        let i_max = self.trajectory.len() - 1;
+        let mut wps: SmallVec<[_; 10]> = SmallVec::new();
+        for i in range[0]..=range[1] {
+            wps.push(self.trajectory[usize::min(i, i_max)].0.clone());
+        }
+
+        // Remove any possible duplicated points
+        wps.sort_by_key(|wp| wp.time());
+        wps.dedup_by_key(|wp| wp.time());
+
+        if wps.len() < 2 {
+            // If only one waypoint was extracted then it must be the final
+            // waypoint. Add a holding point so we can create a valid trajectory.
+            let wp0 = wps.last().unwrap();
+            wps.push(wp0.clone().with_time(wp0.time() + Duration::from_secs(1)));
+        }
+
+        Trajectory::from_iter(wps).unwrap()
+            .with_indefinite_finish_time(range[1] >= self.trajectory.len())
+    }
+
+    pub fn with_indefinite_finish_time(mut self, value: bool) -> MetaTrajectory<W> {
+        self.trajectory.set_indefinite_finish_time(value);
+        self
     }
 }
 
@@ -111,4 +221,5 @@ impl<S, A, C> Path<S, A, C> {
 pub enum WaypointIntegrationError<S, A> {
     State(S),
     Action(A),
+    EmptyInitialState,
 }

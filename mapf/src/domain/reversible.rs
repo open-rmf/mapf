@@ -94,12 +94,12 @@ pub fn flip_endpoint_times<State: Clone + Timed>(
     initial_reverse_state: &State,
     final_reverse_state: &State,
 ) -> Result<(State, State), NoError> {
-    let delta_t = *initial_reverse_state.time() - *final_reverse_state.time();
+    let delta_t = initial_reverse_state.time() - final_reverse_state.time();
     let mut initial_forward_state = final_reverse_state.clone();
-    initial_forward_state.set_time(*initial_forward_state.time() + delta_t);
+    initial_forward_state.set_time(initial_forward_state.time() + delta_t);
 
     let mut final_forward_state = initial_reverse_state.clone();
-    final_forward_state.set_time(*final_forward_state.time() + delta_t);
+    final_forward_state.set_time(final_forward_state.time() + delta_t);
 
     Ok((initial_forward_state, final_forward_state))
 }
@@ -110,10 +110,10 @@ pub fn backtrack_times<State: Clone + Timed, const N: usize>(
     reverse_action: &ArrayVec<State, N>,
     child_reverse_state: &State,
 ) -> Result<(ArrayVec<State, N>, State), NoError> {
-    let dt = *parent_forward_state.time() - *parent_reverse_state.time();
+    let dt = parent_forward_state.time() - parent_reverse_state.time();
 
     let mut child_forward_state = child_reverse_state.clone();
-    child_forward_state.set_time(*child_forward_state.time() + dt);
+    child_forward_state.set_time(child_forward_state.time() + dt);
 
     let mut forward_action = reverse_action.clone();
     // Check swap_endpoints now and save it because the length will change
@@ -126,7 +126,7 @@ pub fn backtrack_times<State: Clone + Timed, const N: usize>(
     forward_action.reverse();
     for wp in &mut forward_action {
         // Adjust the times of each waypoint
-        wp.set_time(*wp.time() + dt);
+        wp.set_time(wp.time() + dt);
     }
     if swap_endpoints {
         // Add the waypoint of the parent_forward_state, which is the

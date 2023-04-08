@@ -22,7 +22,7 @@ use crate::{
     },
     error::StdError,
     graph::{Edge, Graph},
-    motion::Timed,
+    motion::{Timed, MaybeTimed, TimePoint},
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
     util::{FlatResultMapTrait, ForkIter},
 };
@@ -419,12 +419,18 @@ impl<BaseState: SelfKey, G: Graph> SelfKey for IncrementalState<BaseState, G> {
 }
 
 impl<BaseState: Timed, G: Graph> Timed for IncrementalState<BaseState, G> {
-    fn set_time(&mut self, new_time: time_point::TimePoint) {
+    fn set_time(&mut self, new_time: TimePoint) {
         self.base_state.set_time(new_time)
     }
 
-    fn time(&self) -> &time_point::TimePoint {
+    fn time(&self) -> TimePoint {
         self.base_state.time()
+    }
+}
+
+impl<BaseState: Timed, G: Graph> MaybeTimed for IncrementalState<BaseState, G> {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.base_state.time())
     }
 }
 

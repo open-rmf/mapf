@@ -22,7 +22,7 @@ use crate::{
     motion::{
         r2::*,
         se2::{MaybeOriented, Orientation, StateSE2},
-        IntegrateWaypoints, TimePoint, Timed,
+        IntegrateWaypoints, TimePoint, Timed, MaybeTimed,
     },
 };
 use std::borrow::Borrow;
@@ -158,8 +158,14 @@ impl<K> Timed for StateR2<K> {
         self.waypoint.set_time(new_time);
     }
 
-    fn time(&self) -> &TimePoint {
+    fn time(&self) -> TimePoint {
         self.waypoint.time()
+    }
+}
+
+impl<K> MaybeTimed for StateR2<K> {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.waypoint.time())
     }
 }
 
