@@ -90,6 +90,7 @@ impl<S, A, C> Path<S, A, C> {
         A: IntegrateWaypoints<W>,
     {
         let mut decision_points = Vec::new();
+        decision_points.push(0);
         let mut waypoints = self
             .initial_state
             .integrated_waypoints(None)
@@ -166,7 +167,7 @@ impl<S, A, C> Path<S, A, C> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MetaTrajectory<W: Waypoint> {
     pub trajectory: Trajectory<W>,
     pub decision_points: Vec<usize>,
@@ -174,22 +175,27 @@ pub struct MetaTrajectory<W: Waypoint> {
 
 impl<W: Waypoint> MetaTrajectory<W> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> [usize; 2] {
-        for d in self.decision_points.windows(2) {
-            if d.len() < 2 {
-                break;
-            }
-            if d[0] < trajectory_index {
-                return [d[0], d[1]];
+        dbg!(trajectory_index);
+        for i in 1..self.decision_points.len() {
+            if trajectory_index < self.decision_points[i] {
+                return dbg!([self.decision_points[i-1], self.decision_points[i]]);
             }
         }
-
         // If we couldn't find suitable decision points, then assume the conflict
         // runs past the endo fthe trajectory and starts at the last decision
         // point, which may be all the way to the beginning.
-        [self.decision_points.last().copied().unwrap_or(0), self.trajectory.len()]
+        dbg!([self.decision_points.last().copied().unwrap_or(0), self.trajectory.len()])
     }
 
     pub fn get_trajectory_segment(&self, range: [usize; 2]) -> Trajectory<W> {
+        if range[0] == 0 && range[1] == 0 {
+            // This implies that we want an indefinite start trajectory leading
+            // up to the first waypoint.
+            let wp1 = self.trajectory.initial_motion().clone();
+            let wp0 = wp1.clone().time_shifted_by(Duration::from_secs(-1));
+            Trajectory::new(wp0, wp1).unwrap().with_indefinite_initial_time(true);
+        }
+
         let i_max = self.trajectory.len() - 1;
         let mut wps: SmallVec<[_; 10]> = SmallVec::new();
         for i in range[0]..=range[1] {

@@ -1307,7 +1307,7 @@ fn compute_quadratic_wait_hints(
 }
 
 #[inline]
-fn compute_stationary_proximity(
+pub fn compute_stationary_proximity(
     r: Point,
     p0: Point,
     v: Vector2,

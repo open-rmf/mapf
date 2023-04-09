@@ -37,7 +37,7 @@ use mapf::{
     },
     motion::{
         Trajectory, Motion, OverlayedDynamicEnvironment, DynamicEnvironment,
-        CircularProfile, DynamicCircularObstacle, TravelEffortCost,
+        CircularProfile, DynamicCircularObstacle, TravelEffortCost, Environment,
         se2::{
             Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
             DifferentialDriveLineFollow,
@@ -115,7 +115,7 @@ fn serialize_grid(grid: &SparseGrid) -> HashMap<i64, Vec<i64>> {
     }
 
     for (_, column) in &mut ser {
-        column.sort();
+        column.sort_unstable();
     }
 
     ser
@@ -854,9 +854,11 @@ struct App {
     search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, MeasureLimit>)>,
     step_progress: button::State,
     debug_on: bool,
-    memory: Vec<TreeTicket>,
+    search_memory: Vec<TreeTicket>,
+    negotiation_history: Vec<NegotiationNode>,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
+    negotiation_node_selected: Option<usize>,
 }
 
 impl App {
@@ -931,11 +933,11 @@ impl App {
         if let Some((radius, search)) = &mut self.search {
             self.debug_step_count += 1;
 
-            self.memory = search.memory().0
+            self.search_memory = search.memory().0
                 .queue.clone().into_iter_sorted()
                 .map(|n| n.0.clone()).collect();
 
-            for ticket in &self.memory {
+            for ticket in &self.search_memory {
                 if let Some(mt) = search.memory().0
                     .arena.retrace(ticket.node_id).unwrap()
                     .make_trajectory().unwrap()
@@ -952,7 +954,7 @@ impl App {
                 self.search = None;
             } else {
                 if let Some(selection) = self.debug_node_selected {
-                    if let Some(node) = self.memory.get(selection) {
+                    if let Some(node) = self.search_memory.get(selection) {
                         let solution = search
                             .memory().0.arena
                             .retrace(node.node_id)
@@ -1022,18 +1024,25 @@ impl App {
 
     fn generate_plan(&mut self) {
         // Clear all history
-        self.memory.clear();
+        self.search_memory.clear();
         self.search = None;
         self.canvas.program.layers.3.solutions.clear();
         self.canvas.program.layers.3.searches.clear();
         self.canvas.cache.clear();
+        self.negotiation_history.clear();
 
         let scenario = self.make_scenario();
 
-        let solutions = match negotiate(&scenario, Some(1_000_000)) {
+        let solutions = match negotiate(&scenario, Some(100_000)) {
             Ok(solutions) => solutions,
             Err(err) => {
-                println!("Failed to find a solution: {err:?}");
+                match err {
+                    NegotiationError::PlanningFailed(nodes) => {
+                        self.negotiation_history = nodes;
+                    }
+                    err => println!("Failed to find a solution: {err:?}"),
+                };
+
                 return;
             }
         };
@@ -1301,9 +1310,11 @@ impl Application for App {
             search: None,
             step_progress: button::State::new(),
             debug_on: false,
-            memory: Default::default(),
+            search_memory: Default::default(),
+            negotiation_history: Default::default(),
             debug_step_count: 0,
             debug_node_selected: None,
+            negotiation_node_selected: None,
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
@@ -1516,13 +1527,13 @@ impl Application for App {
                 self.generate_plan();
             },
             Message::DebugNodeSelected(value) => {
-                if self.memory.is_empty() {
+                if self.search_memory.is_empty() {
                     self.debug_node_selected = Some(0);
                 } else {
-                    self.debug_node_selected = Some(usize::min(value, self.memory.len() - 1));
+                    self.debug_node_selected = Some(usize::min(value, self.search_memory.len() - 1));
                 }
 
-                if let Some(node) = self.memory.get(value) {
+                if let Some(node) = self.search_memory.get(value) {
                     if let Some((r, search)) = &self.search {
                         let solution = search
                             .memory().0.arena
@@ -1535,6 +1546,23 @@ impl Application for App {
                     }
                 }
             },
+            Message::NegotiationNodeSelected(value) => {
+                if self.negotiation_history.is_empty() {
+                    self.negotiation_node_selected = None;
+                } else {
+                    self.negotiation_node_selected = Some(usize::min(value, self.negotiation_history.len() - 1));
+                }
+
+                if let Some(node) = self.negotiation_history.get(value) {
+                    self.canvas.program.layers.3.obstacles.clear();
+                    for obs in node.environment.obstacles() {
+                        if let Some(t) = obs.trajectory() {
+                            let r = obs.profile().footprint_radius();
+                            self.canvas.program.layers.3.obstacles.push((r, t.clone()));
+                        }
+                    }
+                }
+            }
             Message::StepProgress => {
                 self.step_progress();
             }
@@ -1611,7 +1639,7 @@ impl Application for App {
             );
 
         let mut agent_names: Vec<String> = self.canvas.program.layers.2.agents.iter().map(|(name, _)| name.clone()).collect();
-        agent_names.sort();
+        agent_names.sort_unstable();
         let robot_row = Row::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -1730,13 +1758,13 @@ impl Application for App {
                         .push(iced::Space::with_width(Length::Units(16)))
                         .push(Text::new(format!("Steps: {}", self.debug_step_count)))
                         .push(iced::Space::with_width(Length::Units(16)))
-                        .push(Text::new(format!("Queue size: {}", self.memory.len())))
+                        .push(Text::new(format!("Queue size: {}", self.search_memory.len())))
                         .align_items(Alignment::Center)
                     )
                     .push({
                         let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
                         if let Some((_, search)) = &self.search {
-                            for (i, ticket) in self.memory.iter().enumerate() {
+                            for (i, ticket) in self.search_memory.iter().enumerate() {
                                 let node = search.memory().0.arena.get(ticket.node_id).unwrap();
                                 scroll = scroll.push(Radio::new(
                                     i, format!(
@@ -1756,7 +1784,7 @@ impl Application for App {
                         .push(
                             Text::new({
                                 if let Some(selection) = self.debug_node_selected {
-                                    if let Some(node) = self.memory.get(selection) {
+                                    if let Some(node) = self.search_memory.get(selection) {
                                         if let Some((_, search)) = &self.search {
                                             let node = search.memory().0.arena.get(node.node_id).unwrap();
                                             format!("{node:#?}")
@@ -1774,6 +1802,44 @@ impl Application for App {
                     }.height(Length::Fill))
                 )
             );
+        } else if !self.negotiation_history.is_empty() {
+            content = content.push(
+                Row::new()
+                .push(self.canvas.view())
+                .push(
+                    Column::new()
+                    .push(Text::new(format!("History size: {}", self.negotiation_history.len())))
+                    .push({
+                        let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
+                        for (i, node) in self.negotiation_history.iter().enumerate() {
+                            scroll = scroll.push(Radio::new(
+                                i,
+                                format!("{}. Conflicts: {:?}", i, node.negotiation.conflicts),
+                                self.negotiation_node_selected,
+                                Message::NegotiationNodeSelected,
+                            ));
+                        }
+                        scroll
+                    }.height(Length::Fill))
+                    .push(
+                        Scrollable::<Message>::new(&mut self.debug_text_scroll)
+                        .push(
+                            Text::new({
+                                if let Some(selection) = self.negotiation_node_selected {
+                                    if let Some(node) = self.negotiation_history.get(selection) {
+                                        format!("{node:#?}")
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    String::new()
+                                }
+                            }).size(10)
+                        )
+                        .height(Length::Fill)
+                    )
+                )
+            )
         } else {
             content = content.push(self.canvas.view());
         }
@@ -1806,6 +1872,7 @@ enum Message {
     EndpointSelected(EndpointSelection),
     OccupancyChanged,
     DebugNodeSelected(usize),
+    NegotiationNodeSelected(usize),
     StepProgress,
     Tick,
 }
