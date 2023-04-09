@@ -20,7 +20,7 @@ use crate::motion::{
     Trajectory, Waypoint,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
 };
 use slotmap::{SlotMap, new_key_type};
@@ -89,7 +89,8 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
 pub struct OverlayedDynamicEnvironment<W: Waypoint> {
     base: Arc<DynamicEnvironment<W>>,
     overlay: DynamicEnvironmentOverlay<W>,
-    insertions: SlotMap<OverlayInsertionKey, DynamicCircularObstacle<W>>,
+    insertions: SlotMap<OverlayInsertionKey, (DynamicCircularObstacle<W>, Option<usize>)>,
+    masks: HashSet<usize>,
 }
 
 impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
@@ -98,6 +99,7 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
             base,
             overlay: Default::default(),
             insertions: Default::default(),
+            masks: HashSet::new(),
         }
     }
 
@@ -222,6 +224,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     /// Add an entirely new obstacle to the environment. Get back a key to
     /// identify this insertion so you can chose to remove it later.
     ///
+    /// Optionally provide a `group` specifier. This lets you mask or unmask the
+    /// obstacle using [`mask_inserted_group`] and [`unmask_inserted_group`].
+    ///
     /// This is to add entirely new obstacles that do not exist in the underlay.
     /// If you instead want to modify the perceived trajectory or profile of an
     /// obstacle that is in the underlay, use `overlay_obstacle` or
@@ -229,8 +234,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     pub fn insert_obstacle(
         &mut self,
         obstacle: DynamicCircularObstacle<W>,
+        group: Option<usize>,
     ) -> OverlayInsertionKey {
-        self.insertions.insert(obstacle)
+        self.insertions.insert((obstacle, group))
     }
 
     /// Remove an insertion from the overlay. You must provide a key that was
@@ -241,6 +247,25 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         overlay_key: OverlayInsertionKey,
     ) -> Option<DynamicCircularObstacle<W>> {
         self.insertions.remove(overlay_key)
+        .map(|(obstacle, _)| obstacle)
+    }
+
+    pub fn mask_inserted_group(
+        &mut self,
+        group: usize,
+    ) -> bool {
+        self.masks.insert(group)
+    }
+
+    pub fn unmask_inserted_group(
+        &mut self,
+        group: usize,
+    ) -> bool {
+        self.masks.remove(&group)
+    }
+
+    pub fn unmask_all_inserted_groups(&mut self) {
+        self.masks.clear();
     }
 }
 
@@ -263,7 +288,14 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
             .iter()
             .enumerate()
             .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
-            .chain(self.insertions.values())
+            .chain(self.insertions.values().filter_map(|(obs, group)| {
+                if let Some(group) = group {
+                    if self.masks.contains(group) {
+                        return None;
+                    }
+                }
+                Some(obs)
+            }))
     }
 }
 

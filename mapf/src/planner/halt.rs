@@ -111,7 +111,7 @@ where
 {
     fn halt(&mut self, memory: &Mem) -> bool {
         if let Some(limit) = self.0 {
-            return memory.size() > limit;
+            return dbg!(dbg!(memory.size()) > dbg!(limit));
         }
 
         false

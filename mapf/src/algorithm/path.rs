@@ -210,7 +210,7 @@ impl<W: Waypoint> MetaTrajectory<W> {
             // If only one waypoint was extracted then it must be the final
             // waypoint. Add a holding point so we can create a valid trajectory.
             let wp0 = wps.last().unwrap();
-            wps.push(wp0.clone().with_time(wp0.time() + Duration::from_secs(1)));
+            wps.push(wp0.clone().time_shifted_by(Duration::from_secs(1)));
         }
 
         Trajectory::from_iter(wps).unwrap()

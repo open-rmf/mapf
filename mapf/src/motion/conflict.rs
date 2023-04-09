@@ -102,7 +102,13 @@ where
         for action in self {
             let wp: W = match action {
                 SafeAction::Move(wp) => wp.clone().into(),
-                SafeAction::Wait(wait) => initial_waypoint.with_time(wait.time_estimate),
+                SafeAction::Wait(wait) => {
+                    if initial_waypoint.time() < wait.time_estimate {
+                        initial_waypoint.with_time(wait.time_estimate)
+                    } else {
+                        continue
+                    }
+                }
             };
 
             waypoints.push(Ok(wp.clone()));
@@ -189,6 +195,7 @@ where
     if delta_t < 1e-8 {
         // This very small time interval suggests that the agent is not moving
         // significantly. Just check if the proposed path is safe or not.
+        dbg!((&from_point, &to_point));
         if is_safe_segment((&from_point, &to_point), Some(bb), in_environment) {
             return SmallVec::from_iter([SmallVec::from_iter([SafeAction::Move(to_point)])]);
         } else {
@@ -384,12 +391,14 @@ where
             to_point.position.y,
         );
 
+        dbg!((&from_p, &arrival_wp));
         if !is_safe_segment((&from_p, &arrival_wp), None, in_environment) {
             return false;
         }
 
         if arrival_wp.time < arrival_time {
             let final_wp = arrival_wp.with_time(arrival_time);
+            dbg!((&arrival_wp, &final_wp));
             return is_safe_segment((&arrival_wp, &final_wp), None, in_environment);
         }
 
@@ -471,6 +480,8 @@ where
             };
 
             let parent_wp_start = make_parent_arrival(hint_wp, parent_wp_end);
+            dbg!((&hint_wp, &parent_wp_start));
+            dbg!((&parent_wp_start, &parent_wp_end));
             let safe_hint_arrival =
                 is_safe_segment((&hint_wp, &parent_wp_start), None, in_environment)
                     && is_safe_segment((&parent_wp_start, &parent_wp_end), None, in_environment);
@@ -503,8 +514,14 @@ where
             // Test if the start waypoint can arrive at this hint. If it can
             // then we have found our path.
             let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
+            // TODO(@mxgrey): We have seen cases where hint_arrival_wp.time
+            // is larger than hint_wp.time. We should consider whether this is
+            // a bug or is acceptable. In the worst case it means we have some
+            // unhelpful hints which we should be ignoring to reduce the search
+            // effort. Maybe we can filter based on the contour.
             let safe_hint_arrival =
                 is_safe_segment((&from_point, &hint_arrival_wp), None, in_environment)
+                    && hint_arrival_wp.time <= hint_wp.time
                     && is_safe_segment((&hint_arrival_wp, &hint_wp), None, in_environment);
             if safe_hint_arrival {
                 // We have found the desired path
@@ -529,7 +546,7 @@ where
                 path.push(SafeAction::Move(final_wp));
                 return Some(path);
             }
-        };
+        }
     }
 
     None

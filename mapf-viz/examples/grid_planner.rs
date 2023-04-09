@@ -46,7 +46,7 @@ use mapf::{
     templates::InformedSearch,
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer},
+    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer, Measure},
     planner::halt::MeasureLimit,
     negotiation::*,
 };
@@ -214,6 +214,7 @@ fn draw_trajectory(
     frame: &mut canvas::Frame,
     trajectory: &LinearTrajectorySE2,
     color: iced::Color,
+    width: Option<f32>,
 ) {
     for [wp0, wp1] in trajectory.array_windows() {
         let p0 = wp0.position.translation;
@@ -225,7 +226,7 @@ fn draw_trajectory(
             ),
             Stroke{
                 color,
-                width: 3_f32,
+                width: width.unwrap_or(3_f32),
                 ..Default::default()
             }
         );
@@ -582,7 +583,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
         _cursor: canvas::Cursor
     ) {
         for (name, ctx) in &self.agents {
-            for (kind, cell) in [("Start", ctx.agent.start), ("Goal", ctx.agent.goal)] {
+            for (kind, cell, offset) in [("Start", ctx.agent.start, -16), ("Goal", ctx.agent.goal, 0)] {
                 let cell: Cell = cell.into();
                 let p = cell.to_center_point(self.cell_size);
                 let r = ctx.agent.radius as f32;
@@ -593,6 +594,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                     hud.at(
                         p,
                         |frame| {
+                            frame.translate(iced::Vector::new(0.0, offset as f32));
                             frame.fill_text(format!("{} {}: ({}, {})", name, kind, cell.x, cell.y).to_owned());
                         }
                     )
@@ -723,16 +725,16 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         if let Some((t0, _)) = self.time_range() {
 
             for (_, trajectory) in &self.searches {
-                draw_trajectory(frame, trajectory, self.search_color);
+                draw_trajectory(frame, trajectory, self.search_color, None);
             }
 
             for (_, trajectory) in &self.solutions {
-                draw_trajectory(frame, trajectory, self.solution_color);
+                draw_trajectory(frame, trajectory, self.solution_color, None);
             }
 
             for (r, obs) in &self.obstacles {
                 let red = iced::Color::from_rgb(1.0, 0.0, 0.0);
-                draw_trajectory(frame, obs, red);
+                draw_trajectory(frame, obs, red, Some(8_f32));
 
                 if let Some(now) = self.now {
                     if let Ok(p) = obs.motion().compute_position(&(t0 + now)) {
@@ -856,6 +858,7 @@ struct App {
     debug_on: bool,
     search_memory: Vec<TreeTicket>,
     negotiation_history: Vec<NegotiationNode>,
+    name_map: HashMap<usize, String>,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
@@ -937,7 +940,8 @@ impl App {
                 .queue.clone().into_iter_sorted()
                 .map(|n| n.0.clone()).collect();
 
-            for ticket in &self.search_memory {
+            // TODO(@mxgrey): Make the number to take configurable
+            for ticket in self.search_memory.iter().take(10) {
                 if let Some(mt) = search.memory().0
                     .arena.retrace(ticket.node_id).unwrap()
                     .make_trajectory().unwrap()
@@ -947,12 +951,14 @@ impl App {
             }
 
             if let SearchStatus::Solved(solution) = search.step().unwrap() {
+                println!("Memory Measure: {}", search.memory().size());
                 println!("Solution: {:#?}", solution);
                 self.canvas.program.layers.3.solutions.clear();
                 self.canvas.program.layers.3.solutions.extend(solution.make_trajectory().unwrap().map(|t| (*radius, t.trajectory)).into_iter());
                 self.debug_node_selected = None;
                 self.search = None;
             } else {
+                println!("Memory Measure: {}", search.memory().size());
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.search_memory.get(selection) {
                         let solution = search
@@ -963,7 +969,9 @@ impl App {
                             .unwrap();
 
                         self.canvas.program.layers.3.solutions.clear();
-                        self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*radius, s.trajectory)).into_iter());
+                        self.canvas.program.layers.3.solutions.extend(solution.map(
+                            |s| (*radius, s.trajectory)).into_iter()
+                        );
                     }
                 }
             }
@@ -1031,14 +1039,118 @@ impl App {
         self.canvas.cache.clear();
         self.negotiation_history.clear();
 
-        let scenario = self.make_scenario();
+        if self.debug_on {
+            let endpoints = &self.canvas.program.layers.2;
+            let visibility = self.canvas.program.layers.1.visibility();
+            let Some(ctx) = endpoints.selected_agent() else { return };
 
-        let solutions = match negotiate(&scenario, Some(100_000)) {
+            if !ctx.endpoints_valid() {
+                print!("Cannot plan for {}:", endpoints.selected_agent.as_ref().unwrap());
+                if !ctx.start_open {
+                    print!(" invalid start |");
+                }
+                if !ctx.start_available {
+                    print!(" start conflict |");
+                }
+                if !ctx.goal_open {
+                    print!(" invalid goal |");
+                }
+                if !ctx.goal_available {
+                    print!(" goal conflict |");
+                }
+                println!("");
+                return;
+            }
+
+            let r = ctx.agent.radius;
+            let shared_visibility = Arc::new(visibility.clone());
+            let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
+                shared_visibility.clone(), [],
+            ));
+
+            let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
+                shared_visibility, [],
+            ));
+
+            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
+            let agent_radius = ctx.agent.radius;
+            let profile = CircularProfile::new(
+                agent_radius, agent_radius, agent_radius,
+            ).expect("Bad profile sizes");
+
+            let environment = Arc::new(
+                OverlayedDynamicEnvironment::new(
+                    Arc::new({
+                        let mut env = DynamicEnvironment::new(profile);
+                        for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
+                            env.obstacles.push(
+                                DynamicCircularObstacle::new(
+                                    CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
+                                ).with_trajectory(Some(obs_traj.clone()))
+                            );
+                        }
+                        env
+                    })
+                )
+            );
+
+            let mut minimum_time: Option<TimePoint> = None;
+            for obs in environment.obstacles() {
+                if let Some(t) = obs.trajectory() {
+                    let tf = t.finish_motion_time();
+                    minimum_time = Some(minimum_time.map(|t| t.min(tf)).unwrap_or(tf));
+                }
+            }
+
+            let domain = InformedSearch::new_sipp_se2(
+                activity_graph,
+                heuristic_graph,
+                extrapolator,
+                environment,
+                TravelEffortCost::save_one_second_with_detour_up_to(
+                    5.0,
+                    360_f64.to_radians(),
+                ),
+            ).unwrap();
+
+            let start = ctx.agent.make_start();
+            let goal = ctx.agent.make_goal().with_minimum_time(minimum_time);
+
+            println!(
+                "About to plan for {}:\nStart: {start:#?}\nGoal: {goal:#?}",
+                endpoints.selected_agent.as_ref().unwrap(),
+            );
+
+            let planner = Planner::new(AStarConnect(domain))
+                .with_halting(MeasureLimit(Some(1_000_000)));
+                // .with_halting(MeasureLimit(None));
+            let search = planner.plan(start, goal).unwrap();
+
+            self.canvas.program.layers.3.searches.clear();
+            self.debug_step_count = 0;
+            if self.debug_on {
+                self.search_memory = search.memory().0
+                    .queue.clone().into_iter_sorted()
+                    .map(|n| n.0.clone()).collect();
+                self.search = Some((r, search));
+            }
+            self.debug_node_selected = None;
+            return;
+        }
+
+        let scenario = {
+            let mut scenario = self.make_scenario();
+            scenario.obstacles.clear();
+            scenario
+        };
+
+        let solutions = match negotiate(&scenario, Some(1_000_000)) {
             Ok(solutions) => solutions,
             Err(err) => {
                 match err {
-                    NegotiationError::PlanningFailed(nodes) => {
+                    NegotiationError::PlanningFailed((nodes, name_map)) => {
                         self.negotiation_history = nodes;
+                        self.name_map = name_map;
                     }
                     err => println!("Failed to find a solution: {err:?}"),
                 };
@@ -1052,128 +1164,128 @@ impl App {
             self.canvas.program.layers.3.solutions.push((r, solution.trajectory.clone()));
         }
 
-    //     let endpoints = &self.canvas.program.layers.2;
-    //     let visibility = self.canvas.program.layers.1.visibility();
-    //     let mut other_agents: Vec<(f64, LinearTrajectorySE2)> = Vec::new();
-    //     for (name, ctx) in &endpoints.agents {
-    //         dbg!((name, ctx.start_open, ctx.goal_open));
-    //         if !ctx.endpoints_valid() {
-    //             print!("Cannot plan for {name}:");
-    //             if !ctx.start_open {
-    //                 print!(" invalid start |");
-    //             }
-    //             if !ctx.start_available {
-    //                 print!(" start conflict |");
-    //             }
-    //             if !ctx.goal_open {
-    //                 print!(" invalid goal |");
-    //             }
-    //             if !ctx.goal_available {
-    //                 print!(" goal conflict |");
-    //             }
-    //             println!("");
-    //             continue;
-    //         }
+        // let endpoints = &self.canvas.program.layers.2;
+        // let visibility = self.canvas.program.layers.1.visibility();
+        // let mut other_agents: Vec<(f64, LinearTrajectorySE2)> = Vec::new();
+        // for (name, ctx) in &endpoints.agents {
+        //     dbg!((name, ctx.start_open, ctx.goal_open));
+        //     if !ctx.endpoints_valid() {
+        //         print!("Cannot plan for {name}:");
+        //         if !ctx.start_open {
+        //             print!(" invalid start |");
+        //         }
+        //         if !ctx.start_available {
+        //             print!(" start conflict |");
+        //         }
+        //         if !ctx.goal_open {
+        //             print!(" invalid goal |");
+        //         }
+        //         if !ctx.goal_available {
+        //             print!(" goal conflict |");
+        //         }
+        //         println!("");
+        //         continue;
+        //     }
 
-    //         let r = ctx.agent.radius;
-    //         self.canvas.program.layers.3.vertex_lookup.clear();
+        //     let r = ctx.agent.radius;
+        //     self.canvas.program.layers.3.vertex_lookup.clear();
 
-    //         let shared_visibility = Arc::new(visibility.clone());
-    //         let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
-    //             shared_visibility.clone(), [],
-    //         ));
+        //     let shared_visibility = Arc::new(visibility.clone());
+        //     let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
+        //         shared_visibility.clone(), [],
+        //     ));
 
-    //         let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
-    //             shared_visibility, [],
-    //         ));
+        //     let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
+        //         shared_visibility, [],
+        //     ));
 
-    //         let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
-    //         let agent_radius = ctx.agent.radius;
-    //         let profile = CircularProfile::new(
-    //             agent_radius, agent_radius, agent_radius,
-    //         ).expect("Bad profile sizes");
+        //     let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
+        //     let agent_radius = ctx.agent.radius;
+        //     let profile = CircularProfile::new(
+        //         agent_radius, agent_radius, agent_radius,
+        //     ).expect("Bad profile sizes");
 
-    //         let environment = Arc::new(
-    //             OverlayedDynamicEnvironment::new(
-    //                 Arc::new({
-    //                     let mut env = DynamicEnvironment::new(profile);
-    //                     for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter().chain(other_agents.iter()) {
-    //                         env.obstacles.push(
-    //                             DynamicCircularObstacle::new(
-    //                                 CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
-    //                             ).with_trajectory(Some(obs_traj.clone()))
-    //                         );
-    //                     }
-    //                     env
-    //                 })
-    //             )
-    //         );
+        //     let environment = Arc::new(
+        //         OverlayedDynamicEnvironment::new(
+        //             Arc::new({
+        //                 let mut env = DynamicEnvironment::new(profile);
+        //                 for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter().chain(other_agents.iter()) {
+        //                     env.obstacles.push(
+        //                         DynamicCircularObstacle::new(
+        //                             CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
+        //                         ).with_trajectory(Some(obs_traj.clone()))
+        //                     );
+        //                 }
+        //                 env
+        //             })
+        //         )
+        //     );
 
-    //         let domain = InformedSearch::new_sipp_se2(
-    //             activity_graph,
-    //             heuristic_graph,
-    //             extrapolator,
-    //             environment,
-    //             TravelEffortCost::save_one_second_with_detour_up_to(
-    //                 5.0,
-    //                 360_f64.to_radians(),
-    //             ),
-    //         ).unwrap();
+        //     let domain = InformedSearch::new_sipp_se2(
+        //         activity_graph,
+        //         heuristic_graph,
+        //         extrapolator,
+        //         environment,
+        //         TravelEffortCost::save_one_second_with_detour_up_to(
+        //             5.0,
+        //             360_f64.to_radians(),
+        //         ),
+        //     ).unwrap();
 
-    //         let start = ctx.agent.make_start();
-    //         let goal = ctx.agent.make_goal();
+        //     let start = ctx.agent.make_start();
+        //     let goal = ctx.agent.make_goal();
 
-    //         println!("About to plan for {name}:\nStart: {start:#?}\nGoal: {goal:#?}");
+        //     println!("About to plan for {name}:\nStart: {start:#?}\nGoal: {goal:#?}");
 
-    //         let start_time = std::time::Instant::now();
-    //         let planner = Planner::new(AStarConnect(domain))
-    //             .with_halting(MeasureLimit(Some(10000000)));
-    //             // .with_halting(MeasureLimit(None));
-    //         let mut search = planner.plan(start, goal).unwrap();
+        //     let start_time = std::time::Instant::now();
+        //     let planner = Planner::new(AStarConnect(domain))
+        //         .with_halting(MeasureLimit(Some(10000000)));
+        //         // .with_halting(MeasureLimit(None));
+        //     let mut search = planner.plan(start, goal).unwrap();
 
-    //         self.canvas.program.layers.3.searches.clear();
-    //         self.debug_step_count = 0;
-    //         if self.debug_on {
-    //             self.memory = search.memory().0
-    //                 .queue.clone().into_iter_sorted()
-    //                 .map(|n| n.0.clone()).collect();
-    //             self.search = Some((r, search));
-    //         } else {
-    //             let result = search.solve().unwrap();
-    //             let elapsed_time = start_time.elapsed();
-    //             match result {
-    //                 SearchStatus::Solved(solution) => {
-    //                     // println!("Solution: {:#?}", solution);
-    //                     // println!(" ======================= ");
-    //                     let trajectory = solution.make_trajectory().unwrap().map(|t|
-    //                         t
-    //                         .trajectory
-    //                         .with_indefinite_initial_time(true)
-    //                         .with_indefinite_finish_time(true)
-    //                     );
-    //                     let arrival_time = trajectory.as_ref().map(|t| t.motion_duration().as_secs_f64()).unwrap_or(0.0);
-    //                     let presence = trajectory.map(|t| (r, t));
-    //                     self.canvas.program.layers.3.solutions.extend(presence.as_ref().into_iter().cloned());
-    //                     other_agents.extend(presence.into_iter());
-    //                     // println!(" ======================= ");
-    //                     // println!("Trajectory: {:#?}", self.canvas.program.layers.3.solutions);
-    //                     println!(
-    //                         "{name} Arrival time: {arrival_time:?}, cost: {:?}",
-    //                         solution.total_cost.0,
-    //                     );
-    //                     self.canvas.cache.clear();
-    //                 },
-    //                 SearchStatus::Impossible => {
-    //                     println!("Impossible to solve!");
-    //                 },
-    //                 SearchStatus::Incomplete => {
-    //                     println!("Planning is incomplete..?");
-    //                 }
-    //             }
-    //             println!("Planning took {:?}s", elapsed_time.as_secs_f64());
-    //         }
-    //         self.debug_node_selected = None;
-    //     }
+        //     self.canvas.program.layers.3.searches.clear();
+        //     self.debug_step_count = 0;
+        //     if self.debug_on {
+        //         self.memory = search.memory().0
+        //             .queue.clone().into_iter_sorted()
+        //             .map(|n| n.0.clone()).collect();
+        //         self.search = Some((r, search));
+        //     } else {
+        //         let result = search.solve().unwrap();
+        //         let elapsed_time = start_time.elapsed();
+        //         match result {
+        //             SearchStatus::Solved(solution) => {
+        //                 // println!("Solution: {:#?}", solution);
+        //                 // println!(" ======================= ");
+        //                 let trajectory = solution.make_trajectory().unwrap().map(|t|
+        //                     t
+        //                     .trajectory
+        //                     .with_indefinite_initial_time(true)
+        //                     .with_indefinite_finish_time(true)
+        //                 );
+        //                 let arrival_time = trajectory.as_ref().map(|t| t.motion_duration().as_secs_f64()).unwrap_or(0.0);
+        //                 let presence = trajectory.map(|t| (r, t));
+        //                 self.canvas.program.layers.3.solutions.extend(presence.as_ref().into_iter().cloned());
+        //                 other_agents.extend(presence.into_iter());
+        //                 // println!(" ======================= ");
+        //                 // println!("Trajectory: {:#?}", self.canvas.program.layers.3.solutions);
+        //                 println!(
+        //                     "{name} Arrival time: {arrival_time:?}, cost: {:?}",
+        //                     solution.total_cost.0,
+        //                 );
+        //                 self.canvas.cache.clear();
+        //             },
+        //             SearchStatus::Impossible => {
+        //                 println!("Impossible to solve!");
+        //             },
+        //             SearchStatus::Incomplete => {
+        //                 println!("Planning is incomplete..?");
+        //             }
+        //         }
+        //         println!("Planning took {:?}s", elapsed_time.as_secs_f64());
+        //     }
+        //     self.debug_node_selected = None;
+        // }
     }
 }
 
@@ -1312,6 +1424,7 @@ impl Application for App {
             debug_on: false,
             search_memory: Default::default(),
             negotiation_history: Default::default(),
+            name_map: Default::default(),
             debug_step_count: 0,
             debug_node_selected: None,
             negotiation_node_selected: None,
@@ -1326,6 +1439,7 @@ impl Application for App {
 
         app.update_all_endpoints();
         app.recalculate_visibility();
+        app.generate_plan();
 
         let set_view = Command::perform(async move {}, move |_| Message::SetView(zone));
         let top_agent = app.canvas.program.layers.2.agents.iter().next();
@@ -1420,7 +1534,6 @@ impl Application for App {
                         self.canvas.program.layers.1.set_robot_radius(ctx.agent.radius as f32);
                         self.recalculate_visibility();
                         self.canvas.cache.clear();
-                        self.generate_plan();
                     }
                     None => {}
                 }
@@ -1498,14 +1611,14 @@ impl Application for App {
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Down, .. } = event {
                         let next_debug_node = self.debug_node_selected.map(|n| n+1).unwrap_or(0);
                         return Command::perform(async move  {}, move |_| {
-                            Message::DebugNodeSelected(next_debug_node)
+                            Message::SelectDebugNode(next_debug_node)
                         });
                     }
 
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Up, .. } = event {
                         let next_debug_node = self.debug_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
                         return Command::perform(async move  {}, move |_| {
-                            Message::DebugNodeSelected(next_debug_node)
+                            Message::SelectDebugNode(next_debug_node)
                         });
                     }
                 }
@@ -1526,7 +1639,7 @@ impl Application for App {
                 self.recalculate_visibility();
                 self.generate_plan();
             },
-            Message::DebugNodeSelected(value) => {
+            Message::SelectDebugNode(value) => {
                 if self.search_memory.is_empty() {
                     self.debug_node_selected = Some(0);
                 } else {
@@ -1546,7 +1659,7 @@ impl Application for App {
                     }
                 }
             },
-            Message::NegotiationNodeSelected(value) => {
+            Message::SelectNegotiationNode(value) => {
                 if self.negotiation_history.is_empty() {
                     self.negotiation_node_selected = None;
                 } else {
@@ -1559,6 +1672,20 @@ impl Application for App {
                         if let Some(t) = obs.trajectory() {
                             let r = obs.profile().footprint_radius();
                             self.canvas.program.layers.3.obstacles.push((r, t.clone()));
+                        }
+                    }
+
+                    self.canvas.program.layers.3.solutions.clear();
+                    for (i, mt) in &node.completed_trajectories {
+                        let name = self.name_map.get(i).unwrap();
+                        let r = self.canvas.program.layers.2.agents.get(name).unwrap().agent.radius;
+                        self.canvas.program.layers.3.solutions.push((r, mt.trajectory.clone()));
+                    }
+
+                    if let Some(conceded) = node.conceded {
+                        if let Some(name) = self.name_map.get(&conceded) {
+                            let name = name.clone();
+                            return Command::perform(async {}, move |_| Message::SelectAgent(name.clone()));
                         }
                     }
                 }
@@ -1773,7 +1900,7 @@ impl Application for App {
                                         node.remaining_cost_estimate().0,
                                         ticket.evaluation.0,
                                     ), self.debug_node_selected,
-                                    Message::DebugNodeSelected
+                                    Message::SelectDebugNode
                                 ));
                             }
                         }
@@ -1814,9 +1941,9 @@ impl Application for App {
                         for (i, node) in self.negotiation_history.iter().enumerate() {
                             scroll = scroll.push(Radio::new(
                                 i,
-                                format!("{}. Conflicts: {:?}", i, node.negotiation.conflicts),
+                                format!("{}. Conflicts: {}", i, node.negotiation.conflicts.len()),
                                 self.negotiation_node_selected,
-                                Message::NegotiationNodeSelected,
+                                Message::SelectNegotiationNode,
                             ));
                         }
                         scroll
@@ -1871,8 +1998,8 @@ enum Message {
     EventOccurred(iced_native::Event),
     EndpointSelected(EndpointSelection),
     OccupancyChanged,
-    DebugNodeSelected(usize),
-    NegotiationNodeSelected(usize),
+    SelectDebugNode(usize),
+    SelectNegotiationNode(usize),
     StepProgress,
     Tick,
 }

@@ -395,6 +395,7 @@ where
             assert!(arrival.waypoints.len() < 3);
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
+            dbg!((&from_state, &wp0));
             if !is_safe_segment((&from_state.clone().into(), &wp0), None, in_environment) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -442,6 +443,7 @@ where
                                 position: Position::new(target_point.coords, target_yaw.angle()),
                             };
 
+                            dbg!((&arrival_wp, &final_wp));
                             if !is_safe_segment(
                                 (&arrival_wp.into(), &final_wp.into()),
                                 None,
@@ -610,6 +612,7 @@ where
             };
 
         for wp in &action {
+            dbg!((&prev_wp, &wp));
             if !is_safe_segment(
                 (&prev_wp.into(), &wp.clone().into()),
                 None,
