@@ -392,10 +392,9 @@ where
         };
 
         if arrival.waypoints.len() > 1 {
-            assert!(arrival.waypoints.len() < 3);
+            assert!(arrival.waypoints.len() < 4);
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
-            dbg!((&from_state, &wp0));
             if !is_safe_segment((&from_state.clone().into(), &wp0), None, in_environment) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -443,7 +442,6 @@ where
                                 position: Position::new(target_point.coords, target_yaw.angle()),
                             };
 
-                            dbg!((&arrival_wp, &final_wp));
                             if !is_safe_segment(
                                 (&arrival_wp.into(), &final_wp.into()),
                                 None,
@@ -488,9 +486,9 @@ pub struct MergeIntoGoal<const R: u32>(pub DifferentialDriveLineFollow);
 impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target>
     for MergeIntoGoal<R>
 where
-    Action: FromIterator<WaypointSE2>,
+    Action: FromIterator<WaypointSE2> + std::fmt::Debug,
     Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K>,
-    K: PartialEq,
+    K: PartialEq + std::fmt::Debug,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
     type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
@@ -511,17 +509,21 @@ where
         Action: 'a,
         Target: 'a,
     {
+        dbg!();
         let goal_key: &K = to_target.borrow();
         if from_state.key.vertex != *goal_key.borrow() {
+            dbg!();
             return None;
         }
 
         let target_pos = to_target.maybe_point();
         let target_orientation = to_target.maybe_oriented();
-        if target_pos.is_none() && target_orientation.is_none() {
-            // If there isn't a position or orientation specified for the goal,
-            // then simply return. We don't need to do anything special to reach
-            // the goal.
+        let target_time = to_target.maybe_time();
+        if target_pos.is_none() && target_orientation.is_none() && target_time.is_none() {
+            // If there isn't a position, orientation, or time specified for the
+            // goal, then simply return. We don't need to do anything special to
+            // reach the goal.
+            dbg!();
             return None;
         }
 
@@ -532,18 +534,22 @@ where
             target_orientation.unwrap_or(from_state.waypoint.position.rotation),
         );
 
+        dbg!();
         self.0
             .extrapolate(&from_state.waypoint, &target_pos, &())
             .map(|r| {
                 r.map(|(mut action, mut wp)| {
+                    dbg!((wp, to_target.maybe_time()));
                     if let Some(t) = to_target.maybe_time() {
                         if wp.time < t {
+                            dbg!((wp.time, t));
                             wp.set_time(t);
                             action.push(wp);
                         }
                     }
                     let output_action: Action = action.into_iter().collect();
-                    (output_action, StateSE2::new(from_state.key.vertex, wp))
+                    // (output_action, StateSE2::new(from_state.key.vertex, wp))
+                    dbg!((output_action, StateSE2::new(from_state.key.vertex, wp)))
                 })
             })
     }
@@ -581,9 +587,9 @@ impl<const R: u32> SafeMergeIntoGoal<R> {
 impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target>
     for SafeMergeIntoGoal<R>
 where
-    Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>>,
-    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K>,
-    K: PartialEq,
+    Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>> + std::fmt::Debug,
+    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K> + std::fmt::Debug,
+    K: PartialEq + std::fmt::Debug,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
     type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
@@ -604,6 +610,7 @@ where
         Action: 'a,
         Target: 'a,
     {
+        dbg!((&from_state, &to_target));
         let mut prev_wp = from_state.waypoint;
         let (action, finish_state): (DifferentialDriveLineFollowMotion, _) =
             match MergeIntoGoal(self.motion).connect(from_state, to_target)? {
@@ -626,7 +633,7 @@ where
 
         let action = action.into_iter().map(|a| SafeAction::Move(a)).collect();
 
-        Some(Ok((action, finish_state)))
+        Some(Ok(dbg!((action, finish_state))))
     }
 }
 

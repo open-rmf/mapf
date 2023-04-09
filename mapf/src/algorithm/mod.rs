@@ -141,14 +141,13 @@ impl<Goal, Algo: Solvable<Goal>> Solvable<Goal> for Arc<Algo> {
     }
 }
 
-/// The `Measure` trait can be implemented by `Algorithm::Memory` types to
-/// provide an indication of how large their current level of effort or memory
-/// footprint is. This may be used to halt search efforts that have grown
-/// excessively large.
-pub trait Measure {
+/// The [`QueueLength`] trait can be implemented by `Algorithm::Memory` types to
+/// provide an indication of how large the remaining search queue is. This may
+/// be used to halt search efforts that have grown excessively large.
+pub trait QueueLength {
     /// How "big" is the current memory footprint or level of effort. The exact
     /// meaning of this value may vary between algorithms.
-    fn size(&self) -> usize;
+    fn queue_length(&self) -> usize;
 }
 
 /// The `MinimumCostBound` trait can be implemented by `Algorithm::Memory` types

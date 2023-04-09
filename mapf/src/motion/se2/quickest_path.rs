@@ -17,15 +17,15 @@
 
 use crate::{
     algorithm::{BackwardDijkstra, Path},
-    domain::{Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
+    domain::{Extrapolator, Connectable, Informed, Key, KeyedCloser, Reversible, Weighted},
     error::{Anyhow, ThisError},
     motion::{
-        r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2},
+        r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2, MaybePositioned},
         se2::{
             DifferentialDriveLineFollow, DifferentialDriveLineFollowMotion,
-            KeySE2, MaybeOriented, StateSE2,
+            KeySE2, MaybeOriented, StateSE2, MergeIntoGoal,
         },
-        SpeedLimiter,
+        SpeedLimiter, Timed, MaybeTimed, TimePoint,
     },
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
     Graph, Planner,
@@ -37,6 +37,7 @@ use std::{
     ops::Add,
     sync::{Arc, RwLock},
 };
+use num::traits::Zero;
 
 pub type QuickestPathSearch<G, W> = UninformedSearch<
     GraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow>,
@@ -64,7 +65,13 @@ where
     planner: QuickestPathPlanner<G, WeightR2>,
     extrapolator: DifferentialDriveLineFollow,
     weight_se2: WeightSE2,
-    cost_cache: Arc<RwLock<HashMap<HeuristicKey<G::Key, R>, Option<WeightSE2::Cost>>>>,
+    cost_cache: Arc<RwLock<HashMap<HeuristicKey<G::Key, R>, Option<CostCache<WeightSE2::Cost, G::Key, R>>>>>,
+}
+
+#[derive(Clone, Copy)]
+struct CostCache<Cost, Key, const R: u32> {
+    cost: Cost,
+    arrival_state: StateSE2<Key, R>,
 }
 
 type HeuristicKey<K, const R: u32> = (KeySE2<K, R>, K);
@@ -116,31 +123,26 @@ where
     pub fn planner(&self) -> &QuickestPathPlanner<G, WeightR2> {
         &self.planner
     }
-}
 
-impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
-    for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
-where
-    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
-    WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
-    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
-    WeightSE2::WeightedError: Into<Anyhow>,
-    G: Graph + Reversible + Clone,
-    G::Key: Key + Clone,
-    G::Vertex: Positioned + MaybeOriented,
-    G::EdgeAttributes: SpeedLimiter + Clone,
-    State: Borrow<StateSE2<G::Key, R>>,
-    Goal: Borrow<G::Key>,
-{
-    type CostEstimate = WeightSE2::Cost;
-    type InformedError = QuickestPathHeuristicError;
-    fn estimate_remaining_cost(
+    fn invariant_cost<State, Goal>(
         &self,
         from_state: &State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<CostCache<WeightSE2::Cost, G::Key, R>>, QuickestPathHeuristicError>
+    where
+        WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+        WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
+        WeightR2::WeightedError: Into<Anyhow>,
+        WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+        WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost> + Zero + std::fmt::Debug,
+        WeightSE2::WeightedError: Into<Anyhow>,
+        G: Graph + Reversible + Clone,
+        G::Key: Key + Clone,
+        G::Vertex: Positioned + MaybeOriented,
+        G::EdgeAttributes: SpeedLimiter + Clone,
+        State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
+        Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed + std::fmt::Debug,
+    {
         let start: &StateSE2<G::Key, R> = from_state.borrow();
         let goal: &G::Key = to_goal.borrow();
 
@@ -154,7 +156,7 @@ where
         }
 
         // The cost wasn't in the cache, so let's use the planner to find it.
-        let cost = 'cost: {
+        let invariant = 'cost: {
             let solution: Path<_, _, _> = match self
                 .planner
                 .plan(start.key.vertex.clone(), goal.clone())
@@ -190,7 +192,6 @@ where
                 };
 
                 let child_state = StateSE2::new(child_state.key.clone(), child_wp);
-
                 let child_cost = match self
                     .weight_se2
                     .cost(&previous_state, &action, &child_state)
@@ -201,13 +202,96 @@ where
                 };
 
                 cost = cost + child_cost;
-
                 previous_state = child_state;
             }
-            Some(cost)
+
+            // Shift the time of the final state to what it would be if the
+            // start time had been zero.
+            previous_state.waypoint.time = TimePoint::zero()
+                + (previous_state.waypoint.time - start.waypoint.time);
+            Some(CostCache {
+                cost,
+                arrival_state: previous_state,
+            })
         };
 
-        Ok(cost)
+        match self.cost_cache.write() {
+            Ok(mut cache) => {
+                cache.insert((start.key.clone(), goal.clone()), invariant.clone());
+            }
+            Err(_) => return Err(QuickestPathHeuristicError::PoisonedMutex),
+        }
+
+        Ok(invariant)
+    }
+}
+
+impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
+    for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
+where
+    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
+    WeightR2::WeightedError: Into<Anyhow>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost> + Zero + std::fmt::Debug,
+    WeightSE2::WeightedError: Into<Anyhow>,
+    G: Graph + Reversible + Clone,
+    G::Key: Key + Clone,
+    G::Vertex: Positioned + MaybeOriented,
+    G::EdgeAttributes: SpeedLimiter + Clone,
+    State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
+    Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed + std::fmt::Debug,
+{
+    type CostEstimate = WeightSE2::Cost;
+    type InformedError = QuickestPathHeuristicError;
+    fn estimate_remaining_cost(
+        &self,
+        from_state: &State,
+        to_goal: &Goal,
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+        dbg!((from_state, to_goal));
+
+        // Calculate an invariant for getting to this goal from the start, no
+        // matter what time it is being done.
+        let invariant = match self.invariant_cost(from_state, to_goal)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let start: &StateSE2<G::Key, R> = from_state.borrow();
+        // Shift the time of the arrival state so that it it makes sense for the
+        // starting time.
+        // TODO(@mxgrey): Write unit tests specifically to make sure this time
+        // shifting is working correctly.
+        let arrival_state = invariant.arrival_state.time_shifted_by(
+            start.time() - TimePoint::zero()
+        );
+
+        // Now add the cost of the final connection, which may vary based on time
+        let child_cost = match MergeIntoGoal(self.extrapolator).connect(
+            arrival_state.clone(), to_goal,
+        ) {
+            Some(r) => {
+                let (connect, final_state): (DifferentialDriveLineFollowMotion, _) = r
+                    .map_err(|_| QuickestPathHeuristicError::Extrapolation)?;
+
+                dbg!((&arrival_state, &final_state));
+                match self.weight_se2.cost(&arrival_state, &connect, &final_state)
+                    .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                {
+                    Some(cost) => dbg!(cost),
+                    None => {
+                        dbg!();
+                        return Ok(None);
+                    }
+                }
+            }
+            None => {
+                dbg!();
+                WeightSE2::Cost::zero()
+            }
+        };
+        Ok(Some(invariant.cost + child_cost))
     }
 }
 

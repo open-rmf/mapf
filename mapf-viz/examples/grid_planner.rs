@@ -46,8 +46,8 @@ use mapf::{
     templates::InformedSearch,
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer, Measure},
-    planner::halt::MeasureLimit,
+    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer, QueueLength},
+    planner::halt::QueueLengthLimit,
     negotiation::*,
 };
 use mapf_viz::{
@@ -853,7 +853,7 @@ struct App {
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
     show_details: KeyToggler,
-    search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, MeasureLimit>)>,
+    search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, QueueLengthLimit>)>,
     step_progress: button::State,
     debug_on: bool,
     search_memory: Vec<TreeTicket>,
@@ -951,14 +951,14 @@ impl App {
             }
 
             if let SearchStatus::Solved(solution) = search.step().unwrap() {
-                println!("Memory Measure: {}", search.memory().size());
+                println!("Queue length: {}", search.memory().queue_length());
                 println!("Solution: {:#?}", solution);
                 self.canvas.program.layers.3.solutions.clear();
                 self.canvas.program.layers.3.solutions.extend(solution.make_trajectory().unwrap().map(|t| (*radius, t.trajectory)).into_iter());
                 self.debug_node_selected = None;
                 self.search = None;
             } else {
-                println!("Memory Measure: {}", search.memory().size());
+                println!("Queue length: {}", search.memory().queue_length());
                 if let Some(selection) = self.debug_node_selected {
                     if let Some(node) = self.search_memory.get(selection) {
                         let solution = search
@@ -1037,7 +1037,6 @@ impl App {
         self.canvas.program.layers.3.solutions.clear();
         self.canvas.program.layers.3.searches.clear();
         self.canvas.cache.clear();
-        self.negotiation_history.clear();
 
         if self.debug_on {
             let endpoints = &self.canvas.program.layers.2;
@@ -1063,6 +1062,9 @@ impl App {
             }
 
             let r = ctx.agent.radius;
+            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
+            let profile = CircularProfile::new(r, 0.0, 0.0).expect("Bad profile sizes");
+
             let shared_visibility = Arc::new(visibility.clone());
             let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
                 shared_visibility.clone(), [],
@@ -1072,27 +1074,50 @@ impl App {
                 shared_visibility, [],
             ));
 
-            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
-            let agent_radius = ctx.agent.radius;
-            let profile = CircularProfile::new(
-                agent_radius, agent_radius, agent_radius,
-            ).expect("Bad profile sizes");
+            let environment = 'environment: {
+                // if let Some(n) = self.negotiation_node_selected {
+                if let Some(n) = dbg!(self.negotiation_node_selected) {
+                    if let Some(node) = self.negotiation_history.get(n) {
+                        let mut env = node.environment.clone();
+                        let agent_id = self.name_map.iter()
+                            .find(|(_, name)| **name == *endpoints.selected_agent.as_ref().unwrap())
+                            .map(|(i, _)| *i);
 
-            let environment = Arc::new(
-                OverlayedDynamicEnvironment::new(
-                    Arc::new({
-                        let mut env = DynamicEnvironment::new(profile);
-                        for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
-                            env.obstacles.push(
-                                DynamicCircularObstacle::new(
-                                    CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
-                                ).with_trajectory(Some(obs_traj.clone()))
-                            );
+                        // if let Some(agent_id) = agent_id {
+                        if let Some(agent_id) = dbg!(agent_id) {
+                            env.unmask_all_inserted_groups();
+                            env.mask_inserted_group(agent_id);
+                            env.overlay_trajectory(agent_id, None).ok();
+                            self.canvas.program.layers.3.obstacles.clear();
+                            for obs in env.obstacles() {
+                                if let Some(t) = obs.trajectory() {
+                                    let r = obs.profile().footprint_radius();
+                                    self.canvas.program.layers.3.obstacles.push((r, t.clone()));
+                                }
+                            }
+
+                            dbg!(&env);
+                            break 'environment Arc::new(env);
                         }
-                        env
-                    })
+                    }
+                }
+
+                Arc::new(
+                    OverlayedDynamicEnvironment::new(
+                        Arc::new({
+                            let mut env = DynamicEnvironment::new(profile);
+                            for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
+                                env.obstacles.push(
+                                    DynamicCircularObstacle::new(
+                                        CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
+                                    ).with_trajectory(Some(obs_traj.clone()))
+                                );
+                            }
+                            env
+                        })
+                    )
                 )
-            );
+            };
 
             let mut minimum_time: Option<TimePoint> = None;
             for obs in environment.obstacles() {
@@ -1122,7 +1147,7 @@ impl App {
             );
 
             let planner = Planner::new(AStarConnect(domain))
-                .with_halting(MeasureLimit(Some(1_000_000)));
+                .with_halting(QueueLengthLimit(Some(1_000_000)));
                 // .with_halting(MeasureLimit(None));
             let search = planner.plan(start, goal).unwrap();
 
@@ -1138,13 +1163,12 @@ impl App {
             return;
         }
 
-        let scenario = {
-            let mut scenario = self.make_scenario();
-            scenario.obstacles.clear();
-            scenario
-        };
+        self.negotiation_history.clear();
+        self.canvas.program.layers.3.obstacles.clear();
+        let scenario = self.make_scenario();
 
-        let solutions = match negotiate(&scenario, Some(1_000_000)) {
+        // let propsoals = match negotiate(&scenario, Some(1_000_000)) {
+        let (node, name_map) = match negotiate(&scenario, Some(1_000_000)) {
             Ok(solutions) => solutions,
             Err(err) => {
                 match err {
@@ -1159,10 +1183,16 @@ impl App {
             }
         };
 
-        for (name, solution) in &solutions {
+        // for (name, proposal) in &node.proposals {
+        for (i, proposal) in &node.proposals {
+            let name = name_map.get(i).unwrap();
             let r = scenario.agents.get(name).unwrap().radius;
-            self.canvas.program.layers.3.solutions.push((r, solution.trajectory.clone()));
+            self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
         }
+
+        self.negotiation_history.clear();
+        self.negotiation_history.push(node);
+        self.name_map = name_map;
 
         // let endpoints = &self.canvas.program.layers.2;
         // let visibility = self.canvas.program.layers.1.visibility();
@@ -1646,6 +1676,7 @@ impl Application for App {
                     self.debug_node_selected = Some(usize::min(value, self.search_memory.len() - 1));
                 }
 
+                self.canvas.program.layers.3.solutions.clear();
                 if let Some(node) = self.search_memory.get(value) {
                     if let Some((r, search)) = &self.search {
                         let solution = search
@@ -1654,6 +1685,11 @@ impl Application for App {
                             .unwrap()
                             .make_trajectory()
                             .unwrap();
+
+                        if let Some(mt) = &solution {
+                            dbg!(&mt.trajectory);
+                        }
+
                         self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s.trajectory)).into_iter());
                         self.canvas.cache.clear();
                     }
@@ -1676,10 +1712,10 @@ impl Application for App {
                     }
 
                     self.canvas.program.layers.3.solutions.clear();
-                    for (i, mt) in &node.completed_trajectories {
+                    for (i, proposal) in &node.proposals {
                         let name = self.name_map.get(i).unwrap();
                         let r = self.canvas.program.layers.2.agents.get(name).unwrap().agent.radius;
-                        self.canvas.program.layers.3.solutions.push((r, mt.trajectory.clone()));
+                        self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
                     }
 
                     if let Some(conceded) = node.conceded {

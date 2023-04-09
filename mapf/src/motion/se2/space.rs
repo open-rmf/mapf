@@ -769,6 +769,7 @@ where
 
         if let Some(target_time) = for_goal.maybe_time() {
             if by_state.time() < target_time {
+                dbg!((by_state.time().as_secs_f64(), target_time.as_secs_f64()));
                 return Ok(false);
             }
         }

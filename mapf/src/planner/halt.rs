@@ -15,7 +15,7 @@
  *
 */
 
-use crate::algorithm::{Measure, MinimumCostBound};
+use crate::algorithm::{QueueLength, MinimumCostBound};
 use std::{ops::Fn, sync::Arc};
 
 /// A trait to define conditions in which a search should be halted. The
@@ -103,15 +103,15 @@ impl<Mem> Halt<Mem> for StepLimit {
 /// solve attempt quits. For example, this might put a limit on how large
 /// the search queue can get.
 #[derive(Default, Clone)]
-pub struct MeasureLimit(pub Option<usize>);
+pub struct QueueLengthLimit(pub Option<usize>);
 
-impl<Mem> Halt<Mem> for MeasureLimit
+impl<Mem> Halt<Mem> for QueueLengthLimit
 where
-    Mem: Measure,
+    Mem: QueueLength,
 {
     fn halt(&mut self, memory: &Mem) -> bool {
         if let Some(limit) = self.0 {
-            return dbg!(dbg!(memory.size()) > dbg!(limit));
+            return memory.queue_length() > limit;
         }
 
         false
@@ -174,8 +174,8 @@ mod tests {
 
     struct FakeMem;
 
-    impl Measure for FakeMem {
-        fn size(&self) -> usize {
+    impl QueueLength for FakeMem {
+        fn queue_length(&self) -> usize {
             0
         }
     }
@@ -192,7 +192,7 @@ mod tests {
         let mut halting = (
             Interruptible::new(|| Interruption::Continue),
             StepLimit::new(Some(5)),
-            MeasureLimit(Some(100)),
+            QueueLengthLimit(Some(100)),
         );
 
         for _ in 0..5 {

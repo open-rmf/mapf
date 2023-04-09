@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    algorithm::{Measure, MinimumCostBound, Path},
+    algorithm::{QueueLength, MinimumCostBound, Path},
     domain::{ClosedSet, ClosedStatus},
     error::ThisError,
 };
@@ -221,9 +221,9 @@ pub enum TreeError {
     BrokenReference(usize),
 }
 
-impl<Closed, Node: TreeNode> Measure for Tree<Closed, Node, Node::Cost> {
-    fn size(&self) -> usize {
-        self.arena.len() * std::mem::size_of::<Node>()
+impl<Closed, Node: TreeNode> QueueLength for Tree<Closed, Node, Node::Cost> {
+    fn queue_length(&self) -> usize {
+        self.queue.len()
     }
 }
 

@@ -181,7 +181,6 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             assert!(arrival.waypoints.len() < 3);
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
-            dbg!((&from_state.waypoint, &wp0));
             if !is_safe_segment(
                 (&from_state.waypoint.into(), &wp0),
                 None,
@@ -253,7 +252,6 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
                             position: Position::new(target_point.coords, target_yaw.angle()),
                         };
 
-                        dbg!((&arrival_wp, &final_wp));
                         if !is_safe_segment(
                             (&arrival_wp.into(), &final_wp.into()),
                             None,

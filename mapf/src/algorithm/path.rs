@@ -175,16 +175,15 @@ pub struct MetaTrajectory<W: Waypoint> {
 
 impl<W: Waypoint> MetaTrajectory<W> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> [usize; 2] {
-        dbg!(trajectory_index);
         for i in 1..self.decision_points.len() {
             if trajectory_index < self.decision_points[i] {
-                return dbg!([self.decision_points[i-1], self.decision_points[i]]);
+                return [self.decision_points[i-1], self.decision_points[i]];
             }
         }
         // If we couldn't find suitable decision points, then assume the conflict
         // runs past the endo fthe trajectory and starts at the last decision
         // point, which may be all the way to the beginning.
-        dbg!([self.decision_points.last().copied().unwrap_or(0), self.trajectory.len()])
+        [self.decision_points.last().copied().unwrap_or(0), self.trajectory.len()]
     }
 
     pub fn get_trajectory_segment(&self, range: [usize; 2]) -> Trajectory<W> {

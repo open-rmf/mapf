@@ -17,7 +17,7 @@
 
 use crate::{
     algorithm::{
-        tree::*, Algorithm, Coherent, Measure, MinimumCostBound, Path, SearchStatus, Solvable,
+        tree::*, Algorithm, Coherent, QueueLength, MinimumCostBound, Path, SearchStatus, Solvable,
     },
     domain::{
         Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Informed,
@@ -50,12 +50,12 @@ pub struct AStarConnect<D>(pub D);
 #[derive(Debug)]
 pub struct Memory<Closed, State, Action, Cost>(pub Tree<Closed, Node<State, Action, Cost>, Cost>);
 
-impl<Closed, State, Action, Cost> Measure for Memory<Closed, State, Action, Cost>
+impl<Closed, State, Action, Cost> QueueLength for Memory<Closed, State, Action, Cost>
 where
     Cost: Clone + Add<Cost, Output = Cost>,
 {
-    fn size(&self) -> usize {
-        self.0.size()
+    fn queue_length(&self) -> usize {
+        self.0.queue_length()
     }
 }
 
