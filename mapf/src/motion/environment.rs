@@ -117,23 +117,23 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
         }
     }
 
-    pub fn view_for_motion<'a>(&'a self, key: &CcbsKey<K>) -> CcbsEnvironmentView<'a, W, K>
+    pub fn view_for_motion<'a>(&'a self, key: Option<&CcbsKey<K>>) -> CcbsEnvironmentView<'a, W, K>
     where
         K: Key,
     {
         CcbsEnvironmentView {
             view: self,
-            constraints: self.motion_constraints.get(key)
+            constraints: key.map(|key| self.motion_constraints.get(key)).flatten()
         }
     }
 
-    pub fn view_for_hold<'a>(&'a self, key: &K) -> CcbsEnvironmentView<'a, W, K>
+    pub fn view_for_hold<'a>(&'a self, key: Option<&K>) -> CcbsEnvironmentView<'a, W, K>
     where
         K: Key,
     {
         CcbsEnvironmentView {
             view: self,
-            constraints: self.hold_constraints.get(key),
+            constraints: key.map(|key| self.hold_constraints.get(key)).flatten(),
         }
     }
 
@@ -310,7 +310,7 @@ pub struct CcbsEnvironmentView<'a, W: Waypoint, K> {
     constraints: Option<&'a Vec<CcbsConstraint<W>>>,
 }
 
-impl<'e, W: Waypoint, K> Environment<CircularProfile, DynamicCircularObstacle<W>>
+impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for CcbsEnvironmentView<'e, W, K>
 {
     type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
@@ -336,13 +336,14 @@ impl<'e, W: Waypoint, K> Environment<CircularProfile, DynamicCircularObstacle<W>
                 .iter()
                 .flat_map(|x| *x)
                 .filter_map(|constraint| {
-                if let Some(mask) = self.view.mask {
-                    if constraint.mask == mask {
-                        return None;
+                    if let Some(mask) = self.view.mask {
+                        if constraint.mask == mask {
+                            return None;
+                        }
                     }
-                }
-                Some(&constraint.obstacle)
-            }))
+                    Some(&constraint.obstacle)
+                })
+            )
     }
 }
 

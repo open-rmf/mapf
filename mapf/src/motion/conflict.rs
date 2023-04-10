@@ -1005,6 +1005,7 @@ where
 
     let mut wait_hints = SmallVec::new();
     for (for_obstacle, obs) in in_environment.obstacles().into_iter().enumerate() {
+        // dbg!((for_obstacle, obs));
         if !bb.overlaps(obs.bounding_box().cloned()) {
             continue;
         }

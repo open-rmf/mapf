@@ -22,14 +22,15 @@ use crate::{
         r2::Positioned,
         se2::{quickest_path::QuickestPathSearch, *},
         CcbsEnvironment, SpeedLimiter, TravelEffortCost,
+        SafeIntervalCache,
     },
-    premade::{SafeIntervalCache, SafeIntervalCloser, SafeIntervalMotion},
+    premade::{SafeIntervalCloser, SafeIntervalMotion},
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
     error::{StdError, Anyhow},
 };
 use std::sync::Arc;
 
-const DEFAULT_RES: u32 = 360;
+pub const DEFAULT_SIPP_RES: u32 = 360;
 
 /// A specialization of InformedSearch for performing Safe Interval Path
 /// Planning (SIPP) through the SE(2) space (Special Euclidean Group, dimension
@@ -44,23 +45,33 @@ const DEFAULT_RES: u32 = 360;
 /// [`crate::algorithm::AStar`], otherwise the planner will fail to reach the
 /// goal.
 pub type SippSE2<G, H = G> = InformedSearch<
-    SafeIntervalMotion<SharedGraph<G>, DEFAULT_RES>,
-    TravelEffortCost,
-    QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_RES>,
-    SafeIntervalCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>, SharedGraph<G>>,
-    InitializeSE2<SharedGraph<G>, DEFAULT_RES>,
-    SatisfySE2,
-    LazyGraphMotion<
-        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_RES>,
+    // SafeIntervalMotion<SharedGraph<G>, DEFAULT_SIPP_RES>,
+    GraphMotion<
+        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
         SharedGraph<G>,
         ConflictAvoidance<
             DifferentialDriveLineFollow,
-            Arc<CcbsEnvironment<WaypointSE2, <G as Graph>::Key>>,
+            SafeIntervalCache<SharedGraph<G>>,
+        >,
+    >,
+    TravelEffortCost,
+    QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
+    SafeIntervalCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>, SharedGraph<G>>,
+    InitializeSE2<SharedGraph<G>, DEFAULT_SIPP_RES>,
+    SatisfySE2,
+    LazyGraphMotion<
+        DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
+        SharedGraph<G>,
+        ConflictAvoidance<
+            DifferentialDriveLineFollow,
+            SafeIntervalCache<SharedGraph<G>>,
         >,
         (),
-        SafeMergeIntoGoal<<G as Graph>::Key, DEFAULT_RES>,
+        SafeMergeIntoGoal<<G as Graph>::Key, DEFAULT_SIPP_RES>,
     >,
 >;
+
+pub type StateSippSE2<K> = StateSE2<K, DEFAULT_SIPP_RES>;
 
 pub type NewSippSE2Error<H> =
     <QuickestPathSearch<SharedGraph<H>, TravelEffortCost> as Reversible>::ReversalError;
@@ -87,33 +98,28 @@ where
             activity_graph.clone(),
         ));
 
-        let activity_motion = SafeIntervalMotion {
-            extrapolator,
-            safe_intervals: cache.clone(),
-        };
-
-        let connect_motion = GraphMotion {
-            space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+        let activity_motion = GraphMotion {
+            space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_SIPP_RES>::new(),
             graph: activity_graph.clone(),
             extrapolator: ConflictAvoidance {
                 avoider: extrapolator,
-                environment: environment.clone(),
+                environment: cache.clone(),
             },
         };
 
         Ok(InformedSearch::new(
-            activity_motion,
+            activity_motion.clone(),
             weight,
             QuickestPathHeuristic::new(heuristic_graph, weight, weight, extrapolator)?,
             SafeIntervalCloser::new(
-                DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                DiscreteSpaceTimeSE2::<G::Key, DEFAULT_SIPP_RES>::new(),
                 cache.clone(),
             ),
         )
         .with_initializer(InitializeSE2(activity_graph))
         .with_satisfier(SatisfySE2::from(extrapolator))
         .with_connector(LazyGraphMotion {
-            motion: connect_motion,
+            motion: activity_motion,
             keyring: (),
             chain: SafeMergeIntoGoal::new(extrapolator, environment),
         }))
@@ -295,7 +301,7 @@ where
 {
     motion: DifferentialDriveLineFollow,
     weight: TravelEffortCost,
-    heuristic: QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_RES>,
+    heuristic: QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
 }
 
 pub struct SippSE2DiscardCache<H> {
@@ -332,7 +338,7 @@ where
             };
 
             SippSE2Configuration {
-                safe_intervals: scoped_self.activity.safe_intervals,
+                safe_intervals: scoped_self.activity.extrapolator.environment,
                 cache: SippSE2ManageCache::Preserve(preserve),
             }
         };
@@ -346,27 +352,22 @@ where
             SippSE2ManageCache::Preserve(preserve) => {
                 let activity_graph = config.safe_intervals.graph().clone();
                 let environment = config.safe_intervals.environment().clone();
-                let connect_motion = GraphMotion {
-                    space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                let activity_motion = GraphMotion {
+                    space: DiscreteSpaceTimeSE2::<G::Key, DEFAULT_SIPP_RES>::new(),
                     graph: activity_graph.clone(),
                     extrapolator: ConflictAvoidance {
                         avoider: preserve.motion,
-                        environment: environment.clone(),
+                        environment: config.safe_intervals.clone(),
                     }
                 };
 
                 let closer = SafeIntervalCloser::new(
-                    DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new(),
+                    DiscreteSpaceTimeSE2::<G::Key, DEFAULT_SIPP_RES>::new(),
                     config.safe_intervals.clone()
                 );
 
-                let activity_motion = SafeIntervalMotion {
-                    extrapolator: preserve.motion,
-                    safe_intervals: config.safe_intervals,
-                };
-
                 InformedSearch::new(
-                    activity_motion,
+                    activity_motion.clone(),
                     preserve.weight,
                     preserve.heuristic,
                     closer,
@@ -374,7 +375,7 @@ where
                 .with_initializer(InitializeSE2(activity_graph.clone()))
                 .with_satisfier(SatisfySE2::from(preserve.motion))
                 .with_connector(LazyGraphMotion {
-                    motion: connect_motion,
+                    motion: activity_motion,
                     keyring: (),
                     chain: SafeMergeIntoGoal::new(preserve.motion, environment),
                 })

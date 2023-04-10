@@ -1080,11 +1080,10 @@ impl App {
 
                         // if let Some(agent_id) = agent_id {
                         if let Some(agent_id) = agent_id {
-                            env.unmask_all_inserted_groups();
-                            env.mask_inserted_group(agent_id);
+                            env.set_mask(Some(agent_id));
                             env.overlay_trajectory(agent_id, None).ok();
                             self.canvas.program.layers.3.obstacles.clear();
-                            for obs in env.obstacles() {
+                            for obs in env.iter_all_obstacles() {
                                 if let Some(t) = obs.trajectory() {
                                     let r = obs.profile().footprint_radius();
                                     self.canvas.program.layers.3.obstacles.push((r, t.clone()));
@@ -1114,7 +1113,7 @@ impl App {
             };
 
             let mut minimum_time: Option<TimePoint> = None;
-            for obs in environment.obstacles() {
+            for obs in environment.iter_all_obstacles() {
                 if let Some(t) = obs.trajectory() {
                     let tf = t.finish_motion_time();
                     minimum_time = Some(minimum_time.map(|t| t.min(tf)).unwrap_or(tf));
@@ -1697,7 +1696,7 @@ impl Application for App {
 
                 if let Some(node) = self.negotiation_history.get(value) {
                     self.canvas.program.layers.3.obstacles.clear();
-                    for obs in node.environment.obstacles() {
+                    for obs in node.environment.iter_all_obstacles() {
                         if let Some(t) = obs.trajectory() {
                             let r = obs.profile().footprint_radius();
                             self.canvas.program.layers.3.obstacles.push((r, t.clone()));
@@ -1953,7 +1952,7 @@ impl Application for App {
                                 } else {
                                     String::new()
                                 }
-                            }).size(10)
+                            }).size(15)
                         )
                     }.height(Length::Fill))
                 )

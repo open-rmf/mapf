@@ -16,11 +16,21 @@
 */
 
 use crate::domain::{ConflictAvoider, Extrapolator};
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ConflictAvoidance<Avoider, Environment> {
     pub avoider: Avoider,
-    pub environment: Environment,
+    pub environment: Arc<Environment>,
+}
+
+impl<Avoider: Clone, Environment> Clone for ConflictAvoidance<Avoider, Environment> {
+    fn clone(&self) -> Self {
+        Self {
+            avoider: self.avoider.clone(),
+            environment: self.environment.clone(),
+        }
+    }
 }
 
 impl<Avoider, Env, State, Target, Guidance, Key> Extrapolator<State, Target, Guidance, Key>
@@ -57,7 +67,7 @@ where
         Key: 'a,
     {
         self.avoider
-            .avoid_conflicts(from_state, to_target, with_guidance, for_keys, &self.environment)
+            .avoid_conflicts(from_state, to_target, with_guidance, for_keys, &*self.environment)
             .into_iter()
     }
 }

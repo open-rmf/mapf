@@ -23,13 +23,13 @@ use crate::{
     graph::{Edge, Graph},
     motion::{
         compute_safe_arrival_path, compute_safe_arrival_times, compute_safe_linear_path_wait_hints,
-        is_safe_segment,
+        is_safe_segment, SafeIntervalCache, SafeIntervalCacheError,
         r2::{Positioned, WaypointR2},
         se2::{
             DifferentialDriveLineFollow, DifferentialDriveLineFollowError, KeySE2, MaybeOriented,
             Position, StateSE2, WaypointSE2,
         },
-        Duration, Environment, CcbsEnvironment, SafeAction, SafeArrivalTimes,
+        Duration, CcbsEnvironment, SafeAction, SafeArrivalTimes,
         SpeedLimiter, TimePoint, Timed, WaitForObstacle,
     },
     util::{FlatResultMapTrait, ForkIter, Minimum},
@@ -41,96 +41,6 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub struct SafeIntervalCache<G: Graph> {
-    graph: G,
-    environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>,
-    earliest_time: Option<TimePoint>,
-    safe_intervals: RwLock<HashMap<G::Key, SafeArrivalTimes>>,
-}
-
-impl<G: Graph> SafeIntervalCache<G> {
-    pub fn new(environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>, graph: G) -> Self
-    where
-        G::Key: Key,
-    {
-        let mut earliest_time = Minimum::new(|a: &TimePoint, b: &TimePoint| a.cmp(b));
-        for obs in environment.iter_all_obstacles() {
-            if let Some(traj) = obs.trajectory() {
-                earliest_time.consider(&traj.initial_motion_time());
-            }
-        }
-
-        let earliest_time = earliest_time.result();
-        Self {
-            environment,
-            graph,
-            earliest_time,
-            safe_intervals: RwLock::new(HashMap::new()),
-        }
-    }
-
-    pub fn graph(&self) -> &G {
-        &self.graph
-    }
-
-    pub fn environment(&self) -> &Arc<CcbsEnvironment<WaypointSE2, G::Key>> {
-        &self.environment
-    }
-
-    pub fn safe_intervals_for(
-        &self,
-        key: &G::Key,
-    ) -> Result<SafeArrivalTimes, SafeIntervalCacheError<G::Key>>
-    where
-        G::Key: Key + Clone,
-        G::Vertex: Positioned,
-    {
-        let earliest_time = match self.earliest_time {
-            Some(earliest_time) => earliest_time,
-            None => return Ok(SafeArrivalTimes::new()),
-        };
-
-        match self.safe_intervals.read() {
-            Ok(guard) => {
-                if let Some(times) = guard.get(key) {
-                    // We have already calculated the safe interval for this
-                    // key, so just give back the view.
-                    return Ok(times.clone());
-                }
-            }
-            Err(_) => return Err(SafeIntervalCacheError::PoisonedMutex),
-        }
-
-        // Calculate the safe intervals for this key.
-        let p = self
-            .graph
-            .vertex(key)
-            .ok_or_else(|| SafeIntervalCacheError::MissingVertex(key.clone()))?
-            .borrow()
-            .point();
-
-        let wp = WaypointR2::new(earliest_time, p.x, p.y);
-        let safe_arrivals =
-            compute_safe_arrival_times(wp, &self.environment.view_for_hold(key));
-        // let safe_arrivals =
-        //     compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
-        match self.safe_intervals.write() {
-            Ok(mut guard) => {
-                guard.insert(key.clone(), safe_arrivals.clone());
-            }
-            Err(_) => return Err(SafeIntervalCacheError::PoisonedMutex),
-        }
-        Ok(safe_arrivals)
-    }
-}
-
-#[derive(Debug, ThisError)]
-pub enum SafeIntervalCacheError<K> {
-    #[error("The mutex has been poisoned")]
-    PoisonedMutex,
-    #[error("The vertex {0:?} does not exist in the graph")]
-    MissingVertex(K),
-}
 
 pub struct SafeIntervalMotion<G: Graph, const R: u32> {
     pub extrapolator: DifferentialDriveLineFollow,
@@ -187,7 +97,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             if !is_safe_segment(
                 (&from_state.waypoint.into(), &wp0),
                 None,
-                &self.safe_intervals.environment.view_for_hold(&from_state.key.vertex),
+                &self.safe_intervals.environment().view_for_hold(Some(&from_state.key.vertex)),
             ) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -207,8 +117,8 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
-        let environment_view = self.safe_intervals.environment.view_for_motion(
-            &KeySE2::new(target_key.clone(), yaw)
+        let environment_view = self.safe_intervals.environment().view_for_motion(
+            Some(&KeySE2::new(target_key.clone(), yaw))
         );
         let ranked_hints = compute_safe_linear_path_wait_hints(
             (&from_point, &to_point),
@@ -261,7 +171,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
                         if !is_safe_segment(
                             (&arrival_wp.into(), &final_wp.into()),
                             None,
-                            &self.safe_intervals.environment.view_for_hold(&target_key),
+                            &self.safe_intervals.environment().view_for_hold(Some(&target_key)),
                         ) {
                             // We cannot rotate to face the target orientation
                             // so this is not a valid action.
@@ -312,7 +222,7 @@ where
         // for now as a proof of concept.
         let vertex = from_state.key.vertex.clone();
         self.safe_intervals
-            .graph
+            .graph()
             .edges_from_vertex(&vertex)
             .into_iter()
             .flat_map(move |edge| {
@@ -320,7 +230,7 @@ where
                 let to_vertex = edge.to_vertex().clone();
                 let edge = edge.attributes().clone();
                 self.safe_intervals
-                    .graph
+                    .graph()
                     .vertex(&to_vertex)
                     .ok_or_else(|| SafeIntervalMotionError::MissingVertex(to_vertex.clone()))
                     .flat_result_map(move |v| {

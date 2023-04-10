@@ -36,9 +36,11 @@ pub use travel_effort_cost::*;
 pub mod travel_time_cost;
 pub use travel_time_cost::*;
 
+pub mod safe_interval;
+pub use safe_interval::*;
+
 pub mod speed_limit;
 pub use speed_limit::*;
-pub mod reach;
 
 pub mod conflict;
 pub use conflict::*;
