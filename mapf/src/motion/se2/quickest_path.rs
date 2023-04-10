@@ -185,6 +185,7 @@ where
                     &previous_state.waypoint,
                     &child_state.waypoint.position,
                     &(),
+                    (Some(&start.key.vertex), Some(goal)),
                 ) {
                     Some(wp) => wp.map_err(|_| QuickestPathHeuristicError::Extrapolation)?,
                     None => break 'cost None,

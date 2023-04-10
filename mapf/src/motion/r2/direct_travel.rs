@@ -57,7 +57,15 @@ where
         };
 
         self.extrapolator
-            .extrapolate(&from_state.waypoint, p_target.borrow().borrow(), &())
+            .extrapolate(
+                &from_state.waypoint,
+                p_target.borrow().borrow(),
+                &(),
+                (
+                    Some(&from_state.key),
+                    Some(to_goal.key().borrow()),
+                ),
+            )
             .transpose()
             .map_err(DirectTravelError::Extrapolator)
             .map(|action| {

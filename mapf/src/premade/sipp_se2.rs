@@ -21,7 +21,7 @@ use crate::{
     motion::{
         r2::Positioned,
         se2::{quickest_path::QuickestPathSearch, *},
-        OverlayedDynamicEnvironment, SpeedLimiter, TravelEffortCost,
+        CcbsEnvironment, SpeedLimiter, TravelEffortCost,
     },
     premade::{SafeIntervalCache, SafeIntervalCloser, SafeIntervalMotion},
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
@@ -55,10 +55,10 @@ pub type SippSE2<G, H = G> = InformedSearch<
         SharedGraph<G>,
         ConflictAvoidance<
             DifferentialDriveLineFollow,
-            Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+            Arc<CcbsEnvironment<WaypointSE2, <G as Graph>::Key>>,
         >,
         (),
-        SafeMergeIntoGoal<DEFAULT_RES>,
+        SafeMergeIntoGoal<<G as Graph>::Key, DEFAULT_RES>,
     >,
 >;
 
@@ -79,7 +79,7 @@ where
         activity_graph: SharedGraph<G>,
         heuristic_graph: SharedGraph<H>,
         extrapolator: DifferentialDriveLineFollow,
-        environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+        environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>,
         weight: TravelEffortCost,
     ) -> Result<Self, NewSippSE2Error<H>> {
         let cache = Arc::new(SafeIntervalCache::new(
@@ -135,6 +135,7 @@ where
 impl<G, H> SippSE2Configuration<G, H>
 where
     G: Graph + Clone,
+    G::Key: Key + Clone,
     H: Graph + Reversible,
     H::Key: Key + Clone,
     H::Vertex: Positioned + MaybeOriented,
@@ -153,8 +154,8 @@ where
     pub fn modify_environment<F>(mut self, f: F) -> Result<Self, Anyhow>
     where
         F: FnOnce(
-            OverlayedDynamicEnvironment<WaypointSE2>
-        ) -> Result<OverlayedDynamicEnvironment<WaypointSE2>, Anyhow>,
+            CcbsEnvironment<WaypointSE2, G::Key>
+        ) -> Result<CcbsEnvironment<WaypointSE2, G::Key>, Anyhow>,
     {
         let (env, graph) = {
             let (environment, graph) = {
@@ -453,7 +454,7 @@ mod tests {
         );
 
         let profile = CircularProfile::new(0.1, 0.25, 1.0).unwrap();
-        let environment = Arc::new(OverlayedDynamicEnvironment::new(Arc::new({
+        let environment = Arc::new(CcbsEnvironment::new(Arc::new({
             let mut env = DynamicEnvironment::new(profile);
             env.obstacles.push(
                 DynamicCircularObstacle::new(profile).with_trajectory(Some(
@@ -634,7 +635,7 @@ mod tests {
                 SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
                 SharedGraph::new(VisibilityGraph::new(visibility, [])),
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
-                Arc::new(OverlayedDynamicEnvironment::new(Arc::new(
+                Arc::new(CcbsEnvironment::new(Arc::new(
                     DynamicEnvironment::new(profile),
                 ))),
                 TravelEffortCost::default(),
@@ -675,7 +676,7 @@ mod tests {
                 SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
                 SharedGraph::new(VisibilityGraph::new(visibility, [])),
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
-                Arc::new(OverlayedDynamicEnvironment::new(Arc::new(
+                Arc::new(CcbsEnvironment::new(Arc::new(
                     DynamicEnvironment::new(profile),
                 ))),
                 TravelEffortCost::default(),

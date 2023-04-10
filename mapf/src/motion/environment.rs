@@ -15,15 +15,18 @@
  *
 */
 
-use crate::motion::{
-    r2::{Point, WaypointR2},
-    Trajectory, Waypoint,
+use crate::{
+    domain::Key,
+    motion::{
+        r2::{Point, WaypointR2},
+        se2::KeySE2,
+        Trajectory, Waypoint,
+    },
 };
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
-use slotmap::{SlotMap, new_key_type};
 
 type Vector2 = nalgebra::Vector2<f64>;
 
@@ -85,22 +88,76 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
     }
 }
 
+pub type CcbsKey<K> = KeySE2<K, 10_000>;
+
 #[derive(Debug, Clone)]
-pub struct OverlayedDynamicEnvironment<W: Waypoint> {
-    base: Arc<DynamicEnvironment<W>>,
-    overlay: DynamicEnvironmentOverlay<W>,
-    insertions: SlotMap<OverlayInsertionKey, (DynamicCircularObstacle<W>, Option<usize>)>,
-    masks: HashSet<usize>,
+pub struct CcbsConstraint<W: Waypoint> {
+    pub obstacle: DynamicCircularObstacle<W>,
+    pub mask: usize,
 }
 
-impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
+/// A dynamic environment for performing Continuous-time Conflict Based Search.
+#[derive(Debug, Clone)]
+pub struct CcbsEnvironment<W: Waypoint, K> {
+    base: Arc<DynamicEnvironment<W>>,
+    overlay: DynamicEnvironmentOverlay<W>,
+    motion_constraints: HashMap<CcbsKey<K>, Vec<CcbsConstraint<W>>>,
+    hold_constraints: HashMap<K, Vec<CcbsConstraint<W>>>,
+    mask: Option<usize>,
+}
+
+impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     pub fn new(base: Arc<DynamicEnvironment<W>>) -> Self {
         Self {
             base,
             overlay: Default::default(),
-            insertions: Default::default(),
-            masks: HashSet::new(),
+            motion_constraints: Default::default(),
+            hold_constraints: Default::default(),
+            mask: None,
         }
+    }
+
+    pub fn view_for_motion<'a>(&'a self, key: &CcbsKey<K>) -> CcbsEnvironmentView<'a, W, K>
+    where
+        K: Key,
+    {
+        CcbsEnvironmentView {
+            view: self,
+            constraints: self.motion_constraints.get(key)
+        }
+    }
+
+    pub fn view_for_hold<'a>(&'a self, key: &K) -> CcbsEnvironmentView<'a, W, K>
+    where
+        K: Key,
+    {
+        CcbsEnvironmentView {
+            view: self,
+            constraints: self.hold_constraints.get(key),
+        }
+    }
+
+    /// Iterate over all obstacles that might be visible for this environment,
+    /// including all constraints for all masks, but not including any base
+    /// obstacles that are hidden by the overlay.
+    pub fn iter_all_obstacles(&self) -> impl Iterator<Item=&DynamicCircularObstacle<W>> {
+        self.base
+            .obstacles
+            .iter()
+            .enumerate()
+            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self.motion_constraints
+                    .values()
+                    .flat_map(|x| x)
+                    .map(|x| &x.obstacle)
+            )
+            .chain(
+                self.hold_constraints
+                    .values()
+                    .flat_map(|x| x)
+                    .map(|x| &x.obstacle)
+            )
     }
 
     pub fn overlay_profile(&mut self, profile: CircularProfile) {
@@ -221,80 +278,70 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         self
     }
 
-    /// Add an entirely new obstacle to the environment. Get back a key to
-    /// identify this insertion so you can chose to remove it later.
-    ///
-    /// Optionally provide a `group` specifier. This lets you mask or unmask the
-    /// obstacle using [`mask_inserted_group`] and [`unmask_inserted_group`].
-    ///
-    /// This is to add entirely new obstacles that do not exist in the underlay.
-    /// If you instead want to modify the perceived trajectory or profile of an
-    /// obstacle that is in the underlay, use `overlay_obstacle` or
-    /// `overlay_trajectory` instead.
-    pub fn insert_obstacle(
+    pub fn insert_motion_constraint(
         &mut self,
-        obstacle: DynamicCircularObstacle<W>,
-        group: Option<usize>,
-    ) -> OverlayInsertionKey {
-        self.insertions.insert((obstacle, group))
+        key: CcbsKey<K>,
+        constraint: CcbsConstraint<W>,
+    )
+    where
+        K: Key,
+    {
+        self.motion_constraints.entry(key).or_default().push(constraint);
     }
 
-    /// Remove an insertion from the overlay. You must provide a key that was
-    /// given to you by `insert_obstacle`. If you receive a `None` then the
-    /// obstacle was already removed before you called this function.
-    pub fn remove_insertion(
+    pub fn insert_hold_constraint(
         &mut self,
-        overlay_key: OverlayInsertionKey,
-    ) -> Option<DynamicCircularObstacle<W>> {
-        self.insertions.remove(overlay_key)
-        .map(|(obstacle, _)| obstacle)
+        key: K,
+        constraint: CcbsConstraint<W>,
+    )
+    where
+        K: Key,
+    {
+        self.hold_constraints.entry(key).or_default().push(constraint);
     }
 
-    pub fn mask_inserted_group(
-        &mut self,
-        group: usize,
-    ) -> bool {
-        self.masks.insert(group)
-    }
-
-    pub fn unmask_inserted_group(
-        &mut self,
-        group: usize,
-    ) -> bool {
-        self.masks.remove(&group)
-    }
-
-    pub fn unmask_all_inserted_groups(&mut self) {
-        self.masks.clear();
+    pub fn set_mask(&mut self, mask: Option<usize>) {
+        self.mask = mask;
     }
 }
 
-new_key_type! { pub struct OverlayInsertionKey; }
+pub struct CcbsEnvironmentView<'a, W: Waypoint, K> {
+    view: &'a CcbsEnvironment<W, K>,
+    constraints: Option<&'a Vec<CcbsConstraint<W>>>,
+}
 
-impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
-    for OverlayedDynamicEnvironment<W>
+impl<'e, W: Waypoint, K> Environment<CircularProfile, DynamicCircularObstacle<W>>
+    for CcbsEnvironmentView<'e, W, K>
 {
     type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
     where
-        W: 'a;
+        W: 'a,
+        K: 'a,
+        'e: 'a;
 
     fn agent_profile(&self) -> &CircularProfile {
-        self.overlay.profile.as_ref().unwrap_or(&self.base.profile)
+        self.view.overlay.profile.as_ref().unwrap_or(&self.view.base.profile)
     }
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
-        self.base
+        self.view
+            .base
             .obstacles
             .iter()
             .enumerate()
-            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
-            .chain(self.insertions.values().filter_map(|(obs, group)| {
-                if let Some(group) = group {
-                    if self.masks.contains(group) {
+            .map(|(i, obs)| self.view.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self
+                .constraints
+                .iter()
+                .flat_map(|x| *x)
+                .filter_map(|constraint| {
+                if let Some(mask) = self.view.mask {
+                    if constraint.mask == mask {
                         return None;
                     }
                 }
-                Some(obs)
+                Some(&constraint.obstacle)
             }))
     }
 }

@@ -20,6 +20,7 @@ use crate::{
     domain::{
         backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, Connectable,
         ExtrapolationProgress, Extrapolator, IncrementalExtrapolator, Reversible,
+        Key,
     },
     error::{NoError, ThisError},
     motion::{
@@ -27,7 +28,7 @@ use crate::{
         conflict::{compute_safe_linear_paths, is_safe_segment, SafeAction, WaitForObstacle},
         r2::{self, MaybePositioned},
         CircularProfile, Duration, DynamicCircularObstacle, Environment,
-        OverlayedDynamicEnvironment, SpeedLimiter,
+        CcbsEnvironment, SpeedLimiter,
     },
     util::ForkIter,
 };
@@ -200,13 +201,15 @@ impl DifferentialDriveLineFollow {
 pub(crate) struct ReachedTarget {
     pub(crate) waypoints: DifferentialDriveLineFollowMotion,
     pub(crate) time: TimePoint,
+    /// Yaw of the agent as it arrives at the target, regardless of the final
+    /// yaw that the target might ask for.
     pub(crate) yaw: nalgebra::UnitComplex<f64>,
     pub(crate) facing_target: WaypointSE2,
 }
 
 pub type DifferentialDriveLineFollowMotion = ArrayVec<WaypointSE2, 4>;
 
-impl<Target, Guidance> Extrapolator<WaypointSE2, Target, Guidance> for DifferentialDriveLineFollow
+impl<Target, Guidance, Key> Extrapolator<WaypointSE2, Target, Guidance, Key> for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
@@ -216,17 +219,20 @@ where
     type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, WaypointSE2), Self::ExtrapolationError>>
     where
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn extrapolate<'a>(
         &'a self,
         from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
+        _: (Option<&Key>, Option<&Key>),
     ) -> Self::ExtrapolationIter<'a>
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(from_state, &target_point, with_guidance) {
@@ -253,7 +259,7 @@ where
     }
 }
 
-impl<Target, Guidance> IncrementalExtrapolator<WaypointSE2, Target, Guidance>
+impl<Target, Guidance, Key> IncrementalExtrapolator<WaypointSE2, Target, Guidance, Key>
     for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
@@ -267,17 +273,20 @@ where
     >>
     where
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn incremental_extrapolate<'a>(
         &'a self,
         from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
+        _: (Option<&Key>, Option<&Key>),
     ) -> Self::IncrementalExtrapolationIter<'a>
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(from_state, &target_point, with_guidance) {
@@ -353,7 +362,7 @@ impl<const N: usize> Backtrack<WaypointSE2, ArrayVec<WaypointSE2, N>>
     }
 }
 
-impl<Target, Guidance, Env> ConflictAvoider<WaypointSE2, Target, Guidance, Env>
+impl<Target, Guidance, Key, Env> ConflictAvoider<WaypointSE2, Target, Guidance, Key, Env>
     for DifferentialDriveLineFollow
 where
     Target: r2::Positioned + MaybeOriented,
@@ -365,6 +374,7 @@ where
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
         Env: 'a;
 
     type AvoidanceError = DifferentialDriveLineFollowError;
@@ -374,6 +384,7 @@ where
         from_state: &WaypointSE2,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
         in_environment: &Env,
     ) -> Self::AvoidanceActionIter<'a>
     where
@@ -383,6 +394,7 @@ where
         WaypointSE2: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
         Env: 'a,
     {
         let target_point = to_target.point();
@@ -532,7 +544,12 @@ where
         );
 
         self.0
-            .extrapolate(&from_state.waypoint, &target_pos, &())
+            .extrapolate(
+                &from_state.waypoint,
+                &target_pos,
+                &(),
+                (Some(&from_state.key.vertex), Some(goal_key))
+            )
             .map(|r| {
                 r.map(|(mut action, mut wp)| {
                     if let Some(t) = to_target.maybe_time() {
@@ -559,16 +576,16 @@ impl<const R: u32> Reversible for MergeIntoGoal<R> {
 }
 
 #[derive(Clone)]
-pub struct SafeMergeIntoGoal<const R: u32> {
+pub struct SafeMergeIntoGoal<K, const R: u32> {
     pub motion: DifferentialDriveLineFollow,
     // TODO(@mxgrey): Think about how to generalize this
-    pub environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+    pub environment: Arc<CcbsEnvironment<WaypointSE2, K>>,
 }
 
-impl<const R: u32> SafeMergeIntoGoal<R> {
+impl<K, const R: u32> SafeMergeIntoGoal<K, R> {
     pub fn new(
         motion: DifferentialDriveLineFollow,
-        environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+        environment: Arc<CcbsEnvironment<WaypointSE2, K>>,
     ) -> Self {
         Self {
             motion,
@@ -578,11 +595,11 @@ impl<const R: u32> SafeMergeIntoGoal<R> {
 }
 
 impl<K, Target, Action, const R: u32> Connectable<StateSE2<K, R>, Action, Target>
-    for SafeMergeIntoGoal<R>
+    for SafeMergeIntoGoal<K, R>
 where
-    Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>> + std::fmt::Debug,
-    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K> + std::fmt::Debug,
-    K: PartialEq + std::fmt::Debug,
+    Action: FromIterator<SafeAction<WaypointSE2, WaitForObstacle>>,
+    Target: MaybePositioned + MaybeOriented + MaybeTimed + Borrow<K>,
+    K: Key,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
     type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
@@ -614,7 +631,7 @@ where
             if !is_safe_segment(
                 (&prev_wp.into(), &wp.clone().into()),
                 None,
-                &self.environment,
+                &self.environment.view_for_hold(&from_state.key.vertex),
             ) {
                 return None;
             }
@@ -642,7 +659,7 @@ mod tests {
             .expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
         let (waypoints, end) = movement
-            .extrapolate(&wp0, &p_target, &())
+            .extrapolate(&wp0, &p_target, &(), (Some(&0), Some(&1)))
             .expect("Failed to extrapolate")
             .expect("The extrapolation should have produced a path");
         assert_eq!(waypoints.len(), 3);

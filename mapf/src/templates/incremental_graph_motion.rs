@@ -73,7 +73,7 @@ impl<S, G, E> Domain for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     G: Graph,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
     type State = IncrementalState<S::State, G>;
     type Error = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
@@ -87,7 +87,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::IncrementalExtrapolationError: StdError,
 {
     type ActivityAction = E::IncrementalExtrapolation;
@@ -123,6 +123,10 @@ where
                             self.space.waypoint(&from_state.base_state).borrow(),
                             to_v_ref.borrow(),
                             &with_guidance,
+                            (
+                                Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
+                                Some(&to_key),
+                            )
                         );
 
                         let from_state = from_state.clone();
@@ -189,6 +193,10 @@ where
                                 self.space.waypoint(&from_state.base_state).borrow(),
                                 v.borrow(),
                                 &with_guidance,
+                                (
+                                    Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
+                                    Some(&to_key),
+                                )
                             );
 
                             let from_state = from_state.clone();
@@ -302,7 +310,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>
         + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
 {
     type BacktrackError = E::BacktrackError;

@@ -49,7 +49,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::Extrapolation: Into<Action>,
     Action: Into<E::Extrapolation>,
     R: ArrivalKeyring<G::Key, G::Key, Goal>,
@@ -89,12 +89,14 @@ where
                 let from_key = from_key.clone();
                 r.map_err(LazyGraphMotionError::Keyring)
                     .flat_result_map(move |to_vertex: G::Key| {
+                        let from_key = from_key.clone();
                         let from_spatial_state = from_spatial_state.clone();
                         self.motion
                             .graph
                             .lazy_edges_between(&from_key, &to_vertex)
                             .into_iter()
                             .flat_map(move |edge| {
+                                let from_key = from_key.clone();
                                 let from_state = from_spatial_state.clone();
                                 let to_vertex = to_vertex.clone();
                                 let edge: G::EdgeAttributes = edge.attributes().clone();
@@ -106,12 +108,17 @@ where
                                         LazyGraphMotionError::MissingVertex(to_vertex.clone())
                                     })
                                     .flat_result_map(move |v| {
+                                        let from_key = from_key.clone();
                                         let from_state = from_state.clone();
                                         let to_vertex = to_vertex.clone();
                                         let extrapolations = self.motion.extrapolator.extrapolate(
                                             self.motion.space.waypoint(&from_state).borrow(),
                                             v.borrow(),
                                             &edge,
+                                            (
+                                                Some(&from_key),
+                                                Some(&to_vertex),
+                                            )
                                         );
 
                                         extrapolations.into_iter().map(move |r| {

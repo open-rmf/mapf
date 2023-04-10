@@ -95,7 +95,7 @@ impl LineFollow {
     }
 }
 
-impl<Target, Guidance> Extrapolator<WaypointR2, Target, Guidance> for LineFollow
+impl<Target, Guidance, Key> Extrapolator<WaypointR2, Target, Guidance, Key> for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
@@ -105,23 +105,26 @@ where
     type ExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2), LineFollowError>>
     where
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn extrapolate<'a>(
         &'a self,
         from_state: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
+        _: (Option<&Key>, Option<&Key>),
     ) -> Self::ExtrapolationIter<'a>
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         Some(self.extrapolate_impl(from_state, &to_target.point(), with_guidance.speed_limit()))
     }
 }
 
-impl<Target, Guidance> IncrementalExtrapolator<WaypointR2, Target, Guidance> for LineFollow
+impl<Target, Guidance, Key> IncrementalExtrapolator<WaypointR2, Target, Guidance, Key> for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
@@ -131,19 +134,22 @@ where
     type IncrementalExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2, ExtrapolationProgress), LineFollowError>>
     where
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn incremental_extrapolate<'a>(
         &'a self,
         from_state: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
     ) -> Self::IncrementalExtrapolationIter<'a>
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
-        self.extrapolate(from_state, to_target, with_guidance)
+        self.extrapolate(from_state, to_target, with_guidance, for_keys)
             .map(|r| r.map(|(action, state)| (action, state, ExtrapolationProgress::Arrived)))
     }
 }
@@ -174,7 +180,7 @@ impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFoll
     }
 }
 
-impl<Target, Guidance, W> ConflictAvoider<WaypointR2, Target, Guidance, DynamicEnvironment<W>>
+impl<Target, Guidance, Key, W> ConflictAvoider<WaypointR2, Target, Guidance, Key, DynamicEnvironment<W>>
     for LineFollow
 where
     Target: Positioned,
@@ -186,6 +192,7 @@ where
     where
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
         W: 'a;
 
     type AvoidanceError = LineFollowError;
@@ -195,6 +202,7 @@ where
         from_point: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_key: (Option<&Key>, Option<&Key>),
         in_environment: &DynamicEnvironment<W>,
     ) -> Self::AvoidanceActionIter<'a>
     where
@@ -203,6 +211,7 @@ where
         Self::AvoidanceError: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
         DynamicEnvironment<W>: 'a,
     {
         let from_point = *from_point;
@@ -282,7 +291,7 @@ mod tests {
         let movement = LineFollow::new(2.0).expect("Failed to make LineFollow");
         let p_target = Position::new(1.0, 3.0);
         let (waypoints, _) = movement
-            .extrapolate(&wp0, &p_target, &())
+            .extrapolate(&wp0, &p_target, &(), (Some(&0), Some(&1)))
             .expect("Failed to extrapolate")
             .expect("Missing extrapolation result");
         assert_eq!(waypoints.len(), 1);

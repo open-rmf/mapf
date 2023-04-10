@@ -29,7 +29,7 @@ use crate::{
             DifferentialDriveLineFollow, DifferentialDriveLineFollowError, KeySE2, MaybeOriented,
             Position, StateSE2, WaypointSE2,
         },
-        Duration, Environment, OverlayedDynamicEnvironment, SafeAction, SafeArrivalTimes,
+        Duration, Environment, CcbsEnvironment, SafeAction, SafeArrivalTimes,
         SpeedLimiter, TimePoint, Timed, WaitForObstacle,
     },
     util::{FlatResultMapTrait, ForkIter, Minimum},
@@ -43,15 +43,18 @@ use std::{
 
 pub struct SafeIntervalCache<G: Graph> {
     graph: G,
-    environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>,
+    environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>,
     earliest_time: Option<TimePoint>,
     safe_intervals: RwLock<HashMap<G::Key, SafeArrivalTimes>>,
 }
 
 impl<G: Graph> SafeIntervalCache<G> {
-    pub fn new(environment: Arc<OverlayedDynamicEnvironment<WaypointSE2>>, graph: G) -> Self {
+    pub fn new(environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>, graph: G) -> Self
+    where
+        G::Key: Key,
+    {
         let mut earliest_time = Minimum::new(|a: &TimePoint, b: &TimePoint| a.cmp(b));
-        for obs in environment.obstacles() {
+        for obs in environment.iter_all_obstacles() {
             if let Some(traj) = obs.trajectory() {
                 earliest_time.consider(&traj.initial_motion_time());
             }
@@ -70,7 +73,7 @@ impl<G: Graph> SafeIntervalCache<G> {
         &self.graph
     }
 
-    pub fn environment(&self) -> &Arc<OverlayedDynamicEnvironment<WaypointSE2>> {
+    pub fn environment(&self) -> &Arc<CcbsEnvironment<WaypointSE2, G::Key>> {
         &self.environment
     }
 
@@ -108,7 +111,7 @@ impl<G: Graph> SafeIntervalCache<G> {
 
         let wp = WaypointR2::new(earliest_time, p.x, p.y);
         let safe_arrivals =
-            compute_safe_arrival_times(wp, &self.environment);
+            compute_safe_arrival_times(wp, &self.environment.view_for_hold(key));
         // let safe_arrivals =
         //     compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
         match self.safe_intervals.write() {
@@ -184,7 +187,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             if !is_safe_segment(
                 (&from_state.waypoint.into(), &wp0),
                 None,
-                &self.safe_intervals.environment,
+                &self.safe_intervals.environment.view_for_hold(&from_state.key.vertex),
             ) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -204,10 +207,13 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
+        let environment_view = self.safe_intervals.environment.view_for_motion(
+            &KeySE2::new(target_key.clone(), yaw)
+        );
         let ranked_hints = compute_safe_linear_path_wait_hints(
             (&from_point, &to_point),
             None,
-            &self.safe_intervals.environment,
+            &environment_view,
         );
 
         safe_intervals.retain(|t| *t >= to_position.time);
@@ -222,7 +228,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
                     to_point,
                     arrival_time,
                     &ranked_hints,
-                    &self.safe_intervals.environment,
+                    &environment_view,
                 )
             })
             .filter_map(move |action| {
@@ -255,7 +261,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
                         if !is_safe_segment(
                             (&arrival_wp.into(), &final_wp.into()),
                             None,
-                            &self.safe_intervals.environment,
+                            &self.safe_intervals.environment.view_for_hold(&target_key),
                         ) {
                             // We cannot rotate to face the target orientation
                             // so this is not a valid action.

@@ -36,7 +36,7 @@ use mapf::{
         },
     },
     motion::{
-        Trajectory, Motion, OverlayedDynamicEnvironment, DynamicEnvironment,
+        Trajectory, Motion, CcbsEnvironment, DynamicEnvironment,
         CircularProfile, DynamicCircularObstacle, TravelEffortCost, Environment,
         se2::{
             Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
@@ -1097,7 +1097,7 @@ impl App {
                 }
 
                 Arc::new(
-                    OverlayedDynamicEnvironment::new(
+                    CcbsEnvironment::new(
                         Arc::new({
                             let mut env = DynamicEnvironment::new(profile);
                             for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
