@@ -19,7 +19,6 @@ use crate::{
     domain::Key,
     motion::{
         r2::{Point, WaypointR2},
-        se2::KeySE2,
         Trajectory, Waypoint,
     },
 };
@@ -88,7 +87,7 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
     }
 }
 
-pub type CcbsKey<K> = KeySE2<K, 10_000>;
+pub type CcbsKey<K> = (K, K);
 
 #[derive(Debug, Clone)]
 pub struct CcbsConstraint<W: Waypoint> {
@@ -157,6 +156,42 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
                     .values()
                     .flat_map(|x| x)
                     .map(|x| &x.obstacle)
+            )
+    }
+
+    pub fn iter_obstacles_from(&self, key: K, mask: usize) -> impl Iterator<Item=&DynamicCircularObstacle<W>>
+    where
+        K: Key + Clone,
+    {
+        let key_clone = key.clone();
+        self.base
+            .obstacles
+            .iter()
+            .enumerate()
+            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self.motion_constraints
+                    .iter()
+                    .filter(move |((k, _), _)| *k == key)
+                    .flat_map(|(_, constraints)| constraints)
+                    .filter_map(move |x| {
+                        if x.mask == mask {
+                            return None;
+                        }
+                        Some(&x.obstacle)
+                    })
+            )
+            .chain(
+                self.hold_constraints
+                    .iter()
+                    .filter(move |(k, _)| **k == key_clone)
+                    .flat_map(|(_, constraints)| constraints)
+                    .filter_map(move |x| {
+                        if x.mask == mask {
+                            return None;
+                        }
+                        Some(&x.obstacle)
+                    })
             )
     }
 

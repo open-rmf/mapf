@@ -459,6 +459,10 @@ impl<State, Action, Cost> Node<State, Action, Cost> {
     pub fn remaining_cost_estimate(&self) -> &Cost {
         &self.remaining_cost_estimate
     }
+
+    pub fn state(&self) -> &State {
+        &self.state
+    }
 }
 
 impl<State, Action, Cost> TreeNode for Node<State, Action, Cost>

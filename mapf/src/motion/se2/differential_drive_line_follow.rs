@@ -413,6 +413,12 @@ where
             None => SafeArrivalTimes::new(),
         };
 
+        let motion_key = if let (Some(from_key), Some(target_key)) = (from_key, target_key) {
+            Some((from_key.clone(), target_key.clone()))
+        } else {
+            None
+        };
+
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(
             &from_state,
@@ -455,7 +461,7 @@ where
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
         let environment_view = safe_intervals.environment().view_for_motion(
-            target_key.map(|key| CcbsKey::new(key.clone(), yaw)).as_ref()
+            motion_key.as_ref(),
         );
         let ranked_hints = compute_safe_linear_path_wait_hints(
             (&from_point, &to_point),

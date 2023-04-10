@@ -21,7 +21,7 @@ use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FindWaypoint {
     /// The requested time is exactly on the waypoint at this index
     Exact(usize),

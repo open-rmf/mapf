@@ -118,7 +118,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
         let environment_view = self.safe_intervals.environment().view_for_motion(
-            Some(&KeySE2::new(target_key.clone(), yaw))
+            Some(&(from_state.key.vertex.clone(), target_key.clone()))
         );
         let ranked_hints = compute_safe_linear_path_wait_hints(
             (&from_point, &to_point),

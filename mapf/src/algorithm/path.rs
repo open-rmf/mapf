@@ -205,9 +205,10 @@ pub enum DecisionRange<S> {
     After(S),
 }
 
-impl<W: Waypoint, S: Clone> MetaTrajectory<W, S> {
+impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> DecisionRange<S> {
         for i in 1..self.decision_points.len() {
+            // if trajectory_index < self.decision_points[i].index {
             if trajectory_index < self.decision_points[i].index {
                 return DecisionRange::Between([
                     self.decision_points[i-1].clone(),

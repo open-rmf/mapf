@@ -927,6 +927,49 @@ impl App {
         self.canvas.program.layers.2.calculate_visibility(self.canvas.program.layers.1.visibility());
     }
 
+    fn select_search_node(&mut self, value: usize) {
+        if self.search_memory.is_empty() {
+            self.debug_node_selected = Some(0);
+        } else {
+            self.debug_node_selected = Some(usize::min(value, self.search_memory.len() - 1));
+        }
+
+        self.canvas.program.layers.3.solutions.clear();
+        if let Some(ticket) = self.search_memory.get(value) {
+            if let Some((r, search)) = &self.search {
+                let solution = search
+                    .memory().0.arena
+                    .retrace(ticket.node_id)
+                    .unwrap()
+                    .make_trajectory()
+                    .unwrap();
+
+                self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s.trajectory)).into_iter());
+                self.canvas.cache.clear();
+
+                self.canvas.program.layers.3.obstacles.clear();
+                if let Some(node) = search.memory().0.arena.get(ticket.node_id) {
+                    if let Some(n) = self.negotiation_node_selected {
+                        if let Some(n) = self.negotiation_history.get(n) {
+                            let agent_id = self.name_map.iter()
+                                .find(|(_, name)| **name == *self.canvas.program.layers.2.selected_agent.as_ref().unwrap())
+                                .map(|(i, _)| *i);
+
+                            if let Some(agent_id) = agent_id {
+                                for obs in n.environment.iter_obstacles_from(node.state().key.vertex, agent_id) {
+                                    if let Some(t) = obs.trajectory() {
+                                        let r = obs.profile().footprint_radius();
+                                        self.canvas.program.layers.3.obstacles.push((r, t.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn step_progress(&mut self) {
         if let Some((radius, search)) = &mut self.search {
             self.debug_step_count += 1;
@@ -955,19 +998,7 @@ impl App {
             } else {
                 println!("Queue length: {}", search.memory().queue_length());
                 if let Some(selection) = self.debug_node_selected {
-                    if let Some(node) = self.search_memory.get(selection) {
-                        let solution = search
-                            .memory().0.arena
-                            .retrace(node.node_id)
-                            .unwrap()
-                            .make_trajectory()
-                            .unwrap();
-
-                        self.canvas.program.layers.3.solutions.clear();
-                        self.canvas.program.layers.3.solutions.extend(solution.map(
-                            |s| (*radius, s.trajectory)).into_iter()
-                        );
-                    }
+                    self.select_search_node(selection);
                 }
             }
 
@@ -1069,7 +1100,7 @@ impl App {
                 shared_visibility, [],
             ));
 
-            let environment = 'environment: {
+            let (environment, minimum_time) = 'environment: {
                 // if let Some(n) = self.negotiation_node_selected {
                 if let Some(n) = self.negotiation_node_selected {
                     if let Some(node) = self.negotiation_history.get(n) {
@@ -1090,12 +1121,17 @@ impl App {
                                 }
                             }
 
-                            break 'environment Arc::new(env);
+                            let finish_time = node.proposals.values()
+                                .max_by_key(|t| t.meta.trajectory.finish_motion_time())
+                                .unwrap().meta.trajectory.finish_motion_time();
+
+                            break 'environment (Arc::new(env), Some(finish_time));
                         }
+
                     }
                 }
 
-                Arc::new(
+                let environment = Arc::new(
                     CcbsEnvironment::new(
                         Arc::new({
                             let mut env = DynamicEnvironment::new(profile);
@@ -1109,16 +1145,18 @@ impl App {
                             env
                         })
                     )
-                )
-            };
+                );
 
-            let mut minimum_time: Option<TimePoint> = None;
-            for obs in environment.iter_all_obstacles() {
-                if let Some(t) = obs.trajectory() {
-                    let tf = t.finish_motion_time();
-                    minimum_time = Some(minimum_time.map(|t| t.min(tf)).unwrap_or(tf));
+                let mut minimum_time: Option<TimePoint> = None;
+                for obs in environment.iter_all_obstacles() {
+                    if let Some(t) = obs.trajectory() {
+                        let tf = t.finish_motion_time();
+                        minimum_time = Some(minimum_time.map(|t| t.min(tf)).unwrap_or(tf));
+                    }
                 }
-            }
+
+                (environment, minimum_time)
+            };
 
             let domain = InformedSearch::new_sipp_se2(
                 activity_graph,
@@ -1162,7 +1200,7 @@ impl App {
 
         let start_time = std::time::Instant::now();
         // let propsoals = match negotiate(&scenario, Some(1_000_000)) {
-        let (node, name_map) = match negotiate(&scenario, Some(1_000_000)) {
+        let (solution_node, node_history, name_map) = match negotiate(&scenario, Some(1_000_000)) {
             Ok(solutions) => solutions,
             Err(err) => {
                 match err {
@@ -1180,14 +1218,14 @@ impl App {
         println!("Planning took {} seconds", elapsed.as_secs_f64());
 
         // for (name, proposal) in &node.proposals {
-        for (i, proposal) in &node.proposals {
+        for (i, proposal) in &solution_node.proposals {
             let name = name_map.get(i).unwrap();
             let r = scenario.agents.get(name).unwrap().radius;
             self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
         }
 
-        self.negotiation_history.clear();
-        self.negotiation_history.push(node);
+        self.negotiation_history = node_history;
+        self.negotiation_history.insert(0, solution_node);
         self.name_map = name_map;
 
         // let endpoints = &self.canvas.program.layers.2;
@@ -1666,26 +1704,7 @@ impl Application for App {
                 self.generate_plan();
             },
             Message::SelectDebugNode(value) => {
-                if self.search_memory.is_empty() {
-                    self.debug_node_selected = Some(0);
-                } else {
-                    self.debug_node_selected = Some(usize::min(value, self.search_memory.len() - 1));
-                }
-
-                self.canvas.program.layers.3.solutions.clear();
-                if let Some(node) = self.search_memory.get(value) {
-                    if let Some((r, search)) = &self.search {
-                        let solution = search
-                            .memory().0.arena
-                            .retrace(node.node_id)
-                            .unwrap()
-                            .make_trajectory()
-                            .unwrap();
-
-                        self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s.trajectory)).into_iter());
-                        self.canvas.cache.clear();
-                    }
-                }
+                self.select_search_node(value);
             },
             Message::SelectNegotiationNode(value) => {
                 if self.negotiation_history.is_empty() {
@@ -1898,6 +1917,7 @@ impl Application for App {
             .push(robot_row)
             .push(instruction_row);
 
+        const DEBUG_TEXT_SIZE: u16 = 15;
         if self.debug_on {
             content = content.push(
                 Row::new()
@@ -1952,7 +1972,8 @@ impl Application for App {
                                 } else {
                                     String::new()
                                 }
-                            }).size(15)
+                            })
+                            .size(DEBUG_TEXT_SIZE)
                         )
                     }.height(Length::Fill))
                 )
@@ -1969,7 +1990,7 @@ impl Application for App {
                         for (i, node) in self.negotiation_history.iter().enumerate() {
                             scroll = scroll.push(Radio::new(
                                 i,
-                                format!("{}. Conflicts: {}", i, node.negotiation.conflicts.len()),
+                                format!("{}. Cost {:.2} Depth: {} Conflicts: {}", i, node.cost.0, node.depth, node.negotiation.conflicts.len()),
                                 self.negotiation_node_selected,
                                 Message::SelectNegotiationNode,
                             ));
@@ -1989,7 +2010,8 @@ impl Application for App {
                                 } else {
                                     String::new()
                                 }
-                            }).size(10)
+                            })
+                            .size(DEBUG_TEXT_SIZE)
                         )
                         .height(Length::Fill)
                     )
