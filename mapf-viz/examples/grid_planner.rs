@@ -358,7 +358,6 @@ impl<Message> EndpointSelector<Message> {
         &mut self, endpoint: Endpoint,
         visibility: &SparseVisibility,
     ) {
-        println!(" vvvvvvvvvvvvvvvvvvvvvvvvvv ");
         let Some(selected) = &self.selected_agent else { return };
         let cell: Cell = if let Some(ctx) = self.agents.get(selected) {
             endpoint.of(&ctx.agent)
@@ -384,20 +383,16 @@ impl<Message> EndpointSelector<Message> {
             let p_j = endpoint.of(&ctx_j.agent).to_center_point(cs);
             let dist = (p_i - p_j).norm();
             let min_dist = ctx_i.agent.radius + ctx_j.agent.radius;
-            dbg!(dist, min_dist);
             if dist < min_dist {
                 invalidated.push((*name_i).clone());
                 invalidated.push(name_j.clone());
             }
         });
 
-        dbg!(&invalidated);
         for name in invalidated {
             let Some(ctx) = self.agents.get_mut(&name) else { continue };
             endpoint.set_availability(ctx, false);
-            dbg!((name, ctx.start_open, ctx.goal_open));
         }
-        println!(" ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ");
     }
 
     fn endpoint_cell(&self, choice: Endpoint) -> Option<&[i64; 2]> {
@@ -1076,7 +1071,7 @@ impl App {
 
             let environment = 'environment: {
                 // if let Some(n) = self.negotiation_node_selected {
-                if let Some(n) = dbg!(self.negotiation_node_selected) {
+                if let Some(n) = self.negotiation_node_selected {
                     if let Some(node) = self.negotiation_history.get(n) {
                         let mut env = node.environment.clone();
                         let agent_id = self.name_map.iter()
@@ -1084,7 +1079,7 @@ impl App {
                             .map(|(i, _)| *i);
 
                         // if let Some(agent_id) = agent_id {
-                        if let Some(agent_id) = dbg!(agent_id) {
+                        if let Some(agent_id) = agent_id {
                             env.unmask_all_inserted_groups();
                             env.mask_inserted_group(agent_id);
                             env.overlay_trajectory(agent_id, None).ok();
@@ -1096,7 +1091,6 @@ impl App {
                                 }
                             }
 
-                            dbg!(&env);
                             break 'environment Arc::new(env);
                         }
                     }
@@ -1167,6 +1161,7 @@ impl App {
         self.canvas.program.layers.3.obstacles.clear();
         let scenario = self.make_scenario();
 
+        let start_time = std::time::Instant::now();
         // let propsoals = match negotiate(&scenario, Some(1_000_000)) {
         let (node, name_map) = match negotiate(&scenario, Some(1_000_000)) {
             Ok(solutions) => solutions,
@@ -1182,6 +1177,8 @@ impl App {
                 return;
             }
         };
+        let elapsed = start_time.elapsed();
+        println!("Planning took {} seconds", elapsed.as_secs_f64());
 
         // for (name, proposal) in &node.proposals {
         for (i, proposal) in &node.proposals {
@@ -1685,10 +1682,6 @@ impl Application for App {
                             .unwrap()
                             .make_trajectory()
                             .unwrap();
-
-                        if let Some(mt) = &solution {
-                            dbg!(&mt.trajectory);
-                        }
 
                         self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s.trajectory)).into_iter());
                         self.canvas.cache.clear();

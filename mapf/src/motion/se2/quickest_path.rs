@@ -37,7 +37,6 @@ use std::{
     ops::Add,
     sync::{Arc, RwLock},
 };
-use num::traits::Zero;
 
 pub type QuickestPathSearch<G, W> = UninformedSearch<
     GraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow>,
@@ -134,14 +133,14 @@ where
         WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
         WeightR2::WeightedError: Into<Anyhow>,
         WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
-        WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost> + Zero + std::fmt::Debug,
+        WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
         WeightSE2::WeightedError: Into<Anyhow>,
         G: Graph + Reversible + Clone,
         G::Key: Key + Clone,
         G::Vertex: Positioned + MaybeOriented,
         G::EdgeAttributes: SpeedLimiter + Clone,
-        State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
-        Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed + std::fmt::Debug,
+        State: Borrow<StateSE2<G::Key, R>>,
+        Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed,
     {
         let start: &StateSE2<G::Key, R> = from_state.borrow();
         let goal: &G::Key = to_goal.borrow();
@@ -233,14 +232,14 @@ where
     WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
     WeightR2::WeightedError: Into<Anyhow>,
     WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
-    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost> + Zero + std::fmt::Debug,
+    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
     WeightSE2::WeightedError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
     G::EdgeAttributes: SpeedLimiter + Clone,
-    State: Borrow<StateSE2<G::Key, R>> + std::fmt::Debug,
-    Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed + std::fmt::Debug,
+    State: Borrow<StateSE2<G::Key, R>>,
+    Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed,
 {
     type CostEstimate = WeightSE2::Cost;
     type InformedError = QuickestPathHeuristicError;
@@ -249,8 +248,6 @@ where
         from_state: &State,
         to_goal: &Goal,
     ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
-        dbg!((from_state, to_goal));
-
         // Calculate an invariant for getting to this goal from the start, no
         // matter what time it is being done.
         let invariant = match self.invariant_cost(from_state, to_goal)? {
@@ -268,30 +265,23 @@ where
         );
 
         // Now add the cost of the final connection, which may vary based on time
-        let child_cost = match MergeIntoGoal(self.extrapolator).connect(
+        let cost = match MergeIntoGoal(self.extrapolator).connect(
             arrival_state.clone(), to_goal,
         ) {
             Some(r) => {
                 let (connect, final_state): (DifferentialDriveLineFollowMotion, _) = r
                     .map_err(|_| QuickestPathHeuristicError::Extrapolation)?;
 
-                dbg!((&arrival_state, &final_state));
                 match self.weight_se2.cost(&arrival_state, &connect, &final_state)
                     .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
                 {
-                    Some(cost) => dbg!(cost),
-                    None => {
-                        dbg!();
-                        return Ok(None);
-                    }
+                    Some(connection_cost) => invariant.cost + connection_cost,
+                    None => return Ok(None),
                 }
             }
-            None => {
-                dbg!();
-                WeightSE2::Cost::zero()
-            }
+            None => invariant.cost,
         };
-        Ok(Some(invariant.cost + child_cost))
+        Ok(Some(cost))
     }
 }
 

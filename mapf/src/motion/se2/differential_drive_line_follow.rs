@@ -509,10 +509,8 @@ where
         Action: 'a,
         Target: 'a,
     {
-        dbg!();
         let goal_key: &K = to_target.borrow();
         if from_state.key.vertex != *goal_key.borrow() {
-            dbg!();
             return None;
         }
 
@@ -523,7 +521,6 @@ where
             // If there isn't a position, orientation, or time specified for the
             // goal, then simply return. We don't need to do anything special to
             // reach the goal.
-            dbg!();
             return None;
         }
 
@@ -534,22 +531,18 @@ where
             target_orientation.unwrap_or(from_state.waypoint.position.rotation),
         );
 
-        dbg!();
         self.0
             .extrapolate(&from_state.waypoint, &target_pos, &())
             .map(|r| {
                 r.map(|(mut action, mut wp)| {
-                    dbg!((wp, to_target.maybe_time()));
                     if let Some(t) = to_target.maybe_time() {
                         if wp.time < t {
-                            dbg!((wp.time, t));
                             wp.set_time(t);
                             action.push(wp);
                         }
                     }
                     let output_action: Action = action.into_iter().collect();
-                    // (output_action, StateSE2::new(from_state.key.vertex, wp))
-                    dbg!((output_action, StateSE2::new(from_state.key.vertex, wp)))
+                    (output_action, StateSE2::new(from_state.key.vertex, wp))
                 })
             })
     }
@@ -610,7 +603,6 @@ where
         Action: 'a,
         Target: 'a,
     {
-        dbg!((&from_state, &to_target));
         let mut prev_wp = from_state.waypoint;
         let (action, finish_state): (DifferentialDriveLineFollowMotion, _) =
             match MergeIntoGoal(self.motion).connect(from_state, to_target)? {
@@ -619,7 +611,6 @@ where
             };
 
         for wp in &action {
-            dbg!((&prev_wp, &wp));
             if !is_safe_segment(
                 (&prev_wp.into(), &wp.clone().into()),
                 None,
@@ -633,7 +624,7 @@ where
 
         let action = action.into_iter().map(|a| SafeAction::Move(a)).collect();
 
-        Some(Ok(dbg!((action, finish_state))))
+        Some(Ok((action, finish_state)))
     }
 }
 
