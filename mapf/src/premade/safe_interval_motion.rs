@@ -94,10 +94,11 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
             assert!(arrival.waypoints.len() < 3);
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
+            let ccbs_key = (from_state.key.vertex.clone(), from_state.key.vertex.clone());
             if !is_safe_segment(
                 (&from_state.waypoint.into(), &wp0),
                 None,
-                &self.safe_intervals.environment().view_for_hold(Some(&from_state.key.vertex)),
+                &self.safe_intervals.environment().view_for(Some(&ccbs_key)),
             ) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -117,7 +118,7 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
         let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
-        let environment_view = self.safe_intervals.environment().view_for_motion(
+        let environment_view = self.safe_intervals.environment().view_for(
             Some(&(from_state.key.vertex.clone(), target_key.clone()))
         );
         let ranked_hints = compute_safe_linear_path_wait_hints(
@@ -168,10 +169,11 @@ impl<G: Graph, const R: u32> SafeIntervalMotion<G, R> {
                             position: Position::new(target_point.coords, target_yaw.angle()),
                         };
 
+                        let ccbs_key = (target_key.clone(), target_key.clone());
                         if !is_safe_segment(
                             (&arrival_wp.into(), &final_wp.into()),
                             None,
-                            &self.safe_intervals.environment().view_for_hold(Some(&target_key)),
+                            &self.safe_intervals.environment().view_for(Some(&ccbs_key)),
                         ) {
                             // We cannot rotate to face the target orientation
                             // so this is not a valid action.

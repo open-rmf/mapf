@@ -100,8 +100,7 @@ pub struct CcbsConstraint<W: Waypoint> {
 pub struct CcbsEnvironment<W: Waypoint, K> {
     base: Arc<DynamicEnvironment<W>>,
     overlay: DynamicEnvironmentOverlay<W>,
-    motion_constraints: HashMap<CcbsKey<K>, Vec<CcbsConstraint<W>>>,
-    hold_constraints: HashMap<K, Vec<CcbsConstraint<W>>>,
+    constraints: HashMap<CcbsKey<K>, Vec<CcbsConstraint<W>>>,
     mask: Option<usize>,
 }
 
@@ -110,29 +109,18 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
         Self {
             base,
             overlay: Default::default(),
-            motion_constraints: Default::default(),
-            hold_constraints: Default::default(),
+            constraints: Default::default(),
             mask: None,
         }
     }
 
-    pub fn view_for_motion<'a>(&'a self, key: Option<&CcbsKey<K>>) -> CcbsEnvironmentView<'a, W, K>
+    pub fn view_for<'a>(&'a self, key: Option<&CcbsKey<K>>) -> CcbsEnvironmentView<'a, W, K>
     where
         K: Key,
     {
         CcbsEnvironmentView {
             view: self,
-            constraints: key.map(|key| self.motion_constraints.get(key)).flatten()
-        }
-    }
-
-    pub fn view_for_hold<'a>(&'a self, key: Option<&K>) -> CcbsEnvironmentView<'a, W, K>
-    where
-        K: Key,
-    {
-        CcbsEnvironmentView {
-            view: self,
-            constraints: key.map(|key| self.hold_constraints.get(key)).flatten(),
+            constraints: key.map(|key| self.constraints.get(key)).flatten()
         }
     }
 
@@ -146,13 +134,7 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
             .enumerate()
             .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
             .chain(
-                self.motion_constraints
-                    .values()
-                    .flat_map(|x| x)
-                    .map(|x| &x.obstacle)
-            )
-            .chain(
-                self.hold_constraints
+                self.constraints
                     .values()
                     .flat_map(|x| x)
                     .map(|x| &x.obstacle)
@@ -170,21 +152,9 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
             .enumerate()
             .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
             .chain(
-                self.motion_constraints
+                self.constraints
                     .iter()
                     .filter(move |((k, _), _)| *k == key)
-                    .flat_map(|(_, constraints)| constraints)
-                    .filter_map(move |x| {
-                        if x.mask == mask {
-                            return None;
-                        }
-                        Some(&x.obstacle)
-                    })
-            )
-            .chain(
-                self.hold_constraints
-                    .iter()
-                    .filter(move |(k, _)| **k == key_clone)
                     .flat_map(|(_, constraints)| constraints)
                     .filter_map(move |x| {
                         if x.mask == mask {
@@ -313,7 +283,7 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
         self
     }
 
-    pub fn insert_motion_constraint(
+    pub fn insert_constraint(
         &mut self,
         key: CcbsKey<K>,
         constraint: CcbsConstraint<W>,
@@ -321,18 +291,7 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     where
         K: Key,
     {
-        self.motion_constraints.entry(key).or_default().push(constraint);
-    }
-
-    pub fn insert_hold_constraint(
-        &mut self,
-        key: K,
-        constraint: CcbsConstraint<W>,
-    )
-    where
-        K: Key,
-    {
-        self.hold_constraints.entry(key).or_default().push(constraint);
+        self.constraints.entry(key).or_default().push(constraint);
     }
 
     pub fn set_mask(&mut self, mask: Option<usize>) {
@@ -340,10 +299,22 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     }
 }
 
+// #[derive(Clone, Copy)]
 pub struct CcbsEnvironmentView<'a, W: Waypoint, K> {
     view: &'a CcbsEnvironment<W, K>,
     constraints: Option<&'a Vec<CcbsConstraint<W>>>,
 }
+
+impl<'a, W: Waypoint, K> Clone for CcbsEnvironmentView<'a, W, K> {
+    fn clone(&self) -> Self {
+        Self {
+            view: self.view,
+            constraints: self.constraints,
+        }
+    }
+}
+
+impl<'a, W: Waypoint, K> Copy for CcbsEnvironmentView<'a, W, K> {}
 
 impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for CcbsEnvironmentView<'e, W, K>

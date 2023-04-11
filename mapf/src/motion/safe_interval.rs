@@ -110,8 +110,9 @@ impl<G: Graph> SafeIntervalCache<G> {
             .point();
 
         let wp = WaypointR2::new(earliest_time, p.x, p.y);
+        let ccbs_key = (key.clone(), key.clone());
         let safe_arrivals =
-            compute_safe_arrival_times(wp, &self.environment.view_for_hold(Some(key)));
+            compute_safe_arrival_times(wp, &self.environment.view_for(Some(&ccbs_key)));
         // let safe_arrivals =
         //     compute_safe_arrival_times(WaypointR2::new(earliest_time, p.x, p.y), &self.environment);
         match self.safe_intervals.write() {

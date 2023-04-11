@@ -418,6 +418,9 @@ where
         } else {
             None
         };
+        let environment_view = safe_intervals.environment().view_for(
+            motion_key.as_ref(),
+        );
 
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(
@@ -440,7 +443,8 @@ where
             if !is_safe_segment(
                 (&from_state.clone().into(), &wp0),
                 None,
-                &safe_intervals.environment().view_for_hold(from_key),
+                &environment_view,
+
             ) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
@@ -460,9 +464,6 @@ where
         let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
-        let environment_view = safe_intervals.environment().view_for_motion(
-            motion_key.as_ref(),
-        );
         let ranked_hints = compute_safe_linear_path_wait_hints(
             (&from_point, &to_point),
             None,
@@ -475,7 +476,7 @@ where
 
         let paths: SmallVec<[_; 5]> = safe_arrival_times
             .into_iter()
-            .filter_map(|arrival_time| {
+            .filter_map(move |arrival_time| {
                 compute_safe_arrival_path(
                     from_point,
                     to_point,
@@ -514,7 +515,8 @@ where
                         if !is_safe_segment(
                             (&arrival_wp.into(), &final_wp.into()),
                             None,
-                            &safe_intervals.environment().view_for_hold(target_key),
+                            // &safe_intervals.environment().view_for_hold(target_key),
+                            &environment_view,
                         ) {
                             // We cannot rotate to face the target orientation
                             // so this is not a valid action.
@@ -696,10 +698,11 @@ where
             };
 
         for wp in &action {
+            let key = (from_state.key.vertex.clone(), from_state.key.vertex.clone());
             if !is_safe_segment(
                 (&prev_wp.into(), &wp.clone().into()),
                 None,
-                &self.environment.view_for_hold(Some(&from_state.key.vertex)),
+                &self.environment.view_for(Some(&key))
             ) {
                 return None;
             }

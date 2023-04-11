@@ -18,7 +18,7 @@
 use crate::{
     domain::{Backtrack, Domain},
     error::ThisError,
-    motion::{IntegrateWaypoints, Trajectory, Waypoint, TimePoint, Duration},
+    motion::{IntegrateWaypoints, Trajectory, Waypoint, TimePoint, Duration, Timed},
 };
 use smallvec::SmallVec;
 
@@ -90,8 +90,8 @@ impl<S, A, C> Path<S, A, C> {
         WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>,
     >
     where
-        S: IntegrateWaypoints<W> + Clone,
-        A: IntegrateWaypoints<W>,
+        S: IntegrateWaypoints<W> + Clone + std::fmt::Debug + Timed,
+        A: IntegrateWaypoints<W> + std::fmt::Debug,
     {
         let mut decision_points = Vec::new();
         decision_points.push(DecisionPoint {
@@ -107,6 +107,7 @@ impl<S, A, C> Path<S, A, C> {
 
         let mut initial_wp = waypoints.last().cloned();
         for (action, state) in self.sequence.iter() {
+            let wp_count = waypoints.len();
             waypoints.extend(
                 action
                     .integrated_waypoints(initial_wp)
@@ -115,11 +116,18 @@ impl<S, A, C> Path<S, A, C> {
                     .map_err(WaypointIntegrationError::Action)?,
             );
 
+            waypoints.sort_by_key(|w| w.time());
+            waypoints.dedup_by_key(|w| w.time());
+
             initial_wp = waypoints.last().cloned();
-            decision_points.push(DecisionPoint {
-                index: waypoints.len() - 1,
-                state: state.clone(),
-            });
+            if wp_count < waypoints.len() {
+                dbg!((waypoints.len(), action, state));
+                assert_eq!(waypoints.last().unwrap().time(), state.time());
+                decision_points.push(DecisionPoint {
+                    index: waypoints.len() - 1,
+                    state: state.clone(),
+                });
+            }
         }
 
         Ok(Trajectory::from_iter(waypoints).ok().map(|trajectory|
@@ -149,8 +157,8 @@ impl<S, A, C> Path<S, A, C> {
         WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>
     >
     where
-        S: IntegrateWaypoints<W> + Clone,
-        A: IntegrateWaypoints<W>,
+        S: IntegrateWaypoints<W> + Clone + std::fmt::Debug + Timed,
+        A: IntegrateWaypoints<W> + std::fmt::Debug,
     {
         if let Some(mt) = self.make_trajectory()? {
             return Ok(mt);
@@ -205,11 +213,31 @@ pub enum DecisionRange<S> {
     After(S),
 }
 
+impl<S> DecisionRange<S> {
+    pub fn initial_state(&self) -> &S {
+        match self {
+            DecisionRange::Between([s0, _]) => &s0.state,
+            DecisionRange::Before(s) => s,
+            DecisionRange::After(s) => s,
+        }
+    }
+
+    pub fn final_state(&self) -> &S {
+        match self {
+            DecisionRange::Between([_, s1]) => &s1.state,
+            DecisionRange::Before(s) => s,
+            DecisionRange::After(s) => s,
+        }
+    }
+}
+
 impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> DecisionRange<S> {
+        dbg!((trajectory_index, &self));
         for i in 1..self.decision_points.len() {
             // if trajectory_index < self.decision_points[i].index {
-            if trajectory_index < self.decision_points[i].index {
+            dbg!(i);
+            if dbg!(trajectory_index) < dbg!(self.decision_points[i].index) {
                 return DecisionRange::Between([
                     self.decision_points[i-1].clone(),
                     self.decision_points[i].clone()

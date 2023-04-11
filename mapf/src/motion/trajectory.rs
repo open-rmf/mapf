@@ -381,13 +381,24 @@ impl<W: Waypoint> Trajectory<W> {
 }
 
 impl<W: Waypoint> std::fmt::Debug for Trajectory<W> {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut builder = fmt.debug_list();
-        for wp in self.waypoints.iter() {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f
+            .debug_struct("Trajectory")
+            .field("indefinite_initial_time", &self.indefinite_initial_time)
+            .field("indefinite_finish_time", &self.indefinite_finish_time)
+            .field("waypoints", &DebugWaypoints(&self.waypoints))
+            .finish()
+    }
+}
+
+struct DebugWaypoints<'a, W: Waypoint>(&'a SortedSet<TimeCmp<W>>);
+impl<'a, W: Waypoint> std::fmt::Debug for DebugWaypoints<'a, W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut builder = f.debug_list();
+        for wp in self.0.iter() {
             builder.entry(&wp.0);
         }
-
-        return builder.finish();
+        builder.finish()
     }
 }
 

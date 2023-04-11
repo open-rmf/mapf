@@ -1910,7 +1910,14 @@ impl Application for App {
                 )
                 .on_press(Message::ResetView)
                 .height(Length::Shrink)
-            );
+            )
+            .push({
+                if let Some(t) = self.canvas.program.layers.3.now {
+                    Text::new(format!("t: {:.2}", t.as_secs_f64()))
+                } else {
+                    Text::new("t: off")
+                }
+            });
 
         content = content
             .push(file_row)
@@ -1990,7 +1997,7 @@ impl Application for App {
                         for (i, node) in self.negotiation_history.iter().enumerate() {
                             scroll = scroll.push(Radio::new(
                                 i,
-                                format!("{}. Cost {:.2} Depth: {} Conflicts: {}", i, node.cost.0, node.depth, node.negotiation.conflicts.len()),
+                                format!("{}. Cost {:.2} | Keys: {} | Parent: {} | Conflicts: {}", node.id, node.cost.0, node.keys.len(), node.parent.unwrap_or(node.id), node.negotiation.conflicts.len()),
                                 self.negotiation_node_selected,
                                 Message::SelectNegotiationNode,
                             ));
@@ -2003,7 +2010,13 @@ impl Application for App {
                             Text::new({
                                 if let Some(selection) = self.negotiation_node_selected {
                                     if let Some(node) = self.negotiation_history.get(selection) {
-                                        format!("{node:#?}")
+                                        let mut text = String::new();
+                                        text += &format!("Keys: {}\n", node.keys.len());
+                                        for key in &node.keys {
+                                            text += &format!("{key:?}\n");
+                                        }
+                                        text += &format!("------\n{node:#?}");
+                                        text
                                     } else {
                                         String::new()
                                     }
