@@ -20,7 +20,7 @@ pub use scenario::*;
 
 use crate::{
     premade::{SippSE2, StateSippSE2},
-    domain::{Configurable, Cost},
+    domain::{Configurable, Cost, CloseResult, ClosedStatus},
     motion::{
         CcbsEnvironment, CcbsConstraint, CcbsKey, DynamicEnvironment, DynamicCircularObstacle,
         CircularProfile, TravelEffortCost, TimePoint, BoundingBox, have_conflict,
@@ -104,11 +104,21 @@ impl Graph for AdjacentFreespace {
                         .filter(move |j| !(i == 0 && *j == 0))
                         .filter_map(move |j| {
                             let neighbor = of_cell.shifted(i, j);
-                            if !self.grid.is_occupied(&neighbor) {
-                                Some((of_cell, neighbor))
-                            } else {
-                                None
+                            if self.grid.is_occupied(&neighbor) {
+                                return None;
                             }
+
+                            if i != 0 && j != 0 {
+                                if self.grid.is_occupied(&of_cell.shifted(i, 0)) {
+                                    return None;
+                                }
+
+                                if self.grid.is_occupied(&of_cell.shifted(0, j)) {
+                                    return None;
+                                }
+                            }
+
+                            Some((of_cell, neighbor))
                         })
                 })
             })
@@ -190,8 +200,8 @@ pub fn negotiate(
         let profile = CircularProfile::new(a.radius, 0.0, 0.0).unwrap();
         let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
         let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
-        // let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
-        let activity = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+        let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
+        // let activity = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
         let environment = Arc::new(CcbsEnvironment::new(
             Arc::new(DynamicEnvironment::new(profile))
         ));
@@ -221,16 +231,10 @@ pub fn negotiate(
 
     let (mut negotiation_of_agent, mut negotiations) = organize_negotiations(&ideal, &profiles);
 
-    let mut node_id = 0;
-    let mut next_node_id = || {
-        let next = node_id;
-        node_id += 1;
-        next
-    };
-
+    let mut closer = NegotiationCloser::new();
     let mut count = 0;
     let mut solution_node: Option<NegotiationNode> = None;
-    let mut node_history = Vec::new();
+    let mut arena = Vec::new();
     while !negotiations.is_empty() {
         dbg!(count);
         count += 1;
@@ -252,25 +256,32 @@ pub fn negotiate(
 
         for root in negotiations.values() {
             let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::new();
-            let root = NegotiationNode::from_root(root, &ideal, base_env.clone(), next_node_id());
-            node_history.push(root.clone());
+            let root = NegotiationNode::from_root(root, &ideal, base_env.clone(), arena.len());
+            arena.push(root.clone());
             queue.push(QueueEntry::new(root));
 
             let mut solution = None;
             let mut iters = 0;
             while let Some(mut top) = queue.pop() {
                 iters += 1;
-                dbg!(iters);
-                if iters > 100 {
+                if iters % 10 == 0 {
+                    dbg!(iters);
+                }
+                if iters > 1000 {
                     println!("Too many iterations");
 
                     // Dump the remaining queue into the node history
-                    println!("Queue begins at {}", node_history.len() + 1);
+                    println!("Queue begins at {}", arena.len() + 1);
                     while let Some(remainder) = queue.pop() {
-                        node_history.push(remainder.node);
+                        arena.push(remainder.node);
                     }
 
                     break;
+                }
+
+                if !closer.close(&top.node) {
+                    println!("REDUNDANT NODE: {:?}", top.node.keys);
+                    // continue;
                 }
 
                 // Sort the conflicts such that we pop the the earliest conflict.
@@ -286,9 +297,9 @@ pub fn negotiate(
                         solution = Some(top.node);
 
                         // Dump the remaining queue into the node history
-                        println!("Queue begins at {}", node_history.len() + 1);
+                        println!("Queue begins at {}", arena.len() + 1);
                         while let Some(remainder) = queue.pop() {
-                            node_history.push(remainder.node);
+                            arena.push(remainder.node);
                         }
 
                         break;
@@ -384,7 +395,7 @@ pub fn negotiate(
                             failed_node.conceded = Some(concede.agent);
                             failed_node.environment = environment;
                             failed_node.outcome = NodeOutcome::Impossible;
-                            node_history.push(failed_node);
+                            arena.push(failed_node);
                             continue;
                         }
                         SearchStatus::Incomplete => {
@@ -398,7 +409,7 @@ pub fn negotiate(
                             failed_node.conceded = Some(concede.agent);
                             failed_node.environment = environment;
                             failed_node.outcome = NodeOutcome::Incomplete;
-                            node_history.push(failed_node);
+                            arena.push(failed_node);
                             continue;
                         }
                     };
@@ -414,8 +425,8 @@ pub fn negotiate(
                         &profiles,
                     );
 
-                    let node = top.node.fork(conflicts, proposals, environment, key, Some(concede.agent), next_node_id());
-                    node_history.push(node.clone());
+                    let node = top.node.fork(conflicts, proposals, environment, key, Some(concede.agent), arena.len());
+                    arena.push(node.clone());
                     queue.push(QueueEntry::new(node));
                 }
             }
@@ -426,13 +437,16 @@ pub fn negotiate(
                 }
                 solution_node = Some(solution);
             } else {
+                if queue.is_empty() {
+                    println!("Queue is exhausted!");
+                }
                 // TODO(@mxgrey): Consider re-running the negotiation but
                 // without the base environment in order to identify which other
                 // agents need to be pulled into the negotiation.
                 // Even better would be to queue up those nodes as backup nodes
                 // in a lower priority queue running in parallel, then use the
                 // outcome if a solution cannot be found.
-                return Err(NegotiationError::PlanningFailed((node_history, name_map)));
+                return Err(NegotiationError::PlanningFailed((arena, name_map)));
             }
         }
 
@@ -466,7 +480,9 @@ pub fn negotiate(
         }
     }
 
-    Ok((solution_node.unwrap(), node_history, name_map))
+    // dbg!(closer);
+
+    Ok((solution_node.unwrap(), arena, name_map))
     // Ok(ideal.into_iter().enumerate().map(|(i, proposal)|
     //     (name_map.get(&i).unwrap().clone(), proposal)
     // ).collect())
@@ -493,7 +509,8 @@ impl NegotiationKey {
         constraint: &DecisionRange<StateSippSE2<Cell>>,
         mask: usize,
     ) -> Self {
-        let res = 1e8 as i64;
+        let res = 1e3 as i64;
+        // let res = 1e7 as i64;
         let concede = (
             concede.initial_state().key.vertex,
             concede.final_state().key.vertex,
@@ -509,6 +526,56 @@ impl NegotiationKey {
             constraint: (constraint.0, constraint.1, constraint.2.nanos_since_zero / res),
             mask,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NegotiationCloser {
+    pub closed_set: HashMap<NegotiationKey, HashSet<usize>>,
+}
+
+impl NegotiationCloser {
+    pub fn new() -> Self {
+        Self { closed_set: Default::default() }
+    }
+
+    pub fn status<'a>(&'a self, node: &NegotiationNode) -> ClosedStatus<'a, ()> {
+        let mut key_iter = node.keys.iter();
+        let Some(first_key) = key_iter.next() else { return ClosedStatus::Open };
+
+        let mut candidates: HashSet<usize> = HashSet::from_iter(
+            self.closed_set.get(first_key)
+            .iter()
+            .flat_map(|x| *x)
+            .cloned()
+        );
+
+        while let Some(next_key) = key_iter.next() {
+            if candidates.is_empty() {
+                break;
+            }
+
+            let Some(new_candidates) = self.closed_set.get(next_key) else { return ClosedStatus::Open };
+            candidates.retain(|c| new_candidates.contains(c));
+        }
+
+        if candidates.is_empty() {
+            ClosedStatus::Open
+        } else {
+            ClosedStatus::Closed(&())
+        }
+    }
+
+    pub fn close<'a>(&'a mut self, node: &NegotiationNode) -> bool {
+        if self.status(node).is_closed() {
+            return false;
+        }
+
+        for key in &node.keys {
+            self.closed_set.entry(*key).or_default().insert(node.id);
+        }
+
+        true
     }
 }
 
@@ -945,14 +1012,14 @@ pub fn find_first_conflict(
             (&wp0_b, &wp1_b), bb_b, profile_b,
             conflict_distance_squared,
         ) {
-            // return Some((
-            //     mt_a.get_decision_range(i_a),
-            //     mt_b.get_decision_range(i_b),
-            // ));
-            return dbg!(Some((
+            return Some((
                 mt_a.get_decision_range(i_a),
                 mt_b.get_decision_range(i_b),
-            )));
+            ));
+            // return dbg!(Some((
+            //     mt_a.get_decision_range(i_a),
+            //     mt_b.get_decision_range(i_b),
+            // )));
         }
 
         if wp1_a.time < wp1_b.time {
@@ -1004,8 +1071,8 @@ fn find_pre_initial_conflict(
         std::mem::swap(&mut range_a, &mut range_b);
     }
 
-    // Some((range_a, range_b))
-    dbg!(Some((range_a, range_b)))
+    Some((range_a, range_b))
+    // dbg!(Some((range_a, range_b)))
 }
 
 fn find_post_finish_conflict(
@@ -1045,8 +1112,8 @@ fn find_post_finish_conflict(
         std::mem::swap(&mut range_a, &mut range_b);
     }
 
-    // Some((range_a, range_b))
-    dbg!(Some((range_a, range_b)))
+    Some((range_a, range_b))
+    // dbg!(Some((range_a, range_b)))
 }
 
 fn find_spillover_conflict(
@@ -1067,7 +1134,7 @@ fn find_spillover_conflict(
         let wp1_a: WaypointR2 = wp1_a.into();
 
         if trailing {
-            if wp0_a.time < wp_b.time {
+            if wp1_a.time < wp_b.time {
                 continue;
             }
         } else {
@@ -1089,6 +1156,15 @@ fn find_spillover_conflict(
         ) {
             return Some(i_a);
         }
+        // if have_conflict(
+        //     dbg!((&wp0_a, &wp1_a)), None, profile_a,
+        //     dbg!((&wp0_b, &wp1_b)), Some(bb_b), profile_b,
+        //     conflict_distance_squared,
+        // ) {
+        //     dbg!();
+        //     return Some(i_a);
+        // }
+        // dbg!();
     }
 
     None

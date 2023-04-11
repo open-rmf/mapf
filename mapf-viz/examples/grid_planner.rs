@@ -1205,12 +1205,15 @@ impl App {
             Err(err) => {
                 match err {
                     NegotiationError::PlanningFailed((nodes, name_map)) => {
+                        println!("Unable to find a solution");
                         self.negotiation_history = nodes;
                         self.name_map = name_map;
                     }
-                    err => println!("Failed to find a solution: {err:?}"),
+                    err => println!("Error while planning: {err:?}"),
                 };
 
+                let elapsed = start_time.elapsed();
+                println!("Elapsed time: {} seconds", elapsed.as_secs_f64());
                 return;
             }
         };

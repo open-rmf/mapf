@@ -121,7 +121,7 @@ impl<S, A, C> Path<S, A, C> {
 
             initial_wp = waypoints.last().cloned();
             if wp_count < waypoints.len() {
-                dbg!((waypoints.len(), action, state));
+                // dbg!((waypoints.len(), action, state));
                 assert_eq!(waypoints.last().unwrap().time(), state.time());
                 decision_points.push(DecisionPoint {
                     index: waypoints.len() - 1,
@@ -233,11 +233,11 @@ impl<S> DecisionRange<S> {
 
 impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> DecisionRange<S> {
-        dbg!((trajectory_index, &self));
+        // dbg!((trajectory_index, &self));
         for i in 1..self.decision_points.len() {
-            // if trajectory_index < self.decision_points[i].index {
-            dbg!(i);
-            if dbg!(trajectory_index) < dbg!(self.decision_points[i].index) {
+            if trajectory_index < self.decision_points[i].index {
+            // dbg!(i);
+            // if dbg!(trajectory_index) < dbg!(self.decision_points[i].index) {
                 return DecisionRange::Between([
                     self.decision_points[i-1].clone(),
                     self.decision_points[i].clone()
