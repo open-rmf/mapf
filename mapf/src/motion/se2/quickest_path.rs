@@ -27,6 +27,7 @@ use crate::{
         },
         SpeedLimiter, Timed, MaybeTimed, TimePoint,
     },
+    planner::halt::StepLimit,
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
     Graph, Planner,
 };
@@ -47,7 +48,7 @@ pub type QuickestPathSearch<G, W> = UninformedSearch<
     LazyGraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow, (), ()>,
 >;
 
-pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>>;
+pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>, StepLimit>;
 
 #[derive(Clone)]
 pub struct QuickestPathHeuristic<G, WeightR2, WeightSE2, const R: u32>
@@ -98,6 +99,7 @@ where
             graph: graph.clone(),
             extrapolator: line_follow,
         };
+        let step_limit = StepLimit::new(Some(10000));
 
         Ok(Self {
             planner: Planner::new(Arc::new(BackwardDijkstra::new(
@@ -112,7 +114,8 @@ where
                     keyring: (),
                     chain: (),
                 }),
-            )?)),
+            )?))
+            .with_halting(step_limit),
             extrapolator,
             weight_se2,
             cost_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -121,6 +124,10 @@ where
 
     pub fn planner(&self) -> &QuickestPathPlanner<G, WeightR2> {
         &self.planner
+    }
+
+    pub fn set_step_limit(&mut self, limit: StepLimit) {
+        self.planner.set_default_halting(limit);
     }
 
     fn invariant_cost<State, Goal>(

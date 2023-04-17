@@ -209,29 +209,29 @@ pub struct DecisionPoint<State> {
 #[derive(Debug, Clone, Copy)]
 pub enum DecisionRange<S> {
     Between([DecisionPoint<S>; 2]),
-    Before(S),
-    After(S),
+    Before(S, TimePoint),
+    After(S, TimePoint),
 }
 
 impl<S> DecisionRange<S> {
     pub fn initial_state(&self) -> &S {
         match self {
             DecisionRange::Between([s0, _]) => &s0.state,
-            DecisionRange::Before(s) => s,
-            DecisionRange::After(s) => s,
+            DecisionRange::Before(s, _) => s,
+            DecisionRange::After(s, _) => s,
         }
     }
 
     pub fn final_state(&self) -> &S {
         match self {
             DecisionRange::Between([_, s1]) => &s1.state,
-            DecisionRange::Before(s) => s,
-            DecisionRange::After(s) => s,
+            DecisionRange::Before(s, _) => s,
+            DecisionRange::After(s, _) => s,
         }
     }
 }
 
-impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
+impl<W: Waypoint, S: Clone> MetaTrajectory<W, S> {
     pub fn get_decision_range(&self, trajectory_index: usize) -> DecisionRange<S> {
         // dbg!((trajectory_index, &self));
         for i in 1..self.decision_points.len() {
@@ -246,22 +246,35 @@ impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
         }
         // If we couldn't find suitable decision points, then assume the conflict
         // runs past the end of the trajectory
-        DecisionRange::After(self.final_state.clone())
+        DecisionRange::After(
+            self.final_state.clone(),
+            self.trajectory.finish_motion_time() + Duration::from_secs(1)
+        )
     }
 
     pub fn get_trajectory_segment(&self, range: &DecisionRange<S>) -> Trajectory<W> {
         match range {
-            DecisionRange::Before(_) => {
+            DecisionRange::Before(_, t) => {
                 // This implies that we want an indefinite start trajectory leading
                 // up to the first waypoint.
                 let wp1 = self.trajectory.initial_motion().clone();
-                let wp0 = wp1.clone().time_shifted_by(Duration::from_secs(-1));
-                Trajectory::new(wp0, wp1).unwrap().with_indefinite_initial_time(true)
+                let t = if *t == wp1.time() {
+                    *t - Duration::from_secs(1)
+                } else {
+                    *t
+                };
+                let wp0 = wp1.clone().with_time(t);
+                Trajectory::new(wp0, wp1).unwrap()
             }
-            DecisionRange::After(_) => {
+            DecisionRange::After(_, t) => {
                 let wp0 = self.trajectory.finish_motion().clone();
-                let wp1 = wp0.clone().time_shifted_by(Duration::from_secs(1));
-                Trajectory::new(wp0, wp1).unwrap().with_indefinite_finish_time(true)
+                let t = if *t == wp0.time() {
+                    *t + Duration::from_secs(1)
+                } else {
+                    *t
+                };
+                let wp1 = wp0.clone().with_time(t);
+                Trajectory::new(wp0, wp1).unwrap()
             }
             DecisionRange::Between(range) => {
                 let i_max = self.trajectory.len() - 1;
@@ -288,8 +301,8 @@ impl<W: Waypoint, S: Clone + std::fmt::Debug> MetaTrajectory<W, S> {
 
     pub fn decision_start_time(&self, range: &DecisionRange<S>) -> TimePoint {
         match range {
-            DecisionRange::Before(_) => self.trajectory.initial_motion_time(),
-            DecisionRange::After(_) => self.trajectory.finish_motion_time(),
+            DecisionRange::Before(..) => self.trajectory.initial_motion_time(),
+            DecisionRange::After(..) => self.trajectory.finish_motion_time(),
             DecisionRange::Between(range) => {
                 self.trajectory
                     .get(range[0].index)

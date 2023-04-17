@@ -778,32 +778,32 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         bound: iced::Rectangle,
         _spatial_cursor: canvas::Cursor
     ) {
-        for (radius, trajectory) in &self.solutions {
-            let mut sequence: HashMap<Cell, Vec<String>> = HashMap::new();
-            for (i, wp) in trajectory.iter().enumerate() {
-                sequence.entry(
-                    Cell::from_point(
-                        Point::from(wp.position.translation.vector), self.cell_size
-                    )
-                ).or_default().push(i.to_string());
-            }
+        // for (radius, trajectory) in &self.solutions {
+        //     let mut sequence: HashMap<Cell, Vec<String>> = HashMap::new();
+        //     for (i, wp) in trajectory.iter().enumerate() {
+        //         sequence.entry(
+        //             Cell::from_point(
+        //                 Point::from(wp.position.translation.vector), self.cell_size
+        //             )
+        //         ).or_default().push(i.to_string());
+        //     }
 
-            let r = *radius as f32 / 2_f32.sqrt();
-            let delta = iced::Vector::new(r, r);
-            for (cell, seq) in sequence {
-                let p = cell.to_center_point(self.cell_size);
-                let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
-                if bound.contains(p) {
-                    hud.at(
-                        p,
-                        |frame| {
-                            frame.translate([0_f32, -16_f32].into());
-                            frame.fill_text(seq.join(", "));
-                        }
-                    );
-                }
-            }
-        }
+        //     let r = *radius as f32 / 2_f32.sqrt();
+        //     let delta = iced::Vector::new(r, r);
+        //     for (cell, seq) in sequence {
+        //         let p = cell.to_center_point(self.cell_size);
+        //         let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
+        //         if bound.contains(p) {
+        //             hud.at(
+        //                 p,
+        //                 |frame| {
+        //                     frame.translate([0_f32, -16_f32].into());
+        //                     frame.fill_text(seq.join(", "));
+        //                 }
+        //             );
+        //         }
+        //     }
+        // }
 
         for (cell, v) in &self.vertex_lookup {
             let p = cell.to_center_point(self.cell_size);
@@ -828,7 +828,8 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
 
 spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
 
-type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
+// type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
+type MyAlgo = AStarConnect<SippSE2<AdjacentFreespace, AdjacentFreespace>>;
 type TreeTicket = mapf::algorithm::tree::TreeQueueTicket<mapf::domain::Cost<f64>>;
 
 struct App {
@@ -844,6 +845,7 @@ struct App {
     add_agent_button: button::State,
     pick_agent_state: pick_list::State<String>,
     reset_view_button: button::State,
+    reset_time_button: button::State,
     canvas: SpatialCanvas<Message, GridLayers>,
     node_list_scroll: scrollable::State,
     debug_text_scroll: scrollable::State,
@@ -891,6 +893,26 @@ impl App {
 
     fn default_search_color() -> iced::Color {
         iced::Color::from_rgb8(191, 148, 228)
+    }
+
+    fn save_file(&self, filename: &String) {
+        let out_file = match std::fs::File::create(filename) {
+            Ok(r) => r,
+            Err(err) => {
+                println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
+                return;
+            }
+        };
+
+        let scenario = self.make_scenario();
+
+        match serde_yaml::to_writer(out_file, &scenario) {
+            Ok(()) => {}
+            Err(err) => {
+                println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
+                return;
+            }
+        }
     }
 
     fn set_robot_radius(&mut self, radius: f64) {
@@ -1008,9 +1030,11 @@ impl App {
 
     fn add_agent(&mut self) {
         let name = generate_robot_name(self.canvas.program.layers.2.agents.len());
-        let start = [-5, 0];
+        let start = [-30, 0];
+        let goal = [-25, 0];
+        // let start = [-5, 0];
+        // let goal = [5, 0];
         let yaw = 0.0;
-        let goal = [5, 0];
         let agent = match self.canvas.program.layers.2.selected_agent() {
             Some(ctx) => {
                 Agent {
@@ -1092,13 +1116,14 @@ impl App {
             let profile = CircularProfile::new(r, 0.0, 0.0).expect("Bad profile sizes");
 
             let shared_visibility = Arc::new(visibility.clone());
-            let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
-                shared_visibility.clone(), [],
-            ));
-
-            let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
-                shared_visibility, [],
-            ));
+            // let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
+            //     shared_visibility.clone(), [],
+            // ));
+            // let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
+            //     shared_visibility, [],
+            // ));
+            let activity_graph = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+            let heuristic_graph = activity_graph.clone();
 
             let (environment, minimum_time) = 'environment: {
                 // if let Some(n) = self.negotiation_node_selected {
@@ -1198,15 +1223,28 @@ impl App {
         self.canvas.program.layers.3.obstacles.clear();
         let scenario = self.make_scenario();
 
+        if !self.file_text_input_value.is_empty() {
+            let mut backup = self.file_text_input_value.clone();
+            backup += ".backup";
+            println!("Saving backup file {backup}");
+            self.save_file(&backup);
+        }
+
         let start_time = std::time::Instant::now();
         // let propsoals = match negotiate(&scenario, Some(1_000_000)) {
-        let (solution_node, node_history, name_map) = match negotiate(&scenario, Some(1_000_000)) {
+        let (solution_node, node_history, name_map) = match negotiate(
+            &scenario,
+            // Some(1_000),
+            Some(1_000_000),
+            // None
+        ) {
             Ok(solutions) => solutions,
             Err(err) => {
                 match err {
                     NegotiationError::PlanningFailed((nodes, name_map)) => {
                         println!("Unable to find a solution");
                         self.negotiation_history = nodes;
+                        self.negotiation_history.sort_unstable_by_key(|n| n.id);
                         self.name_map = name_map;
                     }
                     err => println!("Error while planning: {err:?}"),
@@ -1218,9 +1256,10 @@ impl App {
             }
         };
         let elapsed = start_time.elapsed();
-        println!("Planning took {} seconds", elapsed.as_secs_f64());
+        println!("Successful planning took {} seconds", elapsed.as_secs_f64());
+        dbg!(node_history.len());
 
-        // for (name, proposal) in &node.proposals {
+        assert!(self.canvas.program.layers.3.solutions.is_empty());
         for (i, proposal) in &solution_node.proposals {
             let name = name_map.get(i).unwrap();
             let r = scenario.agents.get(name).unwrap().radius;
@@ -1228,7 +1267,8 @@ impl App {
         }
 
         self.negotiation_history = node_history;
-        self.negotiation_history.insert(0, solution_node);
+        self.negotiation_history.sort_unstable_by_key(|n| n.id);
+        // self.negotiation_history.insert(0, solution_node);
         self.name_map = name_map;
 
         // let endpoints = &self.canvas.program.layers.2;
@@ -1474,7 +1514,7 @@ impl Application for App {
             load_button: button::State::new(),
             select_file_button: button::State::new(),
             file_text_input: text_input::State::new(),
-            file_text_input_value: String::new(),
+            file_text_input_value: flags.filename.unwrap_or(String::new()),
             agent_yaw_slider: slider::State::new(),
             agent_radius_slider: slider::State::new(),
             agent_speed_slider: slider::State::new(),
@@ -1482,6 +1522,7 @@ impl Application for App {
             add_agent_button: button::State::new(),
             pick_agent_state: pick_list::State::new(),
             reset_view_button: button::State::new(),
+            reset_time_button: button::State::new(),
             canvas,
             node_list_scroll: scrollable::State::new(),
             debug_text_scroll: scrollable::State::new(),
@@ -1547,23 +1588,7 @@ impl Application for App {
                     }
                 }
 
-                let out_file = match std::fs::File::create(&self.file_text_input_value) {
-                    Ok(r) => r,
-                    Err(err) => {
-                        println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
-                        return Command::none();
-                    }
-                };
-
-                let scenario = self.make_scenario();
-
-                match serde_yaml::to_writer(out_file, &scenario) {
-                    Ok(()) => {}
-                    Err(err) => {
-                        println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
-                        return Command::none();
-                    }
-                }
+                self.save_file(&self.file_text_input_value);
             }
             Message::LoadFile => {
                 match FileDialog::new().show_open_single_file() {
@@ -1641,6 +1666,9 @@ impl Application for App {
                     return Command::perform(async move {}, move |_| Message::SetView(zone));
                 }
             }
+            Message::ResetTime => {
+                self.canvas.program.layers.3.reset_time();
+            }
             Message::EventOccurred(event) => {
                 if let iced_native::Event::Keyboard(event) = event {
                     match self.show_details.key_toggle(event) {
@@ -1676,17 +1704,31 @@ impl Application for App {
                     }
 
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Down, .. } = event {
-                        let next_debug_node = self.debug_node_selected.map(|n| n+1).unwrap_or(0);
-                        return Command::perform(async move  {}, move |_| {
-                            Message::SelectDebugNode(next_debug_node)
-                        });
+                        if self.debug_on {
+                            let next_debug_node = self.debug_node_selected.map(|n| n+1).unwrap_or(0);
+                            return Command::perform(async move  {}, move |_| {
+                                Message::SelectDebugNode(next_debug_node)
+                            });
+                        } else {
+                            let next_negotiation_node = self.negotiation_node_selected.map(|n| n+1).unwrap_or(0);
+                            return Command::perform(async move  {}, move |_| {
+                                Message::SelectNegotiationNode(next_negotiation_node)
+                            });
+                        }
                     }
 
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Up, .. } = event {
-                        let next_debug_node = self.debug_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
-                        return Command::perform(async move  {}, move |_| {
-                            Message::SelectDebugNode(next_debug_node)
-                        });
+                        if self.debug_on {
+                            let next_debug_node = self.debug_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
+                            return Command::perform(async move {}, move |_| {
+                                Message::SelectDebugNode(next_debug_node)
+                            });
+                        } else {
+                            let next_negotiation_node = self.negotiation_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
+                            return Command::perform(async move {}, move |_| {
+                                Message::SelectNegotiationNode(next_negotiation_node)
+                            });
+                        }
                     }
                 }
             },
@@ -1920,7 +1962,15 @@ impl Application for App {
                 } else {
                     Text::new("t: off")
                 }
-            });
+            })
+            .push(
+                Button::new(
+                    &mut self.reset_time_button,
+                    iced::Text::new("Reset Time")
+                )
+                .on_press(Message::ResetTime)
+                .height(Length::Shrink)
+            );
 
         content = content
             .push(file_row)
@@ -2060,6 +2110,7 @@ enum Message {
     LoadFile,
     ScenarioFileInput(String),
     ResetView,
+    ResetTime,
     SetView(InclusionZone),
     EventOccurred(iced_native::Event),
     EndpointSelected(EndpointSelection),

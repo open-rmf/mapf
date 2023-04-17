@@ -75,6 +75,10 @@ impl<Algo, Halting> Planner<Algo, Halting> {
         }
     }
 
+    pub fn set_default_halting(&mut self, halting: Halting) {
+        self.default_halting = halting;
+    }
+
     /// Consume this Planner, modify its Algorithm, and return a new planner
     /// with the modified algorithm.
     ///

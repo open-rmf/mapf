@@ -72,7 +72,7 @@ impl<Mem> Halt<Mem> for Interruptible {
 
 /// This option sets a maximum number of steps that can be taken before the
 /// planner is told to halt.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct StepLimit {
     steps: usize,
     pub limit: Option<usize>,

@@ -20,7 +20,7 @@ pub use scenario::*;
 
 use crate::{
     premade::{SippSE2, StateSippSE2},
-    domain::{Configurable, Cost, CloseResult, ClosedStatus},
+    domain::{Configurable, Reversible, Cost, CloseResult, ClosedStatus},
     motion::{
         CcbsEnvironment, CcbsConstraint, CcbsKey, DynamicEnvironment, DynamicCircularObstacle,
         CircularProfile, TravelEffortCost, TimePoint, BoundingBox, have_conflict,
@@ -39,6 +39,7 @@ use crate::{
     graph::{SharedGraph, occupancy::*, Graph},
     error::ThisError,
     util::triangular_for,
+    error::NoError,
 };
 use std::{
     collections::{HashMap, HashSet, BinaryHeap},
@@ -57,12 +58,12 @@ pub enum NegotiationError {
 }
 
 #[derive(Clone)]
-struct AdjacentFreespace {
+pub struct AdjacentFreespace {
     grid: Arc<SparseGrid>,
 }
 
 impl AdjacentFreespace {
-    fn new(grid: Arc<SparseGrid>) -> Self {
+    pub fn new(grid: Arc<SparseGrid>) -> Self {
         Self { grid }
     }
 }
@@ -141,6 +142,16 @@ impl Graph for AdjacentFreespace {
     }
 }
 
+impl Reversible for AdjacentFreespace {
+    type ReversalError = NoError;
+    fn reversed(&self) -> Result<Self, Self::ReversalError>
+    where
+        Self: Sized
+    {
+        Ok(self.clone())
+    }
+}
+
 pub fn negotiate(
     scenario: &Scenario,
     queue_length_limit: Option<usize>,
@@ -199,9 +210,10 @@ pub fn negotiate(
     let planners = agents.iter().map(|a| {
         let profile = CircularProfile::new(a.radius, 0.0, 0.0).unwrap();
         let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
-        let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
-        let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
-        // let activity = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+        // let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
+        // let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
+        let activity = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+        let heuristic = activity.clone();
         let environment = Arc::new(CcbsEnvironment::new(
             Arc::new(DynamicEnvironment::new(profile))
         ));
@@ -232,6 +244,7 @@ pub fn negotiate(
     let (mut negotiation_of_agent, mut negotiations) = organize_negotiations(&ideal, &profiles);
 
     let mut closer = NegotiationCloser::new();
+    let mut culled = 0;
     let mut count = 0;
     let mut solution_node: Option<NegotiationNode> = None;
     let mut arena = Vec::new();
@@ -267,7 +280,7 @@ pub fn negotiate(
                 if iters % 10 == 0 {
                     dbg!(iters);
                 }
-                if iters > 1000 {
+                if iters > 10000 {
                     println!("Too many iterations");
 
                     // Dump the remaining queue into the node history
@@ -280,8 +293,9 @@ pub fn negotiate(
                 }
 
                 if !closer.close(&top.node) {
-                    println!("REDUNDANT NODE: {:?}", top.node.keys);
-                    // continue;
+                    culled += 1;
+                    // println!("REDUNDANT NODE: {:?}", top.node.keys);
+                    continue;
                 }
 
                 // Sort the conflicts such that we pop the the earliest conflict.
@@ -297,10 +311,10 @@ pub fn negotiate(
                         solution = Some(top.node);
 
                         // Dump the remaining queue into the node history
-                        println!("Queue begins at {}", arena.len() + 1);
-                        while let Some(remainder) = queue.pop() {
-                            arena.push(remainder.node);
-                        }
+                        // println!("Queue begins at {}", arena.len() + 1);
+                        // while let Some(remainder) = queue.pop() {
+                        //     arena.push(remainder.node);
+                        // }
 
                         break;
                     }
@@ -328,7 +342,7 @@ pub fn negotiate(
                     };
 
                     match concede.range {
-                        DecisionRange::Before(s) | DecisionRange::After(s) => {
+                        DecisionRange::Before(s, _) | DecisionRange::After(s, _) => {
                             // dbg!((concede, constraint));
                             environment.insert_constraint(
                                 (s.key.vertex, s.key.vertex),
@@ -385,12 +399,14 @@ pub fn negotiate(
                     let solution = match search.solve().unwrap() {
                         SearchStatus::Solved(solution) => solution,
                         SearchStatus::Impossible => {
-                            // println!(
-                            //     "The search is IMPOSSIBLE for {}! queue: {}, arena: {}",
-                            //     name_map[&concede],
-                            //     search.memory().0.queue.len(),
-                            //     search.memory().0.arena.len(),
-                            // );
+                            println!(
+                                "The search is IMPOSSIBLE for {}! node: {}:{}, queue: {}, arena: {}",
+                                name_map[&concede.agent],
+                                top.node.id,
+                                concede.agent,
+                                search.memory().0.queue.len(),
+                                search.memory().0.arena.len(),
+                            );
                             let mut failed_node = top.node.clone();
                             failed_node.conceded = Some(concede.agent);
                             failed_node.environment = environment;
@@ -399,12 +415,15 @@ pub fn negotiate(
                             continue;
                         }
                         SearchStatus::Incomplete => {
-                            // println!(
-                            //     "The search is INCOMPLETE! measure: {}, queue: {}, arena: {}",
-                            //     search.memory().queue_length(),
-                            //     search.memory().0.queue.len(),
-                            //     search.memory().0.arena.len(),
-                            // );
+                            println!(
+                                "The search is INCOMPLETE for {}! node: {}:{} measure: {}, queue: {}, arena: {}",
+                                name_map[&concede.agent],
+                                top.node.id,
+                                concede.agent,
+                                search.memory().queue_length(),
+                                search.memory().0.queue.len(),
+                                search.memory().0.arena.len(),
+                            );
                             let mut failed_node = top.node.clone();
                             failed_node.conceded = Some(concede.agent);
                             failed_node.environment = environment;
@@ -437,15 +456,13 @@ pub fn negotiate(
                 }
                 solution_node = Some(solution);
             } else {
-                if queue.is_empty() {
-                    println!("Queue is exhausted!");
-                }
                 // TODO(@mxgrey): Consider re-running the negotiation but
                 // without the base environment in order to identify which other
                 // agents need to be pulled into the negotiation.
                 // Even better would be to queue up those nodes as backup nodes
                 // in a lower priority queue running in parallel, then use the
                 // outcome if a solution cannot be found.
+                println!("Culled {culled}");
                 return Err(NegotiationError::PlanningFailed((arena, name_map)));
             }
         }
@@ -482,6 +499,7 @@ pub fn negotiate(
 
     // dbg!(closer);
 
+    println!("Culled {culled}");
     Ok((solution_node.unwrap(), arena, name_map))
     // Ok(ideal.into_iter().enumerate().map(|(i, proposal)|
     //     (name_map.get(&i).unwrap().clone(), proposal)
@@ -682,7 +700,7 @@ struct QueueEntry {
 impl PartialOrd for QueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if f64::abs(self.node.cost.0 - other.node.cost.0) < 0.1 {
-            self.node.depth.partial_cmp(&other.node.depth)
+            Reverse(self.node.depth).partial_cmp(&Reverse(other.node.depth))
         } else {
             Reverse(self.node.cost).partial_cmp(&Reverse(other.node.cost))
         }
@@ -885,14 +903,26 @@ fn reconsider_negotiations(
         };
 
         for i in overlapping {
+            dbg!(i);
             if let Some(prev_parent) = merge_new_negotiation_into.get(i).copied() {
-                assert!(!merge_new_negotiation_into.contains_key(&prev_parent));
-                merge_new_negotiation_into.insert(prev_parent, merge_all_into);
+                // assert!(!merge_new_negotiation_into.contains_key(&prev_parent));
+                if merge_new_negotiation_into.contains_key(&prev_parent) {
+                    dbg!(prev_parent);
+                    dbg!(&merge_new_negotiation_into);
+                    assert!(false);
+                }
+
+                dbg!((prev_parent, merge_all_into));
+                if prev_parent != merge_all_into {
+                    merge_new_negotiation_into.insert(prev_parent, merge_all_into);
+                }
             }
 
             if *i == merge_all_into {
+                dbg!(merge_all_into);
                 merge_new_negotiation_into.remove(&merge_all_into);
             } else {
+                dbg!((*i, merge_all_into));
                 merge_new_negotiation_into.insert(*i, merge_all_into);
             }
         }
@@ -903,7 +933,12 @@ fn reconsider_negotiations(
     while inconsistent {
         // TODO(@mxgrey): Remove the counting and assertion after testing
         count += 1;
-        assert!(count < 1_000_000);
+        // assert!(count < 1_000_000);
+        if count > 1_000_000 {
+            println!("Unable to achieve a consistent renegotiation");
+            dbg!(&merge_new_negotiation_into);
+            assert!(false);
+        }
 
         inconsistent = false;
         let mut redirect = Vec::new();
@@ -1054,7 +1089,7 @@ fn find_pre_initial_conflict(
         }
     };
 
-    let i_a = match find_spillover_conflict(
+    let (i_a, t0) = match find_spillover_conflict(
         mt_a.trajectory.iter(),
         profile_a,
         wp_b,
@@ -1066,7 +1101,7 @@ fn find_pre_initial_conflict(
     };
 
     let mut range_a = mt_a.get_decision_range(i_a);
-    let mut range_b = DecisionRange::Before(mt_b.initial_state.clone());
+    let mut range_b = DecisionRange::Before(mt_b.initial_state.clone(), t0);
     if swapped {
         std::mem::swap(&mut range_a, &mut range_b);
     }
@@ -1093,7 +1128,7 @@ fn find_post_finish_conflict(
 
     let wp_b = mt_b.trajectory.finish_motion().clone();
 
-    let i_a = match find_spillover_conflict(
+    let (i_a, tf) = match find_spillover_conflict(
         mt_a.trajectory.iter(),
         profile_a,
         wp_b,
@@ -1107,7 +1142,7 @@ fn find_post_finish_conflict(
     // dbg!((relative_i_a, i_a));
     let mut range_a = mt_a.get_decision_range(i_a);
     // let mut range_b = mt_b.get_decision_range(mt_b.trajectory.len());
-    let mut range_b = DecisionRange::After(mt_b.final_state);
+    let mut range_b = DecisionRange::After(mt_b.final_state, tf);
     if swapped {
         std::mem::swap(&mut range_a, &mut range_b);
     }
@@ -1124,7 +1159,7 @@ fn find_spillover_conflict(
     // If trailing is true that means we're looking at the indefinite ending of a trajectory.
     // If trailing is false that means we're looking at the indefinite beginning of a trajectory.
     trailing: bool,
-) -> Option<usize> {
+) -> Option<(usize, TimePoint)> {
     let bb_b = BoundingBox::for_point(wp_b.point()).inflated_by(profile_b.footprint_radius());
     let wp_b: WaypointR2 = wp_b.into();
     let conflict_distance_squared = profile_a.conflict_distance_squared_for(profile_b);
@@ -1149,12 +1184,18 @@ fn find_spillover_conflict(
             (wp_b.with_time(wp0_a.time), wp_b)
         };
 
+        let t = if trailing {
+            wp1_a.time
+        } else {
+            wp0_a.time
+        };
+
         if have_conflict(
             (&wp0_a, &wp1_a), None, profile_a,
             (&wp0_b, &wp1_b), Some(bb_b), profile_b,
             conflict_distance_squared,
         ) {
-            return Some(i_a);
+            return Some((i_a, t));
         }
         // if have_conflict(
         //     dbg!((&wp0_a, &wp1_a)), None, profile_a,
