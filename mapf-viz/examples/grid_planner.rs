@@ -32,7 +32,8 @@ use mapf::{
     graph::{
         SharedGraph,
         occupancy::{
-            Visibility, VisibilityGraph, SparseGrid, Cell, NeighborhoodGraph, Grid
+            SparseGrid, Cell, NeighborhoodGraph, Grid,
+            AccessibilityGraph, Accessibility,
         },
     },
     motion::{
@@ -51,7 +52,7 @@ use mapf::{
     negotiation::*,
 };
 use mapf_viz::{
-    SparseGridOccupancyVisual, InfiniteGrid,
+    SparseGridAccessibilityVisual, InfiniteGrid,
     spatial_canvas::{SpatialCanvas, SpatialCanvasProgram, SpatialCache, InclusionZone},
     toggle::{Toggle, Toggler, KeyToggler},
 };
@@ -62,6 +63,8 @@ use std::{
 };
 use native_dialog::FileDialog;
 use clap::Parser;
+
+type SparseAccessibility = Accessibility<SparseGrid>;
 
 const ASCII_UPPER: [char; 26] = [
     'A', 'B', 'C', 'D', 'E',
@@ -105,8 +108,6 @@ fn triangular_for<Item>(
         }
     }
 }
-
-type SparseVisibility = Visibility<SparseGrid>;
 
 fn serialize_grid(grid: &SparseGrid) -> HashMap<i64, Vec<i64>> {
     let mut ser: HashMap<i64, Vec<i64>> = HashMap::new();
@@ -244,14 +245,12 @@ struct EndpointSelector<Message> {
     pub show_details: bool,
     pub selected_agent: Option<String>,
     shift: KeyToggler,
-    _msg: std::marker::PhantomData<Message>,
+    _ignore: std::marker::PhantomData<Message>,
 }
 
 #[derive(Debug, Clone)]
 struct AgentContext {
     agent: Agent,
-    start_visibility: Vec<Cell>,
-    goal_visibility: Vec<Cell>,
     start_open: bool,
     start_available: bool,
     goal_open: bool,
@@ -263,8 +262,6 @@ impl AgentContext {
     fn new(agent: Agent) -> Self {
         Self {
             agent,
-            start_visibility: Vec::new(),
-            goal_visibility: Vec::new(),
             start_open: false,
             start_available: false,
             goal_open: false,
@@ -306,6 +303,13 @@ impl Endpoint {
             Endpoint::Goal => ctx.goal_available = value,
         }
     }
+
+    fn set_accessibility(&self, ctx: &mut AgentContext, value: bool) {
+        match self {
+            Endpoint::Start => ctx.start_open = value,
+            Endpoint::Goal => ctx.goal_open = value,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -334,7 +338,7 @@ impl<Message> EndpointSelector<Message> {
             goal_color,
             show_details: false,
             shift: KeyToggler::for_key(keyboard::KeyCode::LShift),
-            _msg: Default::default(),
+            _ignore: Default::default(),
         }
     }
 
@@ -356,7 +360,7 @@ impl<Message> EndpointSelector<Message> {
 
     fn update_endpoint_conflicts(
         &mut self, endpoint: Endpoint,
-        visibility: &SparseVisibility,
+        accessibility: &SparseAccessibility,
     ) {
         let Some(selected) = &self.selected_agent else { return };
         let cell: Cell = if let Some(ctx) = self.agents.get(selected) {
@@ -365,22 +369,24 @@ impl<Message> EndpointSelector<Message> {
             return
         };
 
-        // Start by assuming all are valid
-        for (_, ctx) in &mut self.agents {
-            endpoint.set_availability(ctx, true);
-        }
+        let cs = accessibility.grid().cell_size();
+        let p = cell.center_point(cs);
 
-        let cs = visibility.grid().cell_size();
-        let p = cell.to_center_point(cs);
-        if visibility.grid().is_square_occupied(p, 2.0*visibility.agent_radius()).is_some() {
-            endpoint.set_availability(self.agents.get_mut(selected).unwrap(), false);
+        // Start by assuming all are valid
+        for (n, ctx) in &mut self.agents {
+            endpoint.set_availability(ctx, true);
+
+            endpoint.set_accessibility(
+                ctx,
+                accessibility.grid().is_circle_occupied(p, ctx.agent.radius).is_none(),
+            );
         }
 
         // Test O(N^2) for invalidity. We could make this way more efficient.
         let mut invalidated = Vec::new();
         triangular_for(self.agents.iter(), |(name_i, ctx_i), (name_j, ctx_j)| {
-            let p_i = endpoint.of(&ctx_i.agent).to_center_point(cs);
-            let p_j = endpoint.of(&ctx_j.agent).to_center_point(cs);
+            let p_i = endpoint.of(&ctx_i.agent).center_point(cs);
+            let p_j = endpoint.of(&ctx_j.agent).center_point(cs);
             let dist = (p_i - p_j).norm();
             let min_dist = ctx_i.agent.radius + ctx_j.agent.radius;
             if dist < min_dist {
@@ -435,33 +441,6 @@ impl<Message> EndpointSelector<Message> {
             None => false,
         }
     }
-
-    pub fn calculate_visibility(&mut self, visibility: &SparseVisibility) {
-        for (_, ctx) in &mut self.agents {
-            for (cell, validity, visible) in [
-                (ctx.agent.start, &mut ctx.start_open, &mut ctx.start_visibility),
-                (ctx.agent.goal, &mut ctx.goal_open, &mut ctx.goal_visibility),
-            ] {
-                let cell: Cell = cell.into();
-                let p = cell.to_center_point(visibility.grid().cell_size());
-                *validity = visibility.grid().is_square_occupied(
-                    p, 2.0*ctx.agent.radius,
-                ).is_none();
-                *visible = visibility.calculate_visibility(cell).collect();
-            }
-
-            ctx.start_sees_goal = false;
-            if ctx.start_open && ctx.goal_open {
-                let cell_start: Cell = ctx.agent.start.into();
-                let cell_goal: Cell = ctx.agent.goal.into();
-                let p_start = cell_start.to_center_point(self.cell_size);
-                let p_goal = cell_goal.to_center_point(self.cell_size);
-                ctx.start_sees_goal = visibility.grid().is_sweep_occupied(
-                    p_start, p_goal, 2.0*ctx.agent.radius
-                ).is_none();
-            }
-        }
-    }
 }
 
 impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
@@ -509,8 +488,8 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                 if ctx.start_sees_goal {
                     let cell_s: Cell = ctx.agent.start.into();
                     let cell_g: Cell = ctx.agent.goal.into();
-                    let p_start = cell_s.to_center_point(self.cell_size);
-                    let p_goal = cell_g.to_center_point(self.cell_size);
+                    let p_start = cell_s.center_point(self.cell_size);
+                    let p_goal = cell_g.center_point(self.cell_size);
                     frame.stroke(
                         &Path::line(
                             [p_start.x as f32, p_start.y as f32].into(),
@@ -525,29 +504,13 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                 }
             }
 
-            for (cell, angle, color, valid, visibility) in [
-                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid(), &ctx.start_visibility),
-                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid(), &ctx.goal_visibility)
+            for (cell, angle, color, valid) in [
+                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid()),
+                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid())
             ] {
                 let radius = ctx.agent.radius as f32;
                 let cell: Cell = cell.into();
-                let p = cell.to_center_point(self.cell_size);
-                if self.show_details {
-                    for v_cell in visibility {
-                        let p_v = v_cell.to_center_point(self.cell_size);
-                        frame.stroke(
-                            &Path::line(
-                                [p.x as f32, p.y as f32].into(),
-                                [p_v.x as f32, p_v.y as f32].into()
-                            ),
-                            Stroke{
-                                color,
-                                width: 5_f32,
-                                ..Default::default()
-                            }
-                        );
-                    }
-                }
+                let p = cell.center_point(self.cell_size);
 
                 draw_agent(frame, p, angle, radius, color);
                 let is_selected = self.selected_agent.as_ref().filter(|n| **n == *name).is_some();
@@ -580,7 +543,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
         for (name, ctx) in &self.agents {
             for (kind, cell, offset) in [("Start", ctx.agent.start, -16), ("Goal", ctx.agent.goal, 0)] {
                 let cell: Cell = cell.into();
-                let p = cell.to_center_point(self.cell_size);
+                let p = cell.center_point(self.cell_size);
                 let r = ctx.agent.radius as f32;
                 let delta = iced::Vector::new(r, -r);
                 let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
@@ -603,7 +566,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
         for (_, ctx) in &self.agents {
             for endpoint in [ctx.agent.start, ctx.agent.goal] {
                 let cell: Cell = endpoint.into();
-                let p = cell.to_center_point(self.cell_size);
+                let p = cell.center_point(self.cell_size);
                 for v in [[1.0, 1.0], [-1.0, -1.0]] {
                     let v: Vector = v.into();
                     let r = p + ctx.agent.radius*v;
@@ -778,35 +741,8 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         bound: iced::Rectangle,
         _spatial_cursor: canvas::Cursor
     ) {
-        // for (radius, trajectory) in &self.solutions {
-        //     let mut sequence: HashMap<Cell, Vec<String>> = HashMap::new();
-        //     for (i, wp) in trajectory.iter().enumerate() {
-        //         sequence.entry(
-        //             Cell::from_point(
-        //                 Point::from(wp.position.translation.vector), self.cell_size
-        //             )
-        //         ).or_default().push(i.to_string());
-        //     }
-
-        //     let r = *radius as f32 / 2_f32.sqrt();
-        //     let delta = iced::Vector::new(r, r);
-        //     for (cell, seq) in sequence {
-        //         let p = cell.to_center_point(self.cell_size);
-        //         let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
-        //         if bound.contains(p) {
-        //             hud.at(
-        //                 p,
-        //                 |frame| {
-        //                     frame.translate([0_f32, -16_f32].into());
-        //                     frame.fill_text(seq.join(", "));
-        //                 }
-        //             );
-        //         }
-        //     }
-        // }
-
         for (cell, v) in &self.vertex_lookup {
-            let p = cell.to_center_point(self.cell_size);
+            let p = cell.center_point(self.cell_size);
             let p = iced::Point::new(p.x as f32, p.y as f32);
             if bound.contains(p) {
                 hud.at(
@@ -826,10 +762,11 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
     }
 }
 
-spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual, EndpointSelector, SolutionVisual);
+spatial_layers!(GridLayers<Message>: SparseGridAccessibilityVisual, InfiniteGrid, EndpointSelector, SolutionVisual);
 
-// type MyAlgo = AStarConnect<SippSE2<NeighborhoodGraph<SparseGrid>, VisibilityGraph<SparseGrid>>>;
-type MyAlgo = AStarConnect<SippSE2<AdjacentFreespace, AdjacentFreespace>>;
+type SparseAccessibilityGraph = AccessibilityGraph<SparseGrid>;
+
+type MyAlgo = AStarConnect<SippSE2<SparseAccessibilityGraph, SparseAccessibilityGraph>>;
 type TreeTicket = mapf::algorithm::tree::TreeQueueTicket<mapf::domain::Cost<f64>>;
 
 struct App {
@@ -916,18 +853,17 @@ impl App {
     }
 
     fn set_robot_radius(&mut self, radius: f64) {
-        self.canvas.program.layers.1.set_robot_radius(radius as f32);
+        self.canvas.program.layers.0.set_robot_radius(radius as f32);
         let endpoint_selector = &mut self.canvas.program.layers.2;
         if endpoint_selector.set_agent_radius(radius) {
             for endpoint in [Endpoint::Start, Endpoint::Goal] {
                 if let Some(cell) = endpoint_selector.endpoint_cell(endpoint) {
                     let cell: Cell = (*cell).into();
-                    let p = cell.to_center_point(endpoint_selector.cell_size);
-                    let valid = self.canvas.program.layers.1.grid().is_square_occupied(p, 2.0*radius).is_none();
+                    let p = cell.center_point(endpoint_selector.cell_size);
+                    let valid = self.canvas.program.layers.0.grid().is_circle_occupied(p, radius).is_none();
                     endpoint_selector.set_endpoint_valid(endpoint, valid);
                 }
             }
-            self.recalculate_visibility();
             self.canvas.cache.clear();
         }
 
@@ -937,16 +873,12 @@ impl App {
     fn update_all_endpoints(&mut self) {
         self.canvas.program.layers.2.update_endpoint_conflicts(
             Endpoint::Start,
-            &self.canvas.program.layers.1.visibility(),
+            &self.canvas.program.layers.0.accessibility(),
         );
         self.canvas.program.layers.2.update_endpoint_conflicts(
             Endpoint::Goal,
-            &self.canvas.program.layers.1.visibility(),
+            &self.canvas.program.layers.0.accessibility(),
         );
-    }
-
-    fn recalculate_visibility(&mut self) {
-        self.canvas.program.layers.2.calculate_visibility(self.canvas.program.layers.1.visibility());
     }
 
     fn select_search_node(&mut self, value: usize) {
@@ -1058,8 +990,7 @@ impl App {
 
         self.canvas.program.layers.2.agents.insert(name.clone(), AgentContext::new(agent));
         self.canvas.program.layers.2.selected_agent = Some(name);
-        self.canvas.program.layers.1.set_robot_radius(agent.radius as f32);
-        self.recalculate_visibility();
+        self.canvas.program.layers.0.set_robot_radius(agent.radius as f32);
         self.update_all_endpoints();
         self.canvas.cache.clear();
         self.generate_plan();
@@ -1074,7 +1005,7 @@ impl App {
         Scenario {
             agents: self.canvas.program.layers.2.agents.iter().map(|(n, a)| (n.clone(), a.agent.clone())).collect(),
             obstacles: self.canvas.program.layers.3.obstacles.iter().map(|obs| Obstacle::new(obs.0, &obs.1, cell_size)).collect(),
-            occupancy: serialize_grid(self.canvas.program.layers.1.grid()),
+            occupancy: serialize_grid(self.canvas.program.layers.0.grid()),
             cell_size,
             camera_bounds,
         }
@@ -1090,7 +1021,7 @@ impl App {
 
         if self.debug_on {
             let endpoints = &self.canvas.program.layers.2;
-            let visibility = self.canvas.program.layers.1.visibility();
+            let accessibility = self.canvas.program.layers.0.accessibility();
             let Some(ctx) = endpoints.selected_agent() else { return };
 
             if !ctx.endpoints_valid() {
@@ -1115,14 +1046,8 @@ impl App {
             let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
             let profile = CircularProfile::new(r, 0.0, 0.0).expect("Bad profile sizes");
 
-            let shared_visibility = Arc::new(visibility.clone());
-            // let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
-            //     shared_visibility.clone(), [],
-            // ));
-            // let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
-            //     shared_visibility, [],
-            // ));
-            let activity_graph = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+            let shared_accessibility = Arc::new(accessibility.clone());
+            let activity_graph = SharedGraph::new(AccessibilityGraph::new(shared_accessibility));
             let heuristic_graph = activity_graph.clone();
 
             let (environment, minimum_time) = 'environment: {
@@ -1268,131 +1193,7 @@ impl App {
 
         self.negotiation_history = node_history;
         self.negotiation_history.sort_unstable_by_key(|n| n.id);
-        // self.negotiation_history.insert(0, solution_node);
         self.name_map = name_map;
-
-        // let endpoints = &self.canvas.program.layers.2;
-        // let visibility = self.canvas.program.layers.1.visibility();
-        // let mut other_agents: Vec<(f64, LinearTrajectorySE2)> = Vec::new();
-        // for (name, ctx) in &endpoints.agents {
-        //     dbg!((name, ctx.start_open, ctx.goal_open));
-        //     if !ctx.endpoints_valid() {
-        //         print!("Cannot plan for {name}:");
-        //         if !ctx.start_open {
-        //             print!(" invalid start |");
-        //         }
-        //         if !ctx.start_available {
-        //             print!(" start conflict |");
-        //         }
-        //         if !ctx.goal_open {
-        //             print!(" invalid goal |");
-        //         }
-        //         if !ctx.goal_available {
-        //             print!(" goal conflict |");
-        //         }
-        //         println!("");
-        //         continue;
-        //     }
-
-        //     let r = ctx.agent.radius;
-        //     self.canvas.program.layers.3.vertex_lookup.clear();
-
-        //     let shared_visibility = Arc::new(visibility.clone());
-        //     let heuristic_graph = SharedGraph::new(VisibilityGraph::new(
-        //         shared_visibility.clone(), [],
-        //     ));
-
-        //     let activity_graph = SharedGraph::new(NeighborhoodGraph::new(
-        //         shared_visibility, [],
-        //     ));
-
-        //     let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
-        //     let agent_radius = ctx.agent.radius;
-        //     let profile = CircularProfile::new(
-        //         agent_radius, agent_radius, agent_radius,
-        //     ).expect("Bad profile sizes");
-
-        //     let environment = Arc::new(
-        //         OverlayedDynamicEnvironment::new(
-        //             Arc::new({
-        //                 let mut env = DynamicEnvironment::new(profile);
-        //                 for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter().chain(other_agents.iter()) {
-        //                     env.obstacles.push(
-        //                         DynamicCircularObstacle::new(
-        //                             CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
-        //                         ).with_trajectory(Some(obs_traj.clone()))
-        //                     );
-        //                 }
-        //                 env
-        //             })
-        //         )
-        //     );
-
-        //     let domain = InformedSearch::new_sipp_se2(
-        //         activity_graph,
-        //         heuristic_graph,
-        //         extrapolator,
-        //         environment,
-        //         TravelEffortCost::save_one_second_with_detour_up_to(
-        //             5.0,
-        //             360_f64.to_radians(),
-        //         ),
-        //     ).unwrap();
-
-        //     let start = ctx.agent.make_start();
-        //     let goal = ctx.agent.make_goal();
-
-        //     println!("About to plan for {name}:\nStart: {start:#?}\nGoal: {goal:#?}");
-
-        //     let start_time = std::time::Instant::now();
-        //     let planner = Planner::new(AStarConnect(domain))
-        //         .with_halting(MeasureLimit(Some(10000000)));
-        //         // .with_halting(MeasureLimit(None));
-        //     let mut search = planner.plan(start, goal).unwrap();
-
-        //     self.canvas.program.layers.3.searches.clear();
-        //     self.debug_step_count = 0;
-        //     if self.debug_on {
-        //         self.memory = search.memory().0
-        //             .queue.clone().into_iter_sorted()
-        //             .map(|n| n.0.clone()).collect();
-        //         self.search = Some((r, search));
-        //     } else {
-        //         let result = search.solve().unwrap();
-        //         let elapsed_time = start_time.elapsed();
-        //         match result {
-        //             SearchStatus::Solved(solution) => {
-        //                 // println!("Solution: {:#?}", solution);
-        //                 // println!(" ======================= ");
-        //                 let trajectory = solution.make_trajectory().unwrap().map(|t|
-        //                     t
-        //                     .trajectory
-        //                     .with_indefinite_initial_time(true)
-        //                     .with_indefinite_finish_time(true)
-        //                 );
-        //                 let arrival_time = trajectory.as_ref().map(|t| t.motion_duration().as_secs_f64()).unwrap_or(0.0);
-        //                 let presence = trajectory.map(|t| (r, t));
-        //                 self.canvas.program.layers.3.solutions.extend(presence.as_ref().into_iter().cloned());
-        //                 other_agents.extend(presence.into_iter());
-        //                 // println!(" ======================= ");
-        //                 // println!("Trajectory: {:#?}", self.canvas.program.layers.3.solutions);
-        //                 println!(
-        //                     "{name} Arrival time: {arrival_time:?}, cost: {:?}",
-        //                     solution.total_cost.0,
-        //                 );
-        //                 self.canvas.cache.clear();
-        //             },
-        //             SearchStatus::Impossible => {
-        //                 println!("Impossible to solve!");
-        //             },
-        //             SearchStatus::Incomplete => {
-        //                 println!("Planning is incomplete..?");
-        //             }
-        //         }
-        //         println!("Planning took {:?}s", elapsed_time.as_secs_f64());
-        //     }
-        //     self.debug_node_selected = None;
-        // }
     }
 }
 
@@ -1441,7 +1242,7 @@ fn load_scenario(filename: Option<&String>) -> (
                 LinearTrajectorySE2::from_iter(
                     obs.trajectory.into_iter()
                     .map(|(t, x, y)| {
-                        let p = Cell::new(x, y).to_center_point(cell_size);
+                        let p = Cell::new(x, y).center_point(cell_size);
                         WaypointSE2::new_f64(t, p.x, p.y, 0.0)
                     })
                 ).ok()
@@ -1483,13 +1284,12 @@ impl Application for App {
         let mut canvas = SpatialCanvas::new(
             GridLayers{
                 layers: (
-                    InfiniteGrid::new(cell_size),
-                    SparseGridOccupancyVisual::new(
+                    SparseGridAccessibilityVisual::new(
                         grid,
                         default_radius() as f32,
-                        None,
                         Some(Box::new(|| { Message::OccupancyChanged })),
-                    ).showing_visibility_graph(false),
+                    ).showing_accessibility(true),
+                    InfiniteGrid::new(cell_size),
                     EndpointSelector::new(
                         agents,
                         cell_size as f64,
@@ -1539,14 +1339,12 @@ impl Application for App {
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
-            // Calling add_agent also recalculates visibility
             app.add_agent();
             zone.include(iced::Point::new(-10.0, -10.0));
             zone.include(iced::Point::new(10.0, 10.0));
         }
 
         app.update_all_endpoints();
-        app.recalculate_visibility();
         app.generate_plan();
 
         let set_view = Command::perform(async move {}, move |_| Message::SetView(zone));
@@ -1607,11 +1405,10 @@ impl Application for App {
                     return Command::none();
                 }
 
-                self.canvas.program.layers.1.set_grid(grid);
+                self.canvas.program.layers.0.set_grid(grid);
                 self.canvas.program.layers.2.agents = agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
                 self.canvas.program.layers.3.obstacles = obstacles;
                 self.update_all_endpoints();
-                self.recalculate_visibility();
                 self.canvas.cache.clear();
                 self.generate_plan();
                 return Command::perform(async move {}, move |_| Message::SetView(zone));
@@ -1623,8 +1420,7 @@ impl Application for App {
                 match self.canvas.program.layers.2.agents.get(&new_agent) {
                     Some(ctx) => {
                         self.canvas.program.layers.2.selected_agent = Some(new_agent);
-                        self.canvas.program.layers.1.set_robot_radius(ctx.agent.radius as f32);
-                        self.recalculate_visibility();
+                        self.canvas.program.layers.0.set_robot_radius(ctx.agent.radius as f32);
                         self.canvas.cache.clear();
                     }
                     None => {}
@@ -1673,14 +1469,14 @@ impl Application for App {
                 if let iced_native::Event::Keyboard(event) = event {
                     match self.show_details.key_toggle(event) {
                         Toggle::On => {
-                            self.canvas.program.layers.1.show_visibility_graph = true;
-                            self.canvas.program.layers.1.show_details(true);
+                            // self.canvas.program.layers.0.show_accessibility = true;
+                            self.canvas.program.layers.0.show_accessibility = false;
                             self.canvas.program.layers.2.show_details = true;
                             self.canvas.cache.clear();
                         },
                         Toggle::Off => {
-                            self.canvas.program.layers.1.show_visibility_graph = false;
-                            self.canvas.program.layers.1.show_details(false);
+                            // self.canvas.program.layers.0.show_accessibility = false;
+                            self.canvas.program.layers.0.show_accessibility = true;
                             self.canvas.program.layers.2.show_details = false;
                             self.canvas.cache.clear();
                         },
@@ -1737,15 +1533,13 @@ impl Application for App {
                     EndpointSelection::Cell(endpoint) => {
                         self.canvas.program.layers.2.update_endpoint_conflicts(
                             endpoint,
-                            self.canvas.program.layers.1.visibility(),
+                            self.canvas.program.layers.0.accessibility(),
                         );
-                        self.recalculate_visibility();
                     }
                 }
                 self.generate_plan();
             },
             Message::OccupancyChanged => {
-                self.recalculate_visibility();
                 self.generate_plan();
             },
             Message::SelectDebugNode(value) => {
@@ -1809,7 +1603,6 @@ impl Application for App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // let agent_radius = self.canvas.program.layers.1.visibility().agent_radius() as f32;
         let (agent_yaw, agent_radius, agent_speed, agent_spin) = if let Some(ctx) = self.canvas.program.layers.2.selected_agent() {
             (ctx.agent.yaw, ctx.agent.radius, ctx.agent.speed, ctx.agent.spin)
         } else {

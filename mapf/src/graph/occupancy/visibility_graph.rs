@@ -56,7 +56,7 @@ fn gather_points_of_interest<G: Grid>(
         if visibility
             .grid()
             .is_square_occupied(
-                interest.to_center_point(visibility.grid().cell_size()),
+                interest.center_point(visibility.grid().cell_size()),
                 visibility.agent_radius(),
             )
             .is_some()
@@ -81,8 +81,8 @@ fn gather_points_of_interest<G: Grid>(
         if visibility
             .grid()
             .is_sweep_occupied(
-                interest_i.to_center_point(cell_size),
-                interest_j.to_center_point(cell_size),
+                interest_i.center_point(cell_size),
+                interest_j.center_point(cell_size),
                 2.0 * visibility.agent_radius(),
             )
             .is_none()
@@ -131,7 +131,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         // We don't bother to filter out occupied cells because those cells will
         // not generate any valid edges anyway. If we filtered them out here we
         // would be frequently doing redundant occupancy checking.
-        Some(cell.to_center_point(self.visibility.grid().cell_size()))
+        Some(cell.center_point(self.visibility.grid().cell_size()))
     }
 
     fn edges_from_vertex<'a, 'b>(&'a self, from_cell: &'b Self::Key) -> Self::EdgeIter<'a>
@@ -145,7 +145,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
                 self.visibility
                     .grid()
                     .is_square_occupied(
-                        from_cell.to_center_point(self.visibility.grid().cell_size()),
+                        from_cell.center_point(self.visibility.grid().cell_size()),
                         2.0 * self.visibility.agent_radius(),
                     )
                     .is_none()
@@ -171,9 +171,9 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
                                     .iter()
                                     .filter(move |poi| {
                                         let to_p =
-                                            poi.to_center_point(self.visibility.grid().cell_size());
+                                            poi.center_point(self.visibility.grid().cell_size());
                                         let from_p = from_cell
-                                            .to_center_point(self.visibility.grid().cell_size());
+                                            .center_point(self.visibility.grid().cell_size());
                                         self.visibility
                                             .grid()
                                             .is_sweep_occupied(
@@ -207,8 +207,8 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
             return None;
         }
 
-        let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
-        let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
+        let from_p = from_key.center_point(self.visibility.grid().cell_size());
+        let to_p = to_key.center_point(self.visibility.grid().cell_size());
         for p in [from_p, to_p] {
             if self
                 .visibility
@@ -283,6 +283,9 @@ impl<G: Grid> Clone for NeighborhoodGraph<G> {
 
 /// From any unoccupied cell, expand towards both its adjacent cells and the
 /// visibility graph.
+///
+/// Similar to [`VisibilityGraph`] except it also expands to adjacent cells like
+/// [`super::AdjacencyGraph`].
 impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Key = Cell;
     type Vertex = Point;
@@ -296,7 +299,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         if self.visibility.grid().is_occupied(&cell) {
             None
         } else {
-            Some(cell.to_center_point(self.visibility.grid().cell_size()))
+            Some(cell.center_point(self.visibility.grid().cell_size()))
         }
     }
 
@@ -306,7 +309,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     {
         // dbg!("neighborhood graph");
         let from_cell = *from_cell;
-        let from_p = from_cell.to_center_point(self.visibility.grid().cell_size());
+        let from_p = from_cell.center_point(self.visibility.grid().cell_size());
         [from_cell]
             .into_iter()
             .filter(move |_| {
@@ -349,7 +352,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
                                     self.points_of_interest
                                         .iter()
                                         .filter(move |poi| {
-                                            let to_p = poi.to_center_point(
+                                            let to_p = poi.center_point(
                                                 self.visibility.grid().cell_size(),
                                             );
                                             self.visibility
@@ -387,8 +390,8 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
             return None;
         }
 
-        let from_p = from_key.to_center_point(self.visibility.grid().cell_size());
-        let to_p = to_key.to_center_point(self.visibility.grid().cell_size());
+        let from_p = from_key.center_point(self.visibility.grid().cell_size());
+        let to_p = to_key.center_point(self.visibility.grid().cell_size());
         for p in [from_p, to_p] {
             if self
                 .visibility

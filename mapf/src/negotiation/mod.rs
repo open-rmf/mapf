@@ -36,10 +36,9 @@ use crate::{
         path::{MetaTrajectory, DecisionRange}
     },
     planner::{Planner, halt::QueueLengthLimit},
-    graph::{SharedGraph, occupancy::*, Graph},
+    graph::{SharedGraph, occupancy::*},
     error::ThisError,
     util::triangular_for,
-    error::NoError,
 };
 use std::{
     collections::{HashMap, HashSet, BinaryHeap},
@@ -57,101 +56,6 @@ pub enum NegotiationError {
     PlanningFailed((Vec<NegotiationNode>, HashMap<usize, String>)),
 }
 
-#[derive(Clone)]
-pub struct AdjacentFreespace {
-    grid: Arc<SparseGrid>,
-}
-
-impl AdjacentFreespace {
-    pub fn new(grid: Arc<SparseGrid>) -> Self {
-        Self { grid }
-    }
-}
-
-impl Graph for AdjacentFreespace {
-    type Key = Cell;
-    type Vertex = Point;
-    type EdgeAttributes = ();
-
-    type VertexRef<'a> = Point;
-    type Edge<'a> = (Cell, Cell);
-    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a;
-
-    fn vertex<'a>(&'a self, cell: &Self::Key) -> Option<Self::VertexRef<'a>> {
-        if self.grid.is_occupied(cell) {
-            None
-        } else {
-            Some(cell.to_center_point(self.grid.cell_size()))
-        }
-    }
-
-    fn edges_from_vertex<'a>(&'a self, of_cell: &Self::Key) -> Self::EdgeIter<'a>
-    where
-        Self: 'a,
-        Self::Vertex: 'a,
-        Self::Key: 'a,
-        Self::EdgeAttributes: 'a
-    {
-        let of_cell = *of_cell;
-        [of_cell]
-            .into_iter()
-            .filter(|of_cell| {
-                !self.grid.is_occupied(of_cell)
-            })
-            .flat_map(move |of_cell| {
-                [-1, 0, 1].into_iter().flat_map(move |i| {
-                    [-1, 0, 1]
-                        .into_iter()
-                        .filter(move |j| !(i == 0 && *j == 0))
-                        .filter_map(move |j| {
-                            let neighbor = of_cell.shifted(i, j);
-                            if self.grid.is_occupied(&neighbor) {
-                                return None;
-                            }
-
-                            if i != 0 && j != 0 {
-                                if self.grid.is_occupied(&of_cell.shifted(i, 0)) {
-                                    return None;
-                                }
-
-                                if self.grid.is_occupied(&of_cell.shifted(0, j)) {
-                                    return None;
-                                }
-                            }
-
-                            Some((of_cell, neighbor))
-                        })
-                })
-            })
-    }
-
-    type LazyEdgeIter<'a> = [(Cell, Cell); 0];
-
-    fn lazy_edges_between<'a>(
-        &'a self,
-        _: &Self::Key,
-        _: &Self::Key,
-    ) -> Self::LazyEdgeIter<'a>
-    where
-        Self: 'a,
-        Self::Vertex: 'a,
-        Self::Key: 'a,
-        Self::EdgeAttributes: 'a
-    {
-        []
-    }
-}
-
-impl Reversible for AdjacentFreespace {
-    type ReversalError = NoError;
-    fn reversed(&self) -> Result<Self, Self::ReversalError>
-    where
-        Self: Sized
-    {
-        Ok(self.clone())
-    }
-}
-
 pub fn negotiate(
     scenario: &Scenario,
     queue_length_limit: Option<usize>,
@@ -165,8 +69,8 @@ pub fn negotiate(
             (a.start_cell(), b.start_cell()),
             (a.goal_cell(), b.goal_cell()),
         ] {
-            let pa = cell_a.to_center_point(cs);
-            let pb = cell_b.to_center_point(cs);
+            let pa = cell_a.center_point(cs);
+            let pb = cell_b.center_point(cs);
             let dist = (pa - pb).norm();
             let min_dist = a.radius + b.radius;
             if dist < min_dist {
@@ -178,7 +82,7 @@ pub fn negotiate(
         }
     });
     if !conflicts.is_empty() {
-        return Err(NegotiationError::ConflictingEndpoints(conflicts))
+        return Err(NegotiationError::ConflictingEndpoints(conflicts));
     }
 
     let (name_map, agents) = {
@@ -209,10 +113,11 @@ pub fn negotiate(
 
     let planners = agents.iter().map(|a| {
         let profile = CircularProfile::new(a.radius, 0.0, 0.0).unwrap();
-        let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
+        let accessibility = Arc::new(Accessibility::new(grid.clone(), a.radius));
+        // let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
         // let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
         // let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
-        let activity = SharedGraph::new(AdjacentFreespace::new(Arc::new(visibility.grid().clone())));
+        let activity = SharedGraph::new(AccessibilityGraph::new(accessibility));
         let heuristic = activity.clone();
         let environment = Arc::new(CcbsEnvironment::new(
             Arc::new(DynamicEnvironment::new(profile))
@@ -230,7 +135,10 @@ pub fn negotiate(
     for (i, (agent, planner)) in agents.iter().zip(planners.iter()).enumerate() {
         let start = agent.make_start();
         let goal = agent.make_goal();
-        let s = match planner.plan(start, goal).unwrap().solve().unwrap().solution() {
+        let s = match match planner.plan(start, goal) {
+            Ok(search) => search,
+            Err(err) => return Err(NegotiationError::PlanningImpossible(format!("{err:?}").to_owned())),
+        }.solve().unwrap().solution() {
             Some(s) => s,
             None => {
                 return Err(NegotiationError::PlanningImpossible(name_map.get(&i).unwrap().clone()));

@@ -22,9 +22,8 @@ use crate::{
         r2::Positioned,
         se2::{quickest_path::QuickestPathSearch, *},
         CcbsEnvironment, SpeedLimiter, TravelEffortCost,
-        SafeIntervalCache,
+        SafeIntervalCache, SafeIntervalCloser,
     },
-    premade::{SafeIntervalCloser, SafeIntervalMotion},
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
     error::{StdError, Anyhow},
 };

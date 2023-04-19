@@ -23,6 +23,7 @@ use crate::{
         r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2, MaybePositioned},
         se2::{
             DifferentialDriveLineFollow, DifferentialDriveLineFollowMotion,
+            DifferentialDriveLineFollowError,
             KeySE2, MaybeOriented, StateSE2, MergeIntoGoal,
         },
         SpeedLimiter, Timed, MaybeTimed, TimePoint,
@@ -166,9 +167,9 @@ where
             let solution: Path<_, _, _> = match self
                 .planner
                 .plan(start.key.vertex.clone(), goal.clone())
-                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .map_err(|err| QuickestPathHeuristicError::PlannerError(err.into()))?
                 .solve()
-                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .map_err(|err| QuickestPathHeuristicError::PlannerError(err.into()))?
                 .solution()
             {
                 Some(solution) => solution,
@@ -178,7 +179,7 @@ where
             let mut cost = match self
                 .weight_se2
                 .initial_cost(start)
-                .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
             {
                 Some(cost) => cost,
                 None => break 'cost None,
@@ -194,7 +195,7 @@ where
                     &(),
                     (Some(&start.key.vertex), Some(goal)),
                 ) {
-                    Some(wp) => wp.map_err(|_| QuickestPathHeuristicError::Extrapolation)?,
+                    Some(wp) => wp.map_err(QuickestPathHeuristicError::Extrapolation)?,
                     None => break 'cost None,
                 };
 
@@ -202,7 +203,7 @@ where
                 let child_cost = match self
                     .weight_se2
                     .cost(&previous_state, &action, &child_state)
-                    .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                    .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
                 {
                     Some(cost) => cost,
                     None => break 'cost None,
@@ -278,10 +279,10 @@ where
         ) {
             Some(r) => {
                 let (connect, final_state): (DifferentialDriveLineFollowMotion, _) = r
-                    .map_err(|_| QuickestPathHeuristicError::Extrapolation)?;
+                    .map_err(QuickestPathHeuristicError::Extrapolation)?;
 
                 match self.weight_se2.cost(&arrival_state, &connect, &final_state)
-                    .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                    .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
                 {
                     Some(connection_cost) => invariant.cost + connection_cost,
                     None => return Ok(None),
@@ -296,14 +297,14 @@ where
 // TODO(@mxgrey): Put actual error information inside of here.
 #[derive(Debug, ThisError)]
 pub enum QuickestPathHeuristicError {
-    #[error("An error occurred in the planner")]
-    PlannerError,
+    #[error("An error occurred in the planner:\n{0}")]
+    PlannerError(Anyhow),
     #[error("The mutex was poisoned")]
     PoisonedMutex,
-    #[error("An error occurred during SE2 extrapolation")]
-    Extrapolation,
-    #[error("An error occurred while calculating SE2 cost")]
-    BrokenWeight,
+    #[error("An error occurred during SE2 extrapolation:\n{0}")]
+    Extrapolation(DifferentialDriveLineFollowError),
+    #[error("An error occurred while calculating SE2 cost:\n{0}")]
+    BrokenWeight(Anyhow),
 }
 
 #[cfg(test)]
@@ -405,9 +406,9 @@ mod tests {
         .unwrap();
 
         let state_cell = Cell::new(0, 0);
-        let state_p = state_cell.to_center_point(cell_size);
+        let state_p = state_cell.center_point(cell_size);
         let goal_cell = Cell::new(10, 0);
-        let goal_p = goal_cell.to_center_point(cell_size);
+        let goal_p = goal_cell.center_point(cell_size);
         let from_state = StateSE2::new(
             state_cell,
             WaypointSE2::new_f64(0.0, state_p.x, state_p.y, 0.0),

@@ -26,14 +26,14 @@ use iced::{
 use iced_native;
 use mapf::graph::occupancy::{Grid, SparseGrid, Cell, CornerStatus};
 use mapf_viz::{
-    SparseGridOccupancyVisual, InfiniteGrid,
+    SparseGridVisibilityVisual, InfiniteGrid,
     spatial_canvas::SpatialCanvas,
     toggle::{Toggle, KeyToggler},
 };
 use mapf_viz::spatial_layers;
 use std::collections::{HashSet, HashMap};
 
-spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridOccupancyVisual);
+spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridVisibilityVisual);
 
 struct App {
     robot_size_slider: slider::State,
@@ -97,7 +97,7 @@ impl Application for App {
             GridLayers{
                 layers: (
                     InfiniteGrid::new(cell_size),
-                    SparseGridOccupancyVisual::new(
+                    SparseGridVisibilityVisual::new(
                         SparseGrid::new(cell_size as f64),
                         robot_radius,
                         Some(Box::new(Message::CornerSelected)),

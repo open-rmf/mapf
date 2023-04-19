@@ -233,7 +233,7 @@ mod tests {
         };
 
         let from_cell = Cell::new(2, 3);
-        let from_p = from_cell.to_center_point(cell_size);
+        let from_p = from_cell.center_point(cell_size);
         let from_state = StateSE2::new(
             from_cell,
             WaypointSE2::new_f64(0.0, from_p.x, from_p.y, 0.0),

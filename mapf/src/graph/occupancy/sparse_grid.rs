@@ -149,9 +149,9 @@ impl Grid for SparseGrid {
         let mut confirmed_changes = Vec::new();
         confirmed_changes.reserve(changes.len());
 
-        for change in changes {
-            if self.update_cell(change.0, *change.1) {
-                confirmed_changes.push((*change.0, *change.1));
+        for (cell, occupied) in changes {
+            if self.update_cell(cell, *occupied) {
+                confirmed_changes.push((*cell, *occupied));
             }
         }
 
@@ -214,6 +214,105 @@ impl Grid for SparseGrid {
         }
 
         return None;
+    }
+
+    fn is_circle_occupied(&self, p: Point, radius: f64) -> Option<Cell> {
+        let r_squared = radius.powi(2);
+        let min_center_dist_squared = (radius + self.cell_size/2.0).powi(2);
+        let max_center_dist_squared = (radius + std::f64::consts::SQRT_2 * self.cell_size/2.0).powi(2);
+        let delta = Vector::new(radius, radius);
+        let min_p = p - delta;
+        let max_p = p + delta;
+        let min_cell = Cell::from_point(min_p, self.cell_size);
+        let max_cell = Cell::new(
+            (max_p.x / self.cell_size).ceil() as i64,
+            (max_p.y / self.cell_size).ceil() as i64,
+        );
+
+        let point_inside = |p0: Point| {
+            let dp = p - p0;
+            return dp.dot(&dp) < r_squared;
+        };
+
+        let line_inside = |p0: Point, p1: Point| {
+            if point_inside(p0) {
+                return true;
+            }
+
+            if point_inside(p1) {
+                return true;
+            }
+
+            let n = p1 - p0;
+            let length = n.norm();
+            let n = n / length;
+            let s = (p - p0).dot(&n);
+            if s <= 0.0 || length <= s {
+                return false;
+            }
+
+            let pc = p0 + s * n;
+            let dp = pc - p;
+            return dp.dot(&dp) < r_squared;
+        };
+
+        for (i, column) in self.occupancy_map.range(min_cell.x..max_cell.x) {
+            for j in column.range(min_cell.y..max_cell.y) {
+                // The fact that this cell is occupied does not guarantee that
+                // it intersects the circle. We still need to test if the square
+                // intersects the radius.
+                let cell = Cell::new(*i, *j);
+                let p_cell = cell.center_point(self.cell_size);
+                let dp = p - p_cell;
+                let center_dist_squared = dp.dot(&dp);
+                if center_dist_squared < min_center_dist_squared {
+                    return Some(cell);
+                }
+
+                if max_center_dist_squared <= center_dist_squared {
+                    // Cannot have an intersection for this cell because it's
+                    // definitely too far
+                    continue;
+                }
+
+                if dp.x > 0.0 {
+                    if line_inside(
+                        cell.bottom_right_point(self.cell_size),
+                        cell.top_right_point(self.cell_size),
+                    ) {
+                        return Some(cell);
+                    }
+                } else if dp.x < 0.0 {
+                    if line_inside(
+                        cell.bottom_left_point(self.cell_size),
+                        cell.top_left_point(self.cell_size),
+                    ) {
+                        return Some(cell);
+                    }
+                }
+
+                if dp.y > 0.0 {
+                    if line_inside(
+                        cell.top_left_point(self.cell_size),
+                        cell.top_right_point(self.cell_size),
+                    ) {
+                        return Some(cell);
+                    }
+                } else if dp.y < 0.0 {
+                    if line_inside(
+                        cell.bottom_left_point(self.cell_size),
+                        cell.bottom_right_point(self.cell_size),
+                    ) {
+                        return Some(cell);
+                    }
+                }
+
+                // If we reach this point then the circle does not intersect
+                // this cell.
+            }
+        }
+
+        None
     }
 
     fn is_sweep_occupied(&self, p0: Point, p1: Point, width: f64) -> Option<Cell> {
