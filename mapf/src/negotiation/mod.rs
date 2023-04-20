@@ -57,8 +57,6 @@ pub enum NegotiationError {
 pub fn negotiate(
     scenario: &Scenario,
     queue_length_limit: Option<usize>,
-// ) -> Result<HashMap<String, Proposal>, NegotiationError> {
-// ) -> Result<(NegotiationNode, HashMap<usize, String>), NegotiationError> {
 ) -> Result<(NegotiationNode, Vec<NegotiationNode>, HashMap<usize, String>), NegotiationError> {
     let cs = scenario.cell_size;
     let mut conflicts = HashMap::new();

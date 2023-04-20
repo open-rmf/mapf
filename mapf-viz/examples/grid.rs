@@ -31,14 +31,11 @@ use iced_native;
 use mapf::{
     graph::{
         SharedGraph,
-        occupancy::{
-            SparseGrid, Cell, NeighborhoodGraph, Grid,
-            AccessibilityGraph, Accessibility,
-        },
+        occupancy::{SparseGrid, Cell, Grid, AccessibilityGraph, Accessibility},
     },
     motion::{
         Trajectory, Motion, CcbsEnvironment, DynamicEnvironment,
-        CircularProfile, DynamicCircularObstacle, TravelEffortCost, Environment,
+        CircularProfile, DynamicCircularObstacle, TravelEffortCost,
         se2::{
             Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
             DifferentialDriveLineFollow,
@@ -140,20 +137,6 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
             }
         } else {
             self.value = Some(other.clone());
-            return true;
-        }
-
-        return false;
-    }
-
-    pub(crate) fn consider_take(&mut self, other: T) -> bool {
-        if let Some(value) = &self.value {
-            if std::cmp::Ordering::Less == (self.f)(&other, value) {
-                self.value = Some(other);
-                return true;
-            }
-        } else {
-            self.value = Some(other);
             return true;
         }
 
@@ -373,7 +356,7 @@ impl<Message> EndpointSelector<Message> {
         let p = cell.center_point(cs);
 
         // Start by assuming all are valid
-        for (n, ctx) in &mut self.agents {
+        for ctx in self.agents.values_mut() {
             endpoint.set_availability(ctx, true);
 
             endpoint.set_accessibility(
@@ -790,7 +773,8 @@ struct App {
     show_details: KeyToggler,
     search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, QueueLengthLimit>)>,
     step_progress: button::State,
-    debug_on: bool,
+    debug_planner_on: bool,
+    debug_negotiation_on: bool,
     search_memory: Vec<TreeTicket>,
     negotiation_history: Vec<NegotiationNode>,
     name_map: HashMap<usize, String>,
@@ -1039,7 +1023,7 @@ impl App {
         self.canvas.program.layers.3.searches.clear();
         self.canvas.cache.clear();
 
-        if self.debug_on {
+        if self.debug_planner_on {
             let endpoints = &self.canvas.program.layers.2;
             let accessibility = self.canvas.program.layers.1.accessibility();
             let Some(ctx) = endpoints.selected_agent() else { return };
@@ -1154,7 +1138,7 @@ impl App {
 
             self.canvas.program.layers.3.searches.clear();
             self.debug_step_count = 0;
-            if self.debug_on {
+            if self.debug_planner_on {
                 self.search_memory = search.memory().0
                     .queue.clone().into_iter_sorted()
                     .map(|n| n.0.clone()).collect();
@@ -1211,8 +1195,10 @@ impl App {
             self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
         }
 
-        self.negotiation_history = node_history;
-        self.negotiation_history.sort_unstable_by_key(|n| n.id);
+        if self.debug_negotiation_on {
+            self.negotiation_history = node_history;
+            self.negotiation_history.sort_unstable_by_key(|n| n.id);
+        }
         self.name_map = name_map;
     }
 }
@@ -1350,7 +1336,8 @@ impl Application for App {
             show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
             search: None,
             step_progress: button::State::new(),
-            debug_on: false,
+            debug_planner_on: false,
+            debug_negotiation_on: false,
             search_memory: Default::default(),
             negotiation_history: Default::default(),
             name_map: Default::default(),
@@ -1513,10 +1500,20 @@ impl Application for App {
 
                     if let keyboard::Event::KeyPressed{key_code: keyboard::KeyCode::D, modifiers} = event {
                         if modifiers.shift() {
-                            self.debug_on = false;
+                            self.debug_planner_on = false;
                             self.generate_plan();
                         } else {
-                            self.debug_on = true;
+                            self.debug_planner_on = true;
+                            self.generate_plan();
+                        }
+                    }
+
+                    if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::N, modifiers } = event {
+                        if modifiers.shift() {
+                            self.debug_negotiation_on = false;
+                            self.negotiation_history.clear();
+                        } else {
+                            self.debug_negotiation_on = true;
                             self.generate_plan();
                         }
                     }
@@ -1526,7 +1523,7 @@ impl Application for App {
                     }
 
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Down, .. } = event {
-                        if self.debug_on {
+                        if self.debug_planner_on {
                             let next_debug_node = self.debug_node_selected.map(|n| n+1).unwrap_or(0);
                             return Command::perform(async move  {}, move |_| {
                                 Message::SelectDebugNode(next_debug_node)
@@ -1540,7 +1537,7 @@ impl Application for App {
                     }
 
                     if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Up, .. } = event {
-                        if self.debug_on {
+                        if self.debug_planner_on {
                             let next_debug_node = self.debug_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
                             return Command::perform(async move {}, move |_| {
                                 Message::SelectDebugNode(next_debug_node)
@@ -1803,7 +1800,7 @@ impl Application for App {
             .push(instruction_row);
 
         const DEBUG_TEXT_SIZE: u16 = 15;
-        if self.debug_on {
+        if self.debug_planner_on {
             content = content.push(
                 Row::new()
                 .push(self.canvas.view())
