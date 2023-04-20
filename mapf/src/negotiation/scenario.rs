@@ -16,14 +16,14 @@
 */
 
 use crate::{
-    motion::{
-        Trajectory, TimePoint,
-        se2::{WaypointSE2, Orientation, StartSE2, GoalSE2},
-    },
     graph::occupancy::Cell,
+    motion::{
+        se2::{GoalSE2, Orientation, StartSE2, WaypointSE2},
+        TimePoint, Trajectory,
+    },
 };
-use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 
 pub type LinearTrajectorySE2 = Trajectory<WaypointSE2>;
 
@@ -76,16 +76,17 @@ pub struct Obstacle {
     /// Radius of the obstacle
     #[serde(default = "default_radius")]
     pub radius: f64,
-    #[serde(default = "bool_false", skip_serializing_if="is_false")]
+    #[serde(default = "bool_false", skip_serializing_if = "is_false")]
     pub indefinite_start: bool,
-    #[serde(default = "bool_false", skip_serializing_if="is_false")]
+    #[serde(default = "bool_false", skip_serializing_if = "is_false")]
     pub indefinite_finish: bool,
 }
 
 impl Obstacle {
     pub fn new(radius: f64, trajectory: &LinearTrajectorySE2, cell_size: f64) -> Obstacle {
         Obstacle {
-            trajectory: trajectory.iter()
+            trajectory: trajectory
+                .iter()
                 .map(|wp| {
                     let cell = Cell::from_point(wp.position.translation.vector.into(), cell_size);
                     (wp.time.as_secs_f64(), cell.x, cell.y)
@@ -106,7 +107,7 @@ pub struct Scenario {
     pub occupancy: HashMap<i64, Vec<i64>>,
     #[serde(default = "default_cell_size")]
     pub cell_size: f64,
-    #[serde(skip_serializing_if="Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub camera_bounds: Option<[[f32; 2]; 2]>,
 }
 

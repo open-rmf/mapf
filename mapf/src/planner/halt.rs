@@ -15,7 +15,7 @@
  *
 */
 
-use crate::algorithm::{QueueLength, MinimumCostBound};
+use crate::algorithm::{MinimumCostBound, QueueLength};
 use std::{ops::Fn, sync::Arc};
 
 /// A trait to define conditions in which a search should be halted. The

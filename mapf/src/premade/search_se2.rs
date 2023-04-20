@@ -155,7 +155,7 @@ mod tests {
             .plan(
                 (0usize, 20_f64.to_radians()),
                 GoalSE2::new(8usize)
-                .with_orientation(Some(Orientation::from_angle(90_f64.to_radians()))),
+                    .with_orientation(Some(Orientation::from_angle(90_f64.to_radians()))),
             )
             .unwrap()
             .solve()
@@ -200,7 +200,7 @@ mod tests {
             .plan(
                 (Cell::new(-3, -3), 20_f64.to_radians()),
                 GoalSE2::new(Cell::new(10, 10))
-                .with_orientation(Some(Orientation::from_angle(-60_f64.to_radians()))),
+                    .with_orientation(Some(Orientation::from_angle(-60_f64.to_radians()))),
             )
             .unwrap()
             .solve()

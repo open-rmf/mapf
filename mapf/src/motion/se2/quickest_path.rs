@@ -17,16 +17,18 @@
 
 use crate::{
     algorithm::{BackwardDijkstra, Path},
-    domain::{Extrapolator, Connectable, Informed, Key, KeyedCloser, Reversible, Weighted},
+    domain::{Connectable, Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
     error::{Anyhow, ThisError},
     motion::{
-        r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2, MaybePositioned},
-        se2::{
-            DifferentialDriveLineFollow, DifferentialDriveLineFollowMotion,
-            DifferentialDriveLineFollowError,
-            KeySE2, MaybeOriented, StateSE2, MergeIntoGoal,
+        r2::{
+            DiscreteSpaceTimeR2, InitializeR2, LineFollow, MaybePositioned, Positioned, StateR2,
+            WaypointR2,
         },
-        SpeedLimiter, Timed, MaybeTimed, TimePoint,
+        se2::{
+            DifferentialDriveLineFollow, DifferentialDriveLineFollowError,
+            DifferentialDriveLineFollowMotion, KeySE2, MaybeOriented, MergeIntoGoal, StateSE2,
+        },
+        MaybeTimed, SpeedLimiter, TimePoint, Timed,
     },
     planner::halt::StepLimit,
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
@@ -49,7 +51,8 @@ pub type QuickestPathSearch<G, W> = UninformedSearch<
     LazyGraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow, (), ()>,
 >;
 
-pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>, StepLimit>;
+pub type QuickestPathPlanner<G, W> =
+    Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>, StepLimit>;
 
 #[derive(Clone)]
 pub struct QuickestPathHeuristic<G, WeightR2, WeightSE2, const R: u32>
@@ -66,7 +69,9 @@ where
     planner: QuickestPathPlanner<G, WeightR2>,
     extrapolator: DifferentialDriveLineFollow,
     weight_se2: WeightSE2,
-    cost_cache: Arc<RwLock<HashMap<HeuristicKey<G::Key, R>, Option<CostCache<WeightSE2::Cost, G::Key, R>>>>>,
+    cost_cache: Arc<
+        RwLock<HashMap<HeuristicKey<G::Key, R>, Option<CostCache<WeightSE2::Cost, G::Key, R>>>>,
+    >,
 }
 
 #[derive(Clone, Copy)]
@@ -215,8 +220,8 @@ where
 
             // Shift the time of the final state to what it would be if the
             // start time had been zero.
-            previous_state.waypoint.time = TimePoint::zero()
-                + (previous_state.waypoint.time - start.waypoint.time);
+            previous_state.waypoint.time =
+                TimePoint::zero() + (previous_state.waypoint.time - start.waypoint.time);
             Some(CostCache {
                 cost,
                 arrival_state: previous_state,
@@ -269,19 +274,19 @@ where
         // starting time.
         // TODO(@mxgrey): Write unit tests specifically to make sure this time
         // shifting is working correctly.
-        let arrival_state = invariant.arrival_state.time_shifted_by(
-            start.time() - TimePoint::zero()
-        );
+        let arrival_state = invariant
+            .arrival_state
+            .time_shifted_by(start.time() - TimePoint::zero());
 
         // Now add the cost of the final connection, which may vary based on time
-        let cost = match MergeIntoGoal(self.extrapolator).connect(
-            arrival_state.clone(), to_goal,
-        ) {
+        let cost = match MergeIntoGoal(self.extrapolator).connect(arrival_state.clone(), to_goal) {
             Some(r) => {
-                let (connect, final_state): (DifferentialDriveLineFollowMotion, _) = r
-                    .map_err(QuickestPathHeuristicError::Extrapolation)?;
+                let (connect, final_state): (DifferentialDriveLineFollowMotion, _) =
+                    r.map_err(QuickestPathHeuristicError::Extrapolation)?;
 
-                match self.weight_se2.cost(&arrival_state, &connect, &final_state)
+                match self
+                    .weight_se2
+                    .cost(&arrival_state, &connect, &final_state)
                     .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
                 {
                     Some(connection_cost) => invariant.cost + connection_cost,

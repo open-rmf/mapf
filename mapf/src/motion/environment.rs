@@ -120,14 +120,14 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     {
         CcbsEnvironmentView {
             view: self,
-            constraints: key.map(|key| self.constraints.get(key)).flatten()
+            constraints: key.map(|key| self.constraints.get(key)).flatten(),
         }
     }
 
     /// Iterate over all obstacles that might be visible for this environment,
     /// including all constraints for all masks, but not including any base
     /// obstacles that are hidden by the overlay.
-    pub fn iter_all_obstacles(&self) -> impl Iterator<Item=&DynamicCircularObstacle<W>> {
+    pub fn iter_all_obstacles(&self) -> impl Iterator<Item = &DynamicCircularObstacle<W>> {
         self.base
             .obstacles
             .iter()
@@ -137,11 +137,15 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
                 self.constraints
                     .values()
                     .flat_map(|x| x)
-                    .map(|x| &x.obstacle)
+                    .map(|x| &x.obstacle),
             )
     }
 
-    pub fn iter_obstacles_from(&self, key: K, mask: usize) -> impl Iterator<Item=&DynamicCircularObstacle<W>>
+    pub fn iter_obstacles_from(
+        &self,
+        key: K,
+        mask: usize,
+    ) -> impl Iterator<Item = &DynamicCircularObstacle<W>>
     where
         K: Key + Clone,
     {
@@ -160,7 +164,7 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
                             return None;
                         }
                         Some(&x.obstacle)
-                    })
+                    }),
             )
     }
 
@@ -282,11 +286,7 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
         self
     }
 
-    pub fn insert_constraint(
-        &mut self,
-        key: CcbsKey<K>,
-        constraint: CcbsConstraint<W>,
-    )
+    pub fn insert_constraint(&mut self, key: CcbsKey<K>, constraint: CcbsConstraint<W>)
     where
         K: Key,
     {
@@ -325,7 +325,11 @@ impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstac
         'e: 'a;
 
     fn agent_profile(&self) -> &CircularProfile {
-        self.view.overlay.profile.as_ref().unwrap_or(&self.view.base.profile)
+        self.view
+            .overlay
+            .profile
+            .as_ref()
+            .unwrap_or(&self.view.base.profile)
     }
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
@@ -336,18 +340,17 @@ impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstac
             .enumerate()
             .map(|(i, obs)| self.view.overlay.obstacles.get(&i).unwrap_or(obs))
             .chain(
-                self
-                .constraints
-                .iter()
-                .flat_map(|x| *x)
-                .filter_map(|constraint| {
-                    if let Some(mask) = self.view.mask {
-                        if constraint.mask == mask {
-                            return None;
+                self.constraints
+                    .iter()
+                    .flat_map(|x| *x)
+                    .filter_map(|constraint| {
+                        if let Some(mask) = self.view.mask {
+                            if constraint.mask == mask {
+                                return None;
+                            }
                         }
-                    }
-                    Some(&constraint.obstacle)
-                })
+                        Some(&constraint.obstacle)
+                    }),
             )
     }
 }

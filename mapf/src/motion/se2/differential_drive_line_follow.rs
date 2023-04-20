@@ -18,22 +18,21 @@
 use crate::{
     domain::{
         backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, Connectable,
-        ExtrapolationProgress, Extrapolator, IncrementalExtrapolator, Reversible,
-        Key,
+        ExtrapolationProgress, Extrapolator, IncrementalExtrapolator, Key, Reversible,
     },
     error::{NoError, ThisError},
-    motion::{
-        self, Timed, MaybeTimed,
-        conflict::{
-            compute_safe_linear_path_wait_hints, compute_safe_arrival_path,
-            is_safe_segment, SafeAction, WaitForObstacle
-        },
-        r2::{WaypointR2, MaybePositioned, Positioned},
-        se2::{MaybeOriented, Point, Position, StateSE2, WaypointSE2, Orientation},
-        Duration, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
-        CcbsEnvironment, SafeArrivalTimes,
-    },
     graph::Graph,
+    motion::{
+        self,
+        conflict::{
+            compute_safe_arrival_path, compute_safe_linear_path_wait_hints, is_safe_segment,
+            SafeAction, WaitForObstacle,
+        },
+        r2::{MaybePositioned, Positioned, WaypointR2},
+        se2::{MaybeOriented, Orientation, Point, Position, StateSE2, WaypointSE2},
+        CcbsEnvironment, Duration, MaybeTimed, SafeArrivalTimes, SafeIntervalCache,
+        SafeIntervalMotionError, SpeedLimiter, Timed,
+    },
     util::ForkIter,
 };
 use arrayvec::ArrayVec;
@@ -212,7 +211,8 @@ pub(crate) struct ReachedTarget {
 
 pub type DifferentialDriveLineFollowMotion = ArrayVec<WaypointSE2, 4>;
 
-impl<Target, Guidance, Key> Extrapolator<WaypointSE2, Target, Guidance, Key> for DifferentialDriveLineFollow
+impl<Target, Guidance, Key> Extrapolator<WaypointSE2, Target, Guidance, Key>
+    for DifferentialDriveLineFollow
 where
     Target: Positioned + MaybeOriented,
     Guidance: SpeedLimiter,
@@ -365,7 +365,8 @@ impl<const N: usize> Backtrack<WaypointSE2, ArrayVec<WaypointSE2, N>>
     }
 }
 
-impl<Target, Guidance, K, G: Graph<Key=K>> ConflictAvoider<WaypointSE2, Target, Guidance, K, SafeIntervalCache<G>>
+impl<Target, Guidance, K, G: Graph<Key = K>>
+    ConflictAvoider<WaypointSE2, Target, Guidance, K, SafeIntervalCache<G>>
     for DifferentialDriveLineFollow
 where
     Target: Positioned + MaybeOriented + std::fmt::Debug,
@@ -406,9 +407,11 @@ where
             Some(target_key) => match safe_intervals.safe_intervals_for(&target_key) {
                 Ok(r) => r,
                 Err(err) => {
-                    return ForkIter::Left(Some(Err(SafeIntervalMotionError::Cache(err))).into_iter())
+                    return ForkIter::Left(
+                        Some(Err(SafeIntervalMotionError::Cache(err))).into_iter(),
+                    )
                 }
-            }
+            },
             None => SafeArrivalTimes::new(),
         };
 
@@ -420,11 +423,8 @@ where
         let environment_view = safe_intervals.environment().view_for(motion_key.as_ref());
 
         let target_point = to_target.point();
-        let mut arrival = match self.move_towards_target(
-            &from_state,
-            &target_point,
-            with_guidance,
-        ) {
+        let mut arrival = match self.move_towards_target(&from_state, &target_point, with_guidance)
+        {
             Ok(arrival) => arrival,
             Err(err) => {
                 return ForkIter::Left(
@@ -437,12 +437,7 @@ where
             assert!(arrival.waypoints.len() < 3);
             let wp0 = arrival.waypoints[0].clone().into();
             // Make sure the act of rotating to face the target is valid
-            if !is_safe_segment(
-                (&from_state.clone().into(), &wp0),
-                None,
-                &environment_view,
-
-            ) {
+            if !is_safe_segment((&from_state.clone().into(), &wp0), None, &environment_view) {
                 // We cannot rotate to face the target, so there is no way to
                 // avoid conflicts from the start state.
                 return ForkIter::Left(None.into_iter());
@@ -452,20 +447,15 @@ where
         let to_position = match arrival.waypoints.last() {
             Some(p) => *p,
             // No motion is needed, the agent is already on the target
-            None => {
-                return ForkIter::Left(Some(Ok((SmallVec::new(), *from_state))).into_iter())
-            }
+            None => return ForkIter::Left(Some(Ok((SmallVec::new(), *from_state))).into_iter()),
         };
 
         let maybe_oriented = to_target.maybe_oriented();
         let from_point: WaypointR2 = arrival.facing_target.into();
         let to_point: WaypointR2 = to_position.into();
         let yaw = arrival.yaw.angle();
-        let ranked_hints = compute_safe_linear_path_wait_hints(
-            (&from_point, &to_point),
-            None,
-            &environment_view,
-        );
+        let ranked_hints =
+            compute_safe_linear_path_wait_hints((&from_point, &to_point), None, &environment_view);
 
         safe_arrival_times.retain(|t| *t >= to_position.time);
         // Add the time when the agent would normally arrive at the vertex.
@@ -501,8 +491,7 @@ where
                     let delta_yaw_abs = (target_yaw / arrival.yaw).angle().abs();
                     if delta_yaw_abs > self.rotational_threshold() {
                         arrival.time += Duration::from_secs_f64(
-                            self.direction() * delta_yaw_abs
-                                / self.rotational_speed(),
+                            self.direction() * delta_yaw_abs / self.rotational_speed(),
                         );
                         let final_wp = WaypointSE2 {
                             time: arrival.time,
@@ -604,7 +593,7 @@ where
                 &from_state.waypoint,
                 &target_pos,
                 &(),
-                (Some(&from_state.key.vertex), Some(goal_key))
+                (Some(&from_state.key.vertex), Some(goal_key)),
             )
             .map(|r| {
                 r.map(|(mut action, mut wp)| {
@@ -688,7 +677,7 @@ where
             if !is_safe_segment(
                 (&prev_wp.into(), &wp.clone().into()),
                 None,
-                &self.environment.view_for(Some(&key))
+                &self.environment.view_for(Some(&key)),
             ) {
                 return None;
             }

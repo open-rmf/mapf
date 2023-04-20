@@ -85,14 +85,8 @@ impl<Message, G: Grid> VisibilityVisual<Message, G> {
                 ),
             ))),
             corner_select_toggler: Some(Box::new(FillToggler::new(
-                DragToggler::new(
-                    None,
-                    Some((keyboard::Modifiers::ALT, mouse::Button::Left)),
-                ),
-                DragToggler::new(
-                    None,
-                    Some((keyboard::Modifiers::ALT, mouse::Button::Right)),
-                ),
+                DragToggler::new(None, Some((keyboard::Modifiers::ALT, mouse::Button::Left))),
+                DragToggler::new(None, Some((keyboard::Modifiers::ALT, mouse::Button::Right))),
             ))),
             on_corner_select,
             on_occupancy_change,

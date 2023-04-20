@@ -61,10 +61,7 @@ where
                 &from_state.waypoint,
                 p_target.borrow().borrow(),
                 &(),
-                (
-                    Some(&from_state.key),
-                    Some(to_goal.key().borrow()),
-                ),
+                (Some(&from_state.key), Some(to_goal.key().borrow())),
             )
             .transpose()
             .map_err(DirectTravelError::Extrapolator)

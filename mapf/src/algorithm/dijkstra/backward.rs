@@ -27,7 +27,7 @@ use crate::{
         Activity, ArrivalKeyring, Backtrack, Closable, ClosedStatusForKey, Configurable,
         Connectable, Domain, Initializable, Keyed, Keyring, Reversible, Weighted,
     },
-    error::{ThisError, Anyhow},
+    error::{Anyhow, ThisError},
 };
 use std::ops::Add;
 

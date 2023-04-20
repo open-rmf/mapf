@@ -19,19 +19,18 @@ use super::{Position, Positioned, WaypointR2};
 use crate::{
     domain::{
         backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, ExtrapolationProgress,
-        Extrapolator, IncrementalExtrapolator, Reversible, Key,
+        Extrapolator, IncrementalExtrapolator, Key, Reversible,
     },
     error::{NoError, ThisError},
+    graph::Graph,
     motion::{
         self,
         conflict::{
-            compute_safe_arrival_path, compute_safe_linear_path_wait_hints,
-            SafeAction, WaitForObstacle
+            compute_safe_arrival_path, compute_safe_linear_path_wait_hints, SafeAction,
+            WaitForObstacle,
         },
-        se2, Duration, SafeIntervalMotionError, SpeedLimiter, SafeIntervalCache,
-        SafeArrivalTimes,
+        se2, Duration, SafeArrivalTimes, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
     },
-    graph::Graph,
     util::ForkIter,
 };
 use arrayvec::ArrayVec;
@@ -129,7 +128,8 @@ where
     }
 }
 
-impl<Target, Guidance, Key> IncrementalExtrapolator<WaypointR2, Target, Guidance, Key> for LineFollow
+impl<Target, Guidance, Key> IncrementalExtrapolator<WaypointR2, Target, Guidance, Key>
+    for LineFollow
 where
     Target: Positioned,
     Guidance: SpeedLimiter,
@@ -185,8 +185,8 @@ impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFoll
     }
 }
 
-impl<Target, Guidance, K, G: Graph<Key=K>> ConflictAvoider<WaypointR2, Target, Guidance, K, SafeIntervalCache<G>>
-    for LineFollow
+impl<Target, Guidance, K, G: Graph<Key = K>>
+    ConflictAvoider<WaypointR2, Target, Guidance, K, SafeIntervalCache<G>> for LineFollow
 where
     G::Vertex: Positioned,
     Target: Positioned,
@@ -227,14 +227,22 @@ where
             with_guidance.speed_limit(),
         ) {
             Ok(extrapolation) => extrapolation.1,
-            Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter()),
+            Err(err) => {
+                return ForkIter::Left(
+                    Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter(),
+                )
+            }
         };
 
         let mut safe_arrival_times = match target_key {
             Some(target_key) => match safe_intervals.safe_intervals_for(&target_key) {
                 Ok(r) => r,
-                Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Cache(err))).into_iter()),
-            }
+                Err(err) => {
+                    return ForkIter::Left(
+                        Some(Err(SafeIntervalMotionError::Cache(err))).into_iter(),
+                    )
+                }
+            },
             None => SafeArrivalTimes::new(),
         };
 
@@ -249,11 +257,8 @@ where
         // Add the time when the agent would normally arrive at the vertex.
         safe_arrival_times.insert(0, to_point.time);
 
-        let ranked_hints = compute_safe_linear_path_wait_hints(
-            (&from_point, &to_point),
-            None,
-            &environment_view
-        );
+        let ranked_hints =
+            compute_safe_linear_path_wait_hints((&from_point, &to_point), None, &environment_view);
 
         let paths: SmallVec<[_; 5]> = safe_arrival_times
             .into_iter()

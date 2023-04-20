@@ -29,7 +29,10 @@ pub struct Velocity {
 
 impl Velocity {
     pub fn zero() -> Self {
-        Velocity { translational: Vector::zeros(), rotational: 0.0 }
+        Velocity {
+            translational: Vector::zeros(),
+            rotational: 0.0,
+        }
     }
 }
 

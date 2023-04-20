@@ -106,7 +106,7 @@ where
                     if initial_waypoint.time() < wait.time_estimate {
                         initial_waypoint.with_time(wait.time_estimate)
                     } else {
-                        continue
+                        continue;
                     }
                 }
             };
@@ -910,8 +910,12 @@ where
             let wp1_b: WaypointR2 = wp1_b.into();
             let line_b = (&wp0_b, &wp1_b);
             if have_conflict(
-                line_a, Some(bb), in_environment.agent_profile(),
-                line_b, None, obs.profile(),
+                line_a,
+                Some(bb),
+                in_environment.agent_profile(),
+                line_b,
+                None,
+                obs.profile(),
                 conflict_distance_squared,
             ) {
                 return false;
@@ -1663,10 +1667,9 @@ mod tests {
 
             let profile = CircularProfile::new(1.0, 0.0, 0.0).unwrap();
             let mut environment = DynamicEnvironment::new(profile);
-            environment.obstacles.push(
-                DynamicCircularObstacle::new(profile)
-                .with_trajectory(Some(obstacle))
-            );
+            environment
+                .obstacles
+                .push(DynamicCircularObstacle::new(profile).with_trajectory(Some(obstacle)));
 
             let p0 = WaypointR2::new_f64(0.0, -5.0, 0.0);
             let p1 = WaypointR2::new_f64(20.0, 5.0, 0.0);

@@ -22,7 +22,7 @@ use crate::{
         ClosedStatusForKey, Configurable, Connectable, Domain, Initializable, Keyed, Keyring,
         Weighted,
     },
-    error::{ThisError, Anyhow},
+    error::{Anyhow, ThisError},
 };
 use std::{
     borrow::Borrow,

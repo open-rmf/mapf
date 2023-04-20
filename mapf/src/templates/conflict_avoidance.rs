@@ -67,7 +67,13 @@ where
         Key: 'a,
     {
         self.avoider
-            .avoid_conflicts(from_state, to_target, with_guidance, for_keys, &*self.environment)
+            .avoid_conflicts(
+                from_state,
+                to_target,
+                with_guidance,
+                for_keys,
+                &*self.environment,
+            )
             .into_iter()
     }
 }

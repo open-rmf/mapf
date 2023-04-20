@@ -115,10 +115,7 @@ where
                                             self.motion.space.waypoint(&from_state).borrow(),
                                             v.borrow(),
                                             &edge,
-                                            (
-                                                Some(&from_key),
-                                                Some(&to_vertex),
-                                            )
+                                            (Some(&from_key), Some(&to_vertex)),
                                         );
 
                                         extrapolations.into_iter().map(move |r| {

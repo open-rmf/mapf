@@ -19,29 +19,29 @@ pub mod scenario;
 pub use scenario::*;
 
 use crate::{
-    premade::{SippSE2, StateSippSE2},
-    domain::{Configurable, Cost, ClosedStatus},
-    motion::{
-        CcbsEnvironment, CcbsConstraint, DynamicEnvironment, DynamicCircularObstacle,
-        CircularProfile, TravelEffortCost, TimePoint, BoundingBox, have_conflict,
-        Duration, Timed,
-        trajectory::TrajectoryIter,
-        se2::{DifferentialDriveLineFollow, WaypointSE2},
-        r2::{WaypointR2, Positioned},
-    },
     algorithm::{
-        AStarConnect, SearchStatus, QueueLength,
-        path::{MetaTrajectory, DecisionRange}
+        path::{DecisionRange, MetaTrajectory},
+        AStarConnect, QueueLength, SearchStatus,
     },
-    planner::{Planner, halt::QueueLengthLimit},
-    graph::{SharedGraph, occupancy::*},
+    domain::{ClosedStatus, Configurable, Cost},
     error::ThisError,
+    graph::{occupancy::*, SharedGraph},
+    motion::{
+        have_conflict,
+        r2::{Positioned, WaypointR2},
+        se2::{DifferentialDriveLineFollow, WaypointSE2},
+        trajectory::TrajectoryIter,
+        BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
+        DynamicCircularObstacle, DynamicEnvironment, TimePoint, Timed, TravelEffortCost,
+    },
+    planner::{halt::QueueLengthLimit, Planner},
+    premade::{SippSE2, StateSippSE2},
     util::triangular_for,
 };
 use std::{
-    collections::{HashMap, HashSet, BinaryHeap},
-    sync::Arc,
     cmp::Reverse,
+    collections::{BinaryHeap, HashMap, HashSet},
+    sync::Arc,
 };
 
 #[derive(Debug, ThisError)]
@@ -57,7 +57,14 @@ pub enum NegotiationError {
 pub fn negotiate(
     scenario: &Scenario,
     queue_length_limit: Option<usize>,
-) -> Result<(NegotiationNode, Vec<NegotiationNode>, HashMap<usize, String>), NegotiationError> {
+) -> Result<
+    (
+        NegotiationNode,
+        Vec<NegotiationNode>,
+        HashMap<usize, String>,
+    ),
+    NegotiationError,
+> {
     let cs = scenario.cell_size;
     let mut conflicts = HashMap::new();
     triangular_for(scenario.agents.iter(), |(n_a, a), (n_b, b)| {
@@ -94,38 +101,43 @@ pub fn negotiate(
 
     let grid = {
         let mut grid = SparseGrid::new(scenario.cell_size);
-        let changes: HashMap<_, _> = scenario.occupancy.iter().flat_map(|(y, row)| {
-            row.iter().map(|x|
-                (Cell::new(*x, *y), true)
-            )
-        }).collect();
+        let changes: HashMap<_, _> = scenario
+            .occupancy
+            .iter()
+            .flat_map(|(y, row)| row.iter().map(|x| (Cell::new(*x, *y), true)))
+            .collect();
         grid.change_cells(&changes);
         grid
     };
 
-    let profiles: Vec<_> = agents.iter().map(|a| {
-        CircularProfile::new(a.radius, 0.0, 0.0).unwrap()
-    }).collect();
+    let profiles: Vec<_> = agents
+        .iter()
+        .map(|a| CircularProfile::new(a.radius, 0.0, 0.0).unwrap())
+        .collect();
 
-    let planners = agents.iter().map(|a| {
-        let profile = CircularProfile::new(a.radius, 0.0, 0.0).unwrap();
-        let accessibility = Arc::new(Accessibility::new(grid.clone(), a.radius));
-        // let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
-        // let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
-        // let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
-        let activity = SharedGraph::new(AccessibilityGraph::new(accessibility));
-        let heuristic = activity.clone();
-        let environment = Arc::new(CcbsEnvironment::new(
-            Arc::new(DynamicEnvironment::new(profile))
-        ));
-        let extrapolator = DifferentialDriveLineFollow::new(a.speed, a.spin).unwrap();
-        let weight = TravelEffortCost::default();
+    let planners = agents
+        .iter()
+        .map(|a| {
+            let profile = CircularProfile::new(a.radius, 0.0, 0.0).unwrap();
+            let accessibility = Arc::new(Accessibility::new(grid.clone(), a.radius));
+            // let visibility = Arc::new(Visibility::new(grid.clone(), a.radius));
+            // let heuristic = SharedGraph::new(VisibilityGraph::new(visibility.clone(), []));
+            // let activity = SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), []));
+            let activity = SharedGraph::new(AccessibilityGraph::new(accessibility));
+            let heuristic = activity.clone();
+            let environment = Arc::new(CcbsEnvironment::new(Arc::new(DynamicEnvironment::new(
+                profile,
+            ))));
+            let extrapolator = DifferentialDriveLineFollow::new(a.speed, a.spin).unwrap();
+            let weight = TravelEffortCost::default();
 
-        Planner::new(AStarConnect(
-            SippSE2::new_sipp_se2(activity, heuristic, extrapolator, environment, weight).unwrap()
-        ))
-        .with_halting(QueueLengthLimit(queue_length_limit))
-    }).collect::<Vec<_>>();
+            Planner::new(AStarConnect(
+                SippSE2::new_sipp_se2(activity, heuristic, extrapolator, environment, weight)
+                    .unwrap(),
+            ))
+            .with_halting(QueueLengthLimit(queue_length_limit))
+        })
+        .collect::<Vec<_>>();
 
     let mut ideal: Vec<Proposal> = Vec::new();
     for (i, (agent, planner)) in agents.iter().zip(planners.iter()).enumerate() {
@@ -133,16 +145,31 @@ pub fn negotiate(
         let goal = agent.make_goal();
         let s = match match planner.plan(start, goal) {
             Ok(search) => search,
-            Err(err) => return Err(NegotiationError::PlanningImpossible(format!("{err:?}").to_owned())),
-        }.solve().unwrap().solution() {
+            Err(err) => {
+                return Err(NegotiationError::PlanningImpossible(
+                    format!("{err:?}").to_owned(),
+                ))
+            }
+        }
+        .solve()
+        .unwrap()
+        .solution()
+        {
             Some(s) => s,
             None => {
-                return Err(NegotiationError::PlanningImpossible(name_map.get(&i).unwrap().clone()));
+                return Err(NegotiationError::PlanningImpossible(
+                    name_map.get(&i).unwrap().clone(),
+                ));
             }
         };
-        let mt = s.make_trajectory_or_hold(Duration::from_secs(1)).unwrap()
-        .with_indefinite_finish_time(true);
-        ideal.push(Proposal { meta: mt, cost: s.total_cost });
+        let mt = s
+            .make_trajectory_or_hold(Duration::from_secs(1))
+            .unwrap()
+            .with_indefinite_finish_time(true);
+        ideal.push(Proposal {
+            meta: mt,
+            cost: s.total_cost,
+        });
     }
 
     let (mut negotiation_of_agent, mut negotiations) = organize_negotiations(&ideal, &profiles);
@@ -157,14 +184,13 @@ pub fn negotiate(
         count += 1;
 
         let base_env = {
-            let mut base_env = DynamicEnvironment::new(
-                CircularProfile::new(0.0, 0.0, 0.0).unwrap()
-            );
+            let mut base_env =
+                DynamicEnvironment::new(CircularProfile::new(0.0, 0.0, 0.0).unwrap());
             for i in 0..agents.len() {
                 if !negotiation_of_agent.contains_key(&i) {
                     base_env.obstacles.push(
                         DynamicCircularObstacle::new(profiles[i])
-                        .with_trajectory(Some(ideal[i].meta.trajectory.clone()))
+                            .with_trajectory(Some(ideal[i].meta.trajectory.clone())),
                     );
                 }
             }
@@ -205,7 +231,10 @@ pub fn negotiate(
                 // Sort the conflicts such that we pop the the earliest conflict.
                 // Using Reverse will put the conflicts in descending order, and
                 // then popping the last element will grab the lowest time.
-                top.node.negotiation.conflicts.sort_unstable_by_key(|c| Reverse(c.time));
+                top.node
+                    .negotiation
+                    .conflicts
+                    .sort_unstable_by_key(|c| Reverse(c.time));
                 let next_conflict = match top.node.negotiation.conflicts.pop() {
                     Some(c) => c,
                     None => {
@@ -224,23 +253,32 @@ pub fn negotiate(
                     }
                 };
 
-                let finish_time = top.node.proposals.values()
+                let finish_time = top
+                    .node
+                    .proposals
+                    .values()
                     .max_by_key(|t| t.meta.trajectory.finish_motion_time())
-                    .unwrap().meta.trajectory.finish_motion_time();
+                    .unwrap()
+                    .meta
+                    .trajectory
+                    .finish_motion_time();
 
                 let segments = next_conflict.segments;
-                for (concede, constraint) in [
-                    (segments[0], segments[1]),
-                    (segments[1], segments[0]),
-                ] {
+                for (concede, constraint) in
+                    [(segments[0], segments[1]), (segments[1], segments[0])]
+                {
                     let mut environment = top.node.environment.clone();
                     // Insert the new constraint on top of the previous
                     // environment
                     let env_constraint = CcbsConstraint {
                         obstacle: DynamicCircularObstacle::new(profiles[constraint.agent])
                             .with_trajectory(Some(
-                                top.node.proposals.get(&constraint.agent).unwrap()
-                                .meta.get_trajectory_segment(&constraint.range)
+                                top.node
+                                    .proposals
+                                    .get(&constraint.agent)
+                                    .unwrap()
+                                    .meta
+                                    .get_trajectory_segment(&constraint.range),
                             )),
                         mask: constraint.agent,
                     };
@@ -280,11 +318,8 @@ pub fn negotiate(
                         }
                     };
 
-                    let key = NegotiationKey::new(
-                        &concede.range,
-                        &constraint.range,
-                        constraint.agent,
-                    );
+                    let key =
+                        NegotiationKey::new(&concede.range, &constraint.range, constraint.agent);
 
                     // Set the environment to be suitable for the conceding agent
                     environment.overlay_profile(profiles[concede.agent]);
@@ -292,13 +327,15 @@ pub fn negotiate(
 
                     let agent = &agents[concede.agent];
                     // Replan for the conceding agent with this constraint added
-                    let mut search = planners[concede.agent].clone().configure(|config| {
-                        config.modify_environment(|_| Ok(environment.clone()))
-                    }).unwrap().plan(
-                        agent.make_start(),
-                        agent.make_goal()
-                        .with_minimum_time(Some(finish_time))
-                    ).unwrap();
+                    let mut search = planners[concede.agent]
+                        .clone()
+                        .configure(|config| config.modify_environment(|_| Ok(environment.clone())))
+                        .unwrap()
+                        .plan(
+                            agent.make_start(),
+                            agent.make_goal().with_minimum_time(Some(finish_time)),
+                        )
+                        .unwrap();
 
                     let solution = match search.solve().unwrap() {
                         SearchStatus::Solved(solution) => solution,
@@ -337,18 +374,24 @@ pub fn negotiate(
                         }
                     };
 
-                    let mt = solution.make_trajectory_or_hold::<WaypointSE2>(Duration::from_secs(1)).unwrap()
+                    let mt = solution
+                        .make_trajectory_or_hold::<WaypointSE2>(Duration::from_secs(1))
+                        .unwrap()
                         .with_indefinite_finish_time(true);
                     let cost = solution.total_cost;
 
                     let mut proposals = top.node.proposals.clone();
                     proposals.insert(concede.agent, Proposal { meta: mt, cost });
-                    let conflicts = reasses_conflicts(
-                        &proposals,
-                        &profiles,
-                    );
+                    let conflicts = reasses_conflicts(&proposals, &profiles);
 
-                    let node = top.node.fork(conflicts, proposals, environment, key, Some(concede.agent), arena.len());
+                    let node = top.node.fork(
+                        conflicts,
+                        proposals,
+                        environment,
+                        key,
+                        Some(concede.agent),
+                        arena.len(),
+                    );
                     arena.push(node.clone());
                     queue.push(QueueEntry::new(node));
                 }
@@ -371,19 +414,20 @@ pub fn negotiate(
             }
         }
 
-        (negotiation_of_agent, negotiations) = reconsider_negotiations(
-            &ideal,
-            &profiles,
-            negotiation_of_agent,
-            negotiations
-        );
+        (negotiation_of_agent, negotiations) =
+            reconsider_negotiations(&ideal, &profiles, negotiation_of_agent, negotiations);
     }
 
     if solution_node.is_none() {
         let fake = NegotiationNode::from_root(
-            &Negotiation { conflicts: vec![], participants: vec![] },
+            &Negotiation {
+                conflicts: vec![],
+                participants: vec![],
+            },
             &ideal,
-            Arc::new(DynamicEnvironment::new(CircularProfile::new(0.0, 0.0, 0.0).unwrap())),
+            Arc::new(DynamicEnvironment::new(
+                CircularProfile::new(0.0, 0.0, 0.0).unwrap(),
+            )),
             0,
         );
 
@@ -445,7 +489,11 @@ impl NegotiationKey {
         );
         Self {
             concede: (concede.0, concede.1, concede.2.nanos_since_zero / res),
-            constraint: (constraint.0, constraint.1, constraint.2.nanos_since_zero / res),
+            constraint: (
+                constraint.0,
+                constraint.1,
+                constraint.2.nanos_since_zero / res,
+            ),
             mask,
         }
     }
@@ -458,7 +506,9 @@ pub struct NegotiationCloser {
 
 impl NegotiationCloser {
     pub fn new() -> Self {
-        Self { closed_set: Default::default() }
+        Self {
+            closed_set: Default::default(),
+        }
     }
 
     pub fn status<'a>(&'a self, node: &NegotiationNode) -> ClosedStatus<'a, ()> {
@@ -466,10 +516,11 @@ impl NegotiationCloser {
         let Some(first_key) = key_iter.next() else { return ClosedStatus::Open };
 
         let mut candidates: HashSet<usize> = HashSet::from_iter(
-            self.closed_set.get(first_key)
-            .iter()
-            .flat_map(|x| *x)
-            .cloned()
+            self.closed_set
+                .get(first_key)
+                .iter()
+                .flat_map(|x| *x)
+                .cloned(),
         );
 
         while let Some(next_key) = key_iter.next() {
@@ -535,15 +586,16 @@ impl NegotiationNode {
         base_env: Arc<DynamicEnvironment<WaypointSE2>>,
         id: usize,
     ) -> Self {
-        let cost = ideal.iter().fold(
-            Cost(0.0),
-            |cost, proposal| cost + proposal.cost
-        );
+        let cost = ideal
+            .iter()
+            .fold(Cost(0.0), |cost, proposal| cost + proposal.cost);
         Self {
             negotiation: root.clone(),
-            proposals: root.participants.iter().map(|i|
-                (*i, ideal[*i].clone())
-            ).collect(),
+            proposals: root
+                .participants
+                .iter()
+                .map(|i| (*i, ideal[*i].clone()))
+                .collect(),
             environment: {
                 let mut env = CcbsEnvironment::new(base_env);
                 for i in &root.participants {
@@ -570,10 +622,9 @@ impl NegotiationNode {
         conceded: Option<usize>,
         id: usize,
     ) -> Self {
-        let cost = proposals.values().fold(
-            Cost(0.0),
-            |cost, proposal| cost + proposal.cost
-        );
+        let cost = proposals
+            .values()
+            .fold(Cost(0.0), |cost, proposal| cost + proposal.cost);
         let mut keys = self.keys.clone();
         if !keys.insert(key) {
             println!("REDUNDANT KEY IN {}: {key:?}", self.id);
@@ -581,7 +632,7 @@ impl NegotiationNode {
         NegotiationNode {
             negotiation: Negotiation {
                 conflicts,
-                participants: self.negotiation.participants.clone()
+                participants: self.negotiation.participants.clone(),
             },
             proposals,
             environment,
@@ -650,11 +701,10 @@ pub struct Conflict {
 
 impl std::fmt::Debug for Conflict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-        .debug_struct("Conflict")
-        .field("time", &self.time.as_secs_f64())
-        .field("segments", &self.segments)
-        .finish()
+        f.debug_struct("Conflict")
+            .field("time", &self.time.as_secs_f64())
+            .field("segments", &self.segments)
+            .finish()
     }
 }
 
@@ -672,27 +722,34 @@ fn reasses_conflicts(
     profiles: &Vec<CircularProfile>,
 ) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
-    triangular_for(proposals.iter().map(|(i, p)| (i, &p.meta)), |(i_a, mt_a), (i_b, mt_b)| {
-        let profile_a = profiles.get(**i_a).unwrap();
-        let profile_b = profiles.get(*i_b).unwrap();
-        let (range_a, range_b) = match find_first_conflict(
-            mt_a, profile_a, mt_b, profile_b
-        ) {
-            Some(r) => r,
-            None => return,
-        };
+    triangular_for(
+        proposals.iter().map(|(i, p)| (i, &p.meta)),
+        |(i_a, mt_a), (i_b, mt_b)| {
+            let profile_a = profiles.get(**i_a).unwrap();
+            let profile_b = profiles.get(*i_b).unwrap();
+            let (range_a, range_b) = match find_first_conflict(mt_a, profile_a, mt_b, profile_b) {
+                Some(r) => r,
+                None => return,
+            };
 
-        conflicts.push(Conflict {
-            time: TimePoint::min(
-                mt_a.decision_start_time(&range_a),
-                mt_b.decision_start_time(&range_b),
-            ),
-            segments: [
-                Segment { agent: **i_a, range: range_a },
-                Segment { agent: *i_b, range: range_b },
-            ]
-        });
-    });
+            conflicts.push(Conflict {
+                time: TimePoint::min(
+                    mt_a.decision_start_time(&range_a),
+                    mt_b.decision_start_time(&range_b),
+                ),
+                segments: [
+                    Segment {
+                        agent: **i_a,
+                        range: range_a,
+                    },
+                    Segment {
+                        agent: *i_b,
+                        range: range_b,
+                    },
+                ],
+            });
+        },
+    );
 
     conflicts
 }
@@ -705,11 +762,13 @@ fn organize_negotiations(
     let mut negotiation_of_agent: HashMap<usize, usize> = HashMap::new();
     let mut negotiations: HashMap<usize, Negotiation> = HashMap::new();
     triangular_for(
-        ideal.iter().map(|p| &p.meta).zip(profiles.iter()).enumerate(),
+        ideal
+            .iter()
+            .map(|p| &p.meta)
+            .zip(profiles.iter())
+            .enumerate(),
         |(i_a, (mt_a, profile_a)), (i_b, (mt_b, profile_b))| {
-            let (range_a, range_b) = match find_first_conflict(
-                *mt_a, *profile_a, mt_b, profile_b
-            ) {
+            let (range_a, range_b) = match find_first_conflict(*mt_a, *profile_a, mt_b, profile_b) {
                 Some(r) => r,
                 None => return,
             };
@@ -717,7 +776,9 @@ fn organize_negotiations(
             // Check if either agent is already in a conflict
             let conflict_id_a = negotiation_of_agent.get(i_a).cloned();
             let conflict_id_b = negotiation_of_agent.get(&i_b).cloned();
-            let conflict_id = if let (Some(conflict_id_a), Some(conflict_id_b)) = (conflict_id_a, conflict_id_b) {
+            let conflict_id = if let (Some(conflict_id_a), Some(conflict_id_b)) =
+                (conflict_id_a, conflict_id_b)
+            {
                 // Pick the smaller id to merge both into.
                 let conflict_id = usize::min(conflict_id_a, conflict_id_b);
                 let acquire_id = usize::max(conflict_id_a, conflict_id_b);
@@ -727,7 +788,11 @@ fn organize_negotiations(
                         negotiation_of_agent.insert(w.agent, conflict_id);
                     }
                 }
-                negotiations.entry(conflict_id).or_default().conflicts.extend(info.conflicts);
+                negotiations
+                    .entry(conflict_id)
+                    .or_default()
+                    .conflicts
+                    .extend(info.conflicts);
 
                 conflict_id
             } else if let Some(conflict_id_a) = conflict_id_a {
@@ -742,25 +807,35 @@ fn organize_negotiations(
 
             negotiation_of_agent.insert(*i_a, conflict_id);
             negotiation_of_agent.insert(i_b, conflict_id);
-            negotiations.entry(conflict_id).or_default().conflicts.push(Conflict {
-                time: TimePoint::min(
-                    mt_a.decision_start_time(&range_a),
-                    mt_b.decision_start_time(&range_b),
-                ),
-                segments: [
-                    Segment { agent: *i_a, range: range_a },
-                    Segment { agent: i_b, range: range_b },
-                ],
-            });
-
-
-        }
+            negotiations
+                .entry(conflict_id)
+                .or_default()
+                .conflicts
+                .push(Conflict {
+                    time: TimePoint::min(
+                        mt_a.decision_start_time(&range_a),
+                        mt_b.decision_start_time(&range_b),
+                    ),
+                    segments: [
+                        Segment {
+                            agent: *i_a,
+                            range: range_a,
+                        },
+                        Segment {
+                            agent: i_b,
+                            range: range_b,
+                        },
+                    ],
+                });
+        },
     );
 
     for negotiation in negotiations.values_mut() {
-        negotiation.participants = negotiation.conflicts.iter().flat_map(
-            |c| c.segments.iter().map(|s| s.agent)
-        ).collect();
+        negotiation.participants = negotiation
+            .conflicts
+            .iter()
+            .flat_map(|c| c.segments.iter().map(|s| s.agent))
+            .collect();
         negotiation.participants.sort_unstable();
         negotiation.participants.dedup();
     }
@@ -774,7 +849,8 @@ fn reconsider_negotiations(
     previous_negotiation_of_agent: HashMap<usize, usize>,
     previous_negotiations: HashMap<usize, Negotiation>,
 ) -> (HashMap<usize, usize>, HashMap<usize, Negotiation>) {
-    let (mut new_negotiation_of_agent, mut new_negotiations) = organize_negotiations(base, profiles);
+    let (mut new_negotiation_of_agent, mut new_negotiations) =
+        organize_negotiations(base, profiles);
 
     // Now that we've negotiated away some conflicts, check if any new conflicts
     // have been formed and pull all newly conflicting agents together into a
@@ -787,7 +863,10 @@ fn reconsider_negotiations(
     for (i, negotiation) in &new_negotiations {
         for agent in &negotiation.participants {
             let Some(n_prev) = previous_negotiation_of_agent.get(agent).cloned() else { continue };
-            merge_old_negotiation_into_new.entry(n_prev).or_default().insert(*i);
+            merge_old_negotiation_into_new
+                .entry(n_prev)
+                .or_default()
+                .insert(*i);
         }
     }
 
@@ -877,7 +956,9 @@ fn reconsider_negotiations(
 
             let old_n = previous_negotiations.get(old_i).unwrap();
             let merge_into_n = new_negotiations.get_mut(&merge_into).unwrap();
-            merge_into_n.participants.extend(old_n.participants.iter().copied());
+            merge_into_n
+                .participants
+                .extend(old_n.participants.iter().copied());
             merge_into_n.participants.sort_unstable();
             merge_into_n.participants.dedup();
         }
@@ -900,11 +981,9 @@ pub fn find_first_conflict(
 ) -> Option<DecisionRangePair> {
     let (traj_a, traj_b) = (&mt_a.trajectory, &mt_b.trajectory);
 
-    if !BoundingBox::for_trajectory(
-        profile_a, traj_a
-    ).overlaps(Some(BoundingBox::for_trajectory(
-        profile_b, traj_b
-    ))) {
+    if !BoundingBox::for_trajectory(profile_a, traj_a)
+        .overlaps(Some(BoundingBox::for_trajectory(profile_b, traj_b)))
+    {
         return None;
     }
 
@@ -947,14 +1026,15 @@ pub fn find_first_conflict(
         }
 
         if have_conflict(
-            (&wp0_a, &wp1_a), bb_a, profile_a,
-            (&wp0_b, &wp1_b), bb_b, profile_b,
+            (&wp0_a, &wp1_a),
+            bb_a,
+            profile_a,
+            (&wp0_b, &wp1_b),
+            bb_b,
+            profile_b,
             conflict_distance_squared,
         ) {
-            return Some((
-                mt_a.get_decision_range(i_a),
-                mt_b.get_decision_range(i_b),
-            ));
+            return Some((mt_a.get_decision_range(i_a), mt_b.get_decision_range(i_b)));
             // return dbg!(Some((
             //     mt_a.get_decision_range(i_a),
             //     mt_b.get_decision_range(i_b),
@@ -985,24 +1065,31 @@ fn find_pre_initial_conflict(
 ) -> Option<DecisionRangePair> {
     let (mt_a, profile_a, wp_b, profile_b, swapped) = {
         if mt_a.trajectory.initial_motion_time() < mt_b.trajectory.initial_motion_time() {
-            (mt_a, profile_a, mt_b.trajectory.initial_motion().clone(), profile_b, false)
+            (
+                mt_a,
+                profile_a,
+                mt_b.trajectory.initial_motion().clone(),
+                profile_b,
+                false,
+            )
         } else if mt_b.trajectory.initial_motion_time() < mt_a.trajectory.initial_motion_time() {
-            (mt_b, profile_b, mt_a.trajectory.initial_motion().clone(), profile_a, true)
+            (
+                mt_b,
+                profile_b,
+                mt_a.trajectory.initial_motion().clone(),
+                profile_a,
+                true,
+            )
         } else {
-            return None
+            return None;
         }
     };
 
-    let (i_a, t0) = match find_spillover_conflict(
-        mt_a.trajectory.iter(),
-        profile_a,
-        wp_b,
-        profile_b,
-        false,
-    ) {
-        Some(i_a) => i_a,
-        None => return None,
-    };
+    let (i_a, t0) =
+        match find_spillover_conflict(mt_a.trajectory.iter(), profile_a, wp_b, profile_b, false) {
+            Some(i_a) => i_a,
+            None => return None,
+        };
 
     let mut range_a = mt_a.get_decision_range(i_a);
     let mut range_b = DecisionRange::Before(mt_b.initial_state.clone(), t0);
@@ -1026,22 +1113,17 @@ fn find_post_finish_conflict(
         } else if mt_a.trajectory.finish_motion_time() < mt_b.trajectory.finish_motion_time() {
             (mt_b, profile_b, mt_a, profile_a, true)
         } else {
-            return None
+            return None;
         }
     };
 
     let wp_b = mt_b.trajectory.finish_motion().clone();
 
-    let (i_a, tf) = match find_spillover_conflict(
-        mt_a.trajectory.iter(),
-        profile_a,
-        wp_b,
-        profile_b,
-        true,
-    ) {
-        Some(i_a) => i_a,
-        None => return None,
-    };
+    let (i_a, tf) =
+        match find_spillover_conflict(mt_a.trajectory.iter(), profile_a, wp_b, profile_b, true) {
+            Some(i_a) => i_a,
+            None => return None,
+        };
 
     // dbg!((relative_i_a, i_a));
     let mut range_a = mt_a.get_decision_range(i_a);
@@ -1088,15 +1170,15 @@ fn find_spillover_conflict(
             (wp_b.with_time(wp0_a.time), wp_b)
         };
 
-        let t = if trailing {
-            wp1_a.time
-        } else {
-            wp0_a.time
-        };
+        let t = if trailing { wp1_a.time } else { wp0_a.time };
 
         if have_conflict(
-            (&wp0_a, &wp1_a), None, profile_a,
-            (&wp0_b, &wp1_b), Some(bb_b), profile_b,
+            (&wp0_a, &wp1_a),
+            None,
+            profile_a,
+            (&wp0_b, &wp1_b),
+            Some(bb_b),
+            profile_b,
             conflict_distance_squared,
         ) {
             return Some((i_a, t));

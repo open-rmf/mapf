@@ -17,18 +17,18 @@
 
 use crate::{
     domain::Reversible,
+    error::NoError,
     graph::{
+        occupancy::{Cell, Grid},
         Graph,
-        occupancy::{Cell, Grid}
     },
     motion::r2::Point,
     util::ForkIter,
-    error::NoError,
 };
 use bitfield::{bitfield, Bit};
 use std::{
-    sync::Arc,
     collections::{HashMap, HashSet},
+    sync::Arc,
 };
 
 /// From any unoccupied cell, expand towards any adjacent cells for whom the
@@ -45,7 +45,9 @@ impl<G: Grid> AccessibilityGraph<G> {
 
 impl<G: Grid> Clone for AccessibilityGraph<G> {
     fn clone(&self) -> Self {
-        Self { accessibility: self.accessibility.clone() }
+        Self {
+            accessibility: self.accessibility.clone(),
+        }
     }
 }
 
@@ -71,7 +73,7 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
         Self: 'a,
         Self::Vertex: 'a,
         Self::Key: 'a,
-        Self::EdgeAttributes: 'a
+        Self::EdgeAttributes: 'a,
     {
         if self.accessibility.grid.is_occupied(key) {
             return ForkIter::Left(None.into_iter());
@@ -81,30 +83,26 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
             Some(constraints) => match constraints {
                 CellAccessibility::Accessible(constraints) => *constraints,
                 CellAccessibility::Inaccessible => return ForkIter::Left(None.into_iter()),
-            }
+            },
             None => CellDirections::all(),
         };
 
         let from_cell = *key;
         ForkIter::Right(
             directions
-            .iter_from(from_cell)
-            .map(move |to_cell: Cell| (from_cell, to_cell))
+                .iter_from(from_cell)
+                .map(move |to_cell: Cell| (from_cell, to_cell)),
         )
     }
 
     type LazyEdgeIter<'a> = [(Cell, Cell); 0] where G: 'a;
 
-    fn lazy_edges_between<'a>(
-        &'a self,
-        _: &Self::Key,
-        _: &Self::Key,
-    ) -> Self::LazyEdgeIter<'a>
+    fn lazy_edges_between<'a>(&'a self, _: &Self::Key, _: &Self::Key) -> Self::LazyEdgeIter<'a>
     where
         Self: 'a,
         Self::Vertex: 'a,
         Self::Key: 'a,
-        Self::EdgeAttributes: 'a
+        Self::EdgeAttributes: 'a,
     {
         []
     }
@@ -114,7 +112,7 @@ impl<G: Grid> Reversible for AccessibilityGraph<G> {
     type ReversalError = NoError;
     fn reversed(&self) -> Result<Self, Self::ReversalError>
     where
-        Self: Sized
+        Self: Sized,
     {
         // Accessibility is always symmetric/bidirectional, so we can just clone
         // the graph in order to reverse it.
@@ -138,20 +136,26 @@ bitfield! {
 }
 
 impl CellDirections {
-    pub fn iter_from(self, cell: Cell) -> impl Iterator<Item=Cell> {
-        self.iter().map(move |[i, j]| {
-            cell.shifted(i, j)
-        })
+    pub fn iter_from(self, cell: Cell) -> impl Iterator<Item = Cell> {
+        self.iter().map(move |[i, j]| cell.shifted(i, j))
     }
 
     /// Iterate over the directions that are accessible
     pub fn iter(self) -> CellDirectionsIter {
-        CellDirectionsIter { next_dir: 0, directions: self, accessibility: true }
+        CellDirectionsIter {
+            next_dir: 0,
+            directions: self,
+            accessibility: true,
+        }
     }
 
     /// Iterate over the directions that are inaccessible
     pub fn iter_inaccessible(self) -> CellDirectionsIter {
-        CellDirectionsIter { next_dir: 0, directions: self, accessibility: false }
+        CellDirectionsIter {
+            next_dir: 0,
+            directions: self,
+            accessibility: false,
+        }
     }
 }
 
@@ -269,13 +273,15 @@ impl<G: Grid> Accessibility<G> {
             &output.grid,
             output.agent_radius,
             output.cell_shift,
-            &mut output.constraints
+            &mut output.constraints,
         );
 
         output
     }
 
-    pub fn iter_accessibility<'a>(&'a self) -> impl Iterator<Item=(&'a Cell, &'a CellAccessibility)> {
+    pub fn iter_accessibility<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a Cell, &'a CellAccessibility)> {
         self.constraints.iter()
     }
 
@@ -288,7 +294,12 @@ impl<G: Grid> Accessibility<G> {
     }
 
     pub fn is_inaccessible(&self, cell: &Cell) -> bool {
-        self.grid.is_occupied(cell) || self.constraints.get(cell).filter(|c| c.is_inaccessible()).is_some()
+        self.grid.is_occupied(cell)
+            || self
+                .constraints
+                .get(cell)
+                .filter(|c| c.is_inaccessible())
+                .is_some()
     }
 
     pub fn change_cells(&mut self, mut changes: HashMap<Cell, bool>) -> bool {
@@ -303,7 +314,7 @@ impl<G: Grid> Accessibility<G> {
             &self.grid,
             self.agent_radius,
             self.cell_shift,
-            &mut self.constraints
+            &mut self.constraints,
         );
 
         return true;
@@ -319,12 +330,12 @@ impl<G: Grid> Accessibility<G> {
             &self.grid,
             self.agent_radius,
             self.cell_shift,
-            &mut self.constraints
+            &mut self.constraints,
         );
     }
 
     fn update_constraints<'a>(
-        changed_cells: impl IntoIterator<Item=&'a Cell>,
+        changed_cells: impl IntoIterator<Item = &'a Cell>,
         grid: &G,
         agent_radius: f64,
         cell_shift: i64,
@@ -384,13 +395,21 @@ impl<G: Grid> Accessibility<G> {
                     }
 
                     let to_cell: Cell = from_cell.shifted(i, j);
-                    if grid.is_occupied(&to_cell) || constraints.get(&to_cell).filter(|c| c.is_inaccessible()).is_some() {
+                    if grid.is_occupied(&to_cell)
+                        || constraints
+                            .get(&to_cell)
+                            .filter(|c| c.is_inaccessible())
+                            .is_some()
+                    {
                         cell_directions.set_direction(i as i8, j as i8, false).ok();
                         continue;
                     }
 
                     let to_p = to_cell.center_point(grid.cell_size());
-                    if grid.is_sweep_occupied(from_p, to_p, 2.0*agent_radius).is_some() {
+                    if grid
+                        .is_sweep_occupied(from_p, to_p, 2.0 * agent_radius)
+                        .is_some()
+                    {
                         cell_directions.set_direction(i as i8, j as i8, false).ok();
                     }
                 }

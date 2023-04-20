@@ -22,7 +22,7 @@ use crate::{
     },
     error::StdError,
     graph::{Edge, Graph},
-    motion::{Timed, MaybeTimed, TimePoint},
+    motion::{MaybeTimed, TimePoint, Timed},
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
     util::{FlatResultMapTrait, ForkIter},
 };
@@ -126,7 +126,7 @@ where
                             (
                                 Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
                                 Some(&to_key),
-                            )
+                            ),
                         );
 
                         let from_state = from_state.clone();
@@ -194,9 +194,14 @@ where
                                 v.borrow(),
                                 &with_guidance,
                                 (
-                                    Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
+                                    Some(
+                                        self.space
+                                            .key_for(&from_state.base_state)
+                                            .borrow()
+                                            .borrow(),
+                                    ),
                                     Some(&to_key),
-                                )
+                                ),
                             );
 
                             let from_state = from_state.clone();

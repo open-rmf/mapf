@@ -25,7 +25,7 @@ use crate::{
     motion::{
         r2::{MaybePositioned, Point, Positioned},
         se2::*,
-        IntegrateWaypoints, TimePoint, Timed, MaybeTimed, DEFAULT_ROTATIONAL_THRESHOLD,
+        IntegrateWaypoints, MaybeTimed, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
     },
     util::{wrap_to_pi, FlatResultMapTrait},
 };

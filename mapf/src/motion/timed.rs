@@ -15,7 +15,7 @@
  *
 */
 
-use time_point::{TimePoint, Duration};
+use time_point::{Duration, TimePoint};
 
 pub trait Timed: MaybeTimed {
     fn time(&self) -> TimePoint;

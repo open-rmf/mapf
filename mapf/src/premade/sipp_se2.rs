@@ -17,15 +17,14 @@
 
 use crate::{
     domain::{Configurable, Key, Reversible},
+    error::{Anyhow, StdError},
     graph::{Graph, SharedGraph},
     motion::{
         r2::Positioned,
         se2::{quickest_path::QuickestPathSearch, *},
-        CcbsEnvironment, SpeedLimiter, TravelEffortCost,
-        SafeIntervalCache, SafeIntervalCloser,
+        CcbsEnvironment, SafeIntervalCache, SafeIntervalCloser, SpeedLimiter, TravelEffortCost,
     },
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
-    error::{StdError, Anyhow},
 };
 use std::sync::Arc;
 
@@ -48,10 +47,7 @@ pub type SippSE2<G, H = G> = InformedSearch<
     GraphMotion<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
         SharedGraph<G>,
-        ConflictAvoidance<
-            DifferentialDriveLineFollow,
-            SafeIntervalCache<SharedGraph<G>>,
-        >,
+        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<SharedGraph<G>>>,
     >,
     TravelEffortCost,
     QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
@@ -61,10 +57,7 @@ pub type SippSE2<G, H = G> = InformedSearch<
     LazyGraphMotion<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
         SharedGraph<G>,
-        ConflictAvoidance<
-            DifferentialDriveLineFollow,
-            SafeIntervalCache<SharedGraph<G>>,
-        >,
+        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<SharedGraph<G>>>,
         (),
         SafeMergeIntoGoal<<G as Graph>::Key, DEFAULT_SIPP_RES>,
     >,
@@ -159,7 +152,7 @@ where
     pub fn modify_environment<F>(mut self, f: F) -> Result<Self, Anyhow>
     where
         F: FnOnce(
-            CcbsEnvironment<WaypointSE2, G::Key>
+            CcbsEnvironment<WaypointSE2, G::Key>,
         ) -> Result<CcbsEnvironment<WaypointSE2, G::Key>, Anyhow>,
     {
         let (env, graph) = {
@@ -263,7 +256,10 @@ where
                 SippSE2DiscardCache {
                     motion: cache.motion,
                     weight: cache.weight,
-                    heuristic_graph: backward_domain.activity.graph.reversed()
+                    heuristic_graph: backward_domain
+                        .activity
+                        .graph
+                        .reversed()
                         .map_err(|e| Anyhow::from(e))?,
                 }
             }
@@ -300,7 +296,8 @@ where
 {
     motion: DifferentialDriveLineFollow,
     weight: TravelEffortCost,
-    heuristic: QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
+    heuristic:
+        QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
 }
 
 pub struct SippSE2DiscardCache<H> {
@@ -357,12 +354,12 @@ where
                     extrapolator: ConflictAvoidance {
                         avoider: preserve.motion,
                         environment: config.safe_intervals.clone(),
-                    }
+                    },
                 };
 
                 let closer = SafeIntervalCloser::new(
                     DiscreteSpaceTimeSE2::<G::Key, DEFAULT_SIPP_RES>::new(),
-                    config.safe_intervals.clone()
+                    config.safe_intervals.clone(),
                 );
 
                 InformedSearch::new(
@@ -379,15 +376,14 @@ where
                     chain: SafeMergeIntoGoal::new(preserve.motion, environment),
                 })
             }
-            SippSE2ManageCache::Discard(discard) => {
-                Self::new_sipp_se2(
-                    config.safe_intervals.graph().clone(),
-                    discard.heuristic_graph,
-                    discard.motion,
-                    config.safe_intervals.environment().clone(),
-                    discard.weight,
-                ).map_err(|e| Anyhow::new(e))?
-            }
+            SippSE2ManageCache::Discard(discard) => Self::new_sipp_se2(
+                config.safe_intervals.graph().clone(),
+                discard.heuristic_graph,
+                discard.motion,
+                config.safe_intervals.environment().clone(),
+                discard.weight,
+            )
+            .map_err(|e| Anyhow::new(e))?,
         };
         Ok(domain)
     }
@@ -504,7 +500,8 @@ mod tests {
             .as_secs_f64();
         assert_relative_eq!(arrival_time, expected_arrival, max_relative = 0.1);
 
-        let trajectory: Trajectory<WaypointSE2> = solution.make_trajectory().unwrap().unwrap().trajectory;
+        let trajectory: Trajectory<WaypointSE2> =
+            solution.make_trajectory().unwrap().unwrap().trajectory;
         assert!(trajectory.len() >= 11);
     }
 
@@ -544,17 +541,21 @@ mod tests {
 
         let planner = planner
             .configure(|domain| {
-                Ok(domain.discard_cache(|mut params| {
-                    params.motion.set_translational_speed(
-                        2.0 * params.motion.translational_speed()
-                    ).unwrap();
+                Ok(domain
+                    .discard_cache(|mut params| {
+                        params
+                            .motion
+                            .set_translational_speed(2.0 * params.motion.translational_speed())
+                            .unwrap();
 
-                    params.motion.set_rotational_speed(
-                        2.0 * params.motion.rotational_speed()
-                    ).unwrap();
+                        params
+                            .motion
+                            .set_rotational_speed(2.0 * params.motion.rotational_speed())
+                            .unwrap();
 
-                    Ok(params)
-                }).unwrap())
+                        Ok(params)
+                    })
+                    .unwrap())
             })
             .unwrap();
 
@@ -593,7 +594,7 @@ mod tests {
                                     WaypointSE2::new_f64(0.0, 2.0, 0.0, 0.0),
                                     WaypointSE2::new_f64(0.25 + expected_delay, 1.5, 0.0, 0.0),
                                 ])
-                                .unwrap()
+                                .unwrap(),
                             )),
                         );
                     }))
@@ -635,9 +636,9 @@ mod tests {
                 SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
                 SharedGraph::new(VisibilityGraph::new(visibility, [])),
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
-                Arc::new(CcbsEnvironment::new(Arc::new(
-                    DynamicEnvironment::new(profile),
-                ))),
+                Arc::new(CcbsEnvironment::new(Arc::new(DynamicEnvironment::new(
+                    profile,
+                )))),
                 TravelEffortCost::default(),
             )
             .unwrap(),
@@ -658,7 +659,11 @@ mod tests {
             .solution()
             .unwrap();
 
-        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap().trajectory;
+        let trajectory = solution
+            .make_trajectory::<WaypointSE2>()
+            .unwrap()
+            .unwrap()
+            .trajectory;
         assert_eq!(3, trajectory.len());
     }
 
@@ -676,9 +681,9 @@ mod tests {
                 SharedGraph::new(NeighborhoodGraph::new(visibility.clone(), [])),
                 SharedGraph::new(VisibilityGraph::new(visibility, [])),
                 DifferentialDriveLineFollow::new(3.0, 1.0).unwrap(),
-                Arc::new(CcbsEnvironment::new(Arc::new(
-                    DynamicEnvironment::new(profile),
-                ))),
+                Arc::new(CcbsEnvironment::new(Arc::new(DynamicEnvironment::new(
+                    profile,
+                )))),
                 TravelEffortCost::default(),
             )
             .unwrap(),
@@ -699,7 +704,11 @@ mod tests {
             .solution()
             .unwrap();
 
-        let trajectory = solution.make_trajectory::<WaypointSE2>().unwrap().unwrap().trajectory;
+        let trajectory = solution
+            .make_trajectory::<WaypointSE2>()
+            .unwrap()
+            .unwrap()
+            .trajectory;
         assert_eq!(5, trajectory.len());
     }
 }

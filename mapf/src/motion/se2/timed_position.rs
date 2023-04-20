@@ -22,7 +22,7 @@ use crate::{
         self,
         r2::{MaybePositioned, Positioned},
         se2::{MaybeOriented, Orientation, Oriented},
-        Timed, MaybeTimed, IntegrateWaypoints, InterpError, Interpolation, TimePoint,
+        IntegrateWaypoints, InterpError, Interpolation, MaybeTimed, TimePoint, Timed,
     },
 };
 use arrayvec::ArrayVec;

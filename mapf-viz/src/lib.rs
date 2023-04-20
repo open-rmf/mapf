@@ -19,7 +19,7 @@ pub mod spatial_canvas;
 pub use spatial_canvas::SpatialCanvasProgram;
 
 pub mod visibility_visual;
-pub use visibility_visual::{VisibilityVisual, SparseGridVisibilityVisual};
+pub use visibility_visual::{SparseGridVisibilityVisual, VisibilityVisual};
 
 pub mod accessibility_visual;
 pub use accessibility_visual::{AccessibilityVisual, SparseGridAccessibilityVisual};

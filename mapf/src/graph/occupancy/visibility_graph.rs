@@ -352,9 +352,8 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
                                     self.points_of_interest
                                         .iter()
                                         .filter(move |poi| {
-                                            let to_p = poi.center_point(
-                                                self.visibility.grid().cell_size(),
-                                            );
+                                            let to_p = poi
+                                                .center_point(self.visibility.grid().cell_size());
                                             self.visibility
                                                 .grid()
                                                 .is_sweep_occupied(

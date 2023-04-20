@@ -382,8 +382,7 @@ impl<W: Waypoint> Trajectory<W> {
 
 impl<W: Waypoint> std::fmt::Debug for Trajectory<W> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f
-            .debug_struct("Trajectory")
+        f.debug_struct("Trajectory")
             .field("indefinite_initial_time", &self.indefinite_initial_time)
             .field("indefinite_finish_time", &self.indefinite_finish_time)
             .field("waypoints", &DebugWaypoints(&self.waypoints))
@@ -432,12 +431,16 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
             }
             FindWaypoint::BeforeStart => {
                 if self.trajectory.has_indefinite_initial_time() {
-                    return Ok(MotionSegment::Holding(self.trajectory.initial_motion().position()));
+                    return Ok(MotionSegment::Holding(
+                        self.trajectory.initial_motion().position(),
+                    ));
                 }
             }
             FindWaypoint::AfterFinish => {
                 if self.trajectory.has_indefinite_finish_time() {
-                    return Ok(MotionSegment::Holding(self.trajectory.finish_motion().position()));
+                    return Ok(MotionSegment::Holding(
+                        self.trajectory.finish_motion().position(),
+                    ));
                 }
             }
         }

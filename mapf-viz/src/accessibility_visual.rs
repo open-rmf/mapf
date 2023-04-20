@@ -15,7 +15,6 @@
  *
 */
 
-
 use super::{
     spatial_canvas::{InclusionZone, SpatialCache, SpatialCanvasProgram},
     toggle::{DragToggler, FillToggler, Toggle, Toggler},
@@ -29,8 +28,7 @@ use iced::{
     keyboard, mouse, Rectangle,
 };
 use mapf::graph::occupancy::{
-    Cell, Grid, SparseGrid, Accessibility,
-    accessibility_graph::CellAccessibility,
+    accessibility_graph::CellAccessibility, Accessibility, Cell, Grid, SparseGrid,
 };
 
 #[derive(Derivative)]
@@ -186,8 +184,8 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for AccessibilityVisual<Mes
                             continue;
                         }
 
-                        let i_bl = (i+1) / 2;
-                        let j_bl = (j+1) / 2;
+                        let i_bl = (i + 1) / 2;
+                        let j_bl = (j + 1) / 2;
 
                         let show_corner = 'corner: {
                             for [k, m] in [[0, 0], [-1, 0], [-1, -1], [0, -1]] {
@@ -203,7 +201,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for AccessibilityVisual<Mes
                         if show_corner {
                             let p1 = cell.shifted(i, j).center_point(cell_size);
                             let p1 = iced::Point::new(p1.x as f32, p1.y as f32);
-                            let ratio = 1.0/4.0 as f32;
+                            let ratio = 1.0 / 4.0 as f32;
                             let w = cell_size as f32 * ratio;
                             let path = Path::new(|builder| {
                                 builder.move_to(p0 + iced::Vector::new(w, 0.0));
@@ -224,9 +222,13 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for AccessibilityVisual<Mes
         let mut zone = InclusionZone::Empty;
         let r = self.accessibility.agent_radius() + self.accessibility.grid().cell_size();
         let r = r as f32;
-        for cell in self.accessibility.grid().occupied_cells().into_iter().chain(
-            self.accessibility.iter_accessibility().map(|(c, _)| c)
-        ) {
+        for cell in self
+            .accessibility
+            .grid()
+            .occupied_cells()
+            .into_iter()
+            .chain(self.accessibility.iter_accessibility().map(|(c, _)| c))
+        {
             let p = cell.center_point(self.accessibility.grid().cell_size());
             let p: iced::Point = [p.x as f32, p.y as f32].into();
             let d = iced::Vector::new(r, r);

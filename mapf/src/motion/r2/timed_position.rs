@@ -21,8 +21,7 @@ use crate::{
     motion::{
         self,
         se2::{MaybeOriented, WaypointSE2},
-        IntegrateWaypoints, InterpError, Interpolation,
-        TimePoint, Timed, MaybeTimed,
+        IntegrateWaypoints, InterpError, Interpolation, MaybeTimed, TimePoint, Timed,
     },
 };
 use arrayvec::ArrayVec;

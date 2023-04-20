@@ -19,7 +19,8 @@ use crate::{
     domain::{Closable, CloseResult, ClosedSet, ClosedStatus, Key, Keyed, Keyring},
     error::ThisError,
     graph::Graph,
-    motion::{compute_safe_arrival_times,
+    motion::{
+        compute_safe_arrival_times,
         r2::{Positioned, WaypointR2},
         se2::WaypointSE2,
         CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed,

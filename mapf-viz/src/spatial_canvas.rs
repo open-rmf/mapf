@@ -172,8 +172,13 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
         let Some(s_inv) = Transform::scale(self.zoom, -self.zoom).inverse() else { return InclusionZone::Empty };
         let bound_center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
         let p0 = s_inv.transform_point(bound_center - self.offset) - bound_center / self.zoom;
-        let p1 = iced::Point::new(bounds.width/self.zoom + p0.x, bounds.height/self.zoom + p0.y);
-        InclusionZone::Empty.with(iced::Point::new(p0.x, p0.y)).with(p1)
+        let p1 = iced::Point::new(
+            bounds.width / self.zoom + p0.x,
+            bounds.height / self.zoom + p0.y,
+        );
+        InclusionZone::Empty
+            .with(iced::Point::new(p0.x, p0.y))
+            .with(p1)
     }
 
     pub fn fit_to_zone(&mut self, zone: InclusionZone) -> bool {

@@ -218,8 +218,9 @@ impl Grid for SparseGrid {
 
     fn is_circle_occupied(&self, p: Point, radius: f64) -> Option<Cell> {
         let r_squared = radius.powi(2);
-        let min_center_dist_squared = (radius + self.cell_size/2.0).powi(2);
-        let max_center_dist_squared = (radius + std::f64::consts::SQRT_2 * self.cell_size/2.0).powi(2);
+        let min_center_dist_squared = (radius + self.cell_size / 2.0).powi(2);
+        let max_center_dist_squared =
+            (radius + std::f64::consts::SQRT_2 * self.cell_size / 2.0).powi(2);
         let delta = Vector::new(radius, radius);
         let min_p = p - delta;
         let max_p = p + delta;

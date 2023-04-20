@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    algorithm::{QueueLength, MinimumCostBound, Path},
+    algorithm::{MinimumCostBound, Path, QueueLength},
     domain::{ClosedSet, ClosedStatus},
     error::ThisError,
 };

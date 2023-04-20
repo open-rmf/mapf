@@ -22,7 +22,7 @@ use crate::{
     motion::{
         r2::*,
         se2::{MaybeOriented, Orientation, StateSE2},
-        IntegrateWaypoints, TimePoint, Timed, MaybeTimed,
+        IntegrateWaypoints, MaybeTimed, TimePoint, Timed,
     },
 };
 use std::borrow::Borrow;

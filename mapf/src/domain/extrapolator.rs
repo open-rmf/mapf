@@ -177,7 +177,9 @@ impl ExtrapolationProgress {
 }
 
 pub struct NoExtrapolation<E>(std::marker::PhantomData<E>);
-impl<State, Target, Guidance, Key, E> Extrapolator<State, Target, Guidance, Key> for NoExtrapolation<E> {
+impl<State, Target, Guidance, Key, E> Extrapolator<State, Target, Guidance, Key>
+    for NoExtrapolation<E>
+{
     type Extrapolation = E;
     type ExtrapolationError = NoError;
     type ExtrapolationIter<'a> = [Result<(E, State), NoError>; 0]

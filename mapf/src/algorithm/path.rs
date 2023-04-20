@@ -18,7 +18,7 @@
 use crate::{
     domain::{Backtrack, Domain},
     error::ThisError,
-    motion::{IntegrateWaypoints, Trajectory, Waypoint, TimePoint, Duration, Timed},
+    motion::{Duration, IntegrateWaypoints, TimePoint, Timed, Trajectory, Waypoint},
 };
 use smallvec::SmallVec;
 
@@ -75,7 +75,10 @@ impl<S, A, C> Path<S, A, C> {
     }
 
     pub fn final_state(&self) -> &S {
-        self.sequence.last().map(|(_, s)| s).unwrap_or(&self.initial_state)
+        self.sequence
+            .last()
+            .map(|(_, s)| s)
+            .unwrap_or(&self.initial_state)
     }
 
     /// Make a trajectory out of this path if possible. It might not be possible
@@ -96,7 +99,7 @@ impl<S, A, C> Path<S, A, C> {
         let mut decision_points = Vec::new();
         decision_points.push(DecisionPoint {
             index: 0,
-            state: self.initial_state.clone()
+            state: self.initial_state.clone(),
         });
         let mut waypoints = self
             .initial_state
@@ -130,14 +133,14 @@ impl<S, A, C> Path<S, A, C> {
             }
         }
 
-        Ok(Trajectory::from_iter(waypoints).ok().map(|trajectory|
-            MetaTrajectory {
+        Ok(Trajectory::from_iter(waypoints)
+            .ok()
+            .map(|trajectory| MetaTrajectory {
                 trajectory,
                 decision_points,
                 initial_state: self.initial_state.clone(),
                 final_state: self.final_state().clone(),
-            }
-        ))
+            }))
     }
 
     /// Make a trajectory out of this path if possible. If producing a path is
@@ -154,7 +157,7 @@ impl<S, A, C> Path<S, A, C> {
         hold_duration: Duration,
     ) -> Result<
         MetaTrajectory<W, S>,
-        WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>
+        WaypointIntegrationError<S::WaypointIntegrationError, A::WaypointIntegrationError>,
     >
     where
         S: IntegrateWaypoints<W> + Clone + std::fmt::Debug + Timed,
@@ -236,11 +239,11 @@ impl<W: Waypoint, S: Clone> MetaTrajectory<W, S> {
         // dbg!((trajectory_index, &self));
         for i in 1..self.decision_points.len() {
             if trajectory_index < self.decision_points[i].index {
-            // dbg!(i);
-            // if dbg!(trajectory_index) < dbg!(self.decision_points[i].index) {
+                // dbg!(i);
+                // if dbg!(trajectory_index) < dbg!(self.decision_points[i].index) {
                 return DecisionRange::Between([
-                    self.decision_points[i-1].clone(),
-                    self.decision_points[i].clone()
+                    self.decision_points[i - 1].clone(),
+                    self.decision_points[i].clone(),
                 ]);
             }
         }
@@ -248,7 +251,7 @@ impl<W: Waypoint, S: Clone> MetaTrajectory<W, S> {
         // runs past the end of the trajectory
         DecisionRange::After(
             self.final_state.clone(),
-            self.trajectory.finish_motion_time() + Duration::from_secs(1)
+            self.trajectory.finish_motion_time() + Duration::from_secs(1),
         )
     }
 
@@ -303,12 +306,11 @@ impl<W: Waypoint, S: Clone> MetaTrajectory<W, S> {
         match range {
             DecisionRange::Before(..) => self.trajectory.initial_motion_time(),
             DecisionRange::After(..) => self.trajectory.finish_motion_time(),
-            DecisionRange::Between(range) => {
-                self.trajectory
-                    .get(range[0].index)
-                    .map(|wp| wp.time())
-                    .unwrap_or(self.trajectory.finish_motion_time())
-            }
+            DecisionRange::Between(range) => self
+                .trajectory
+                .get(range[0].index)
+                .map(|wp| wp.time())
+                .unwrap_or(self.trajectory.finish_motion_time()),
         }
     }
 

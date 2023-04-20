@@ -839,5 +839,5 @@ pub use sparse_grid::SparseGrid;
 pub mod visibility_graph;
 pub use visibility_graph::{NeighborhoodGraph, VisibilityGraph};
 pub mod accessibility_graph;
-pub use accessibility_graph::{AccessibilityGraph, Accessibility};
+pub use accessibility_graph::{Accessibility, AccessibilityGraph};
 mod util;
