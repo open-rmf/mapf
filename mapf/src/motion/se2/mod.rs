@@ -27,6 +27,15 @@ pub struct Velocity {
     pub rotational: f64,
 }
 
+impl Velocity {
+    pub fn zero() -> Self {
+        Velocity {
+            translational: Vector::zeros(),
+            rotational: 0.0,
+        }
+    }
+}
+
 pub mod timed_position;
 pub use timed_position::*;
 
@@ -39,7 +48,7 @@ pub use oriented::*;
 pub type LinearTrajectorySE2 = super::Trajectory<WaypointSE2>;
 
 pub mod quickest_path;
-pub use quickest_path::QuickestPathHeuristic;
+pub use quickest_path::{QuickestPathHeuristic, QuickestPathPlanner};
 
 pub mod differential_drive_line_follow;
 pub use differential_drive_line_follow::*;

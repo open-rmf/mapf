@@ -64,7 +64,7 @@ impl<S, G, E> Domain for GraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     G: Graph,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
     type State = S::State;
     type Error = GraphMotionError<G::Key, E::ExtrapolationError>;
@@ -78,7 +78,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::ExtrapolationError: StdError,
 {
     type ActivityAction = E::Extrapolation;
@@ -90,6 +90,7 @@ where
         Self::ActivityError: 'a,
         S::State: 'a,
         G::EdgeAttributes: 'a,
+        G::Key: 'a,
         S::State: 'a;
 
     fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a>
@@ -98,6 +99,7 @@ where
         Self::ActivityAction: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
+        G::Key: 'a,
     {
         self.graph
             .edges_from_vertex(self.space.key_for(&from_state.clone()).borrow().borrow())
@@ -116,6 +118,10 @@ where
                             self.space.waypoint(&from_state).borrow(),
                             v.borrow(),
                             &edge,
+                            (
+                                Some(self.space.key_for(&from_state).borrow().borrow()),
+                                Some(&to_vertex),
+                            ),
                         );
 
                         extrapolations.into_iter().map(move |r| {
@@ -200,7 +206,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>
         + Backtrack<S::Waypoint, E::Extrapolation>,
 {
     type BacktrackError = E::BacktrackError;

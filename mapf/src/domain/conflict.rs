@@ -17,7 +17,7 @@
 
 /// Create an action that extrapolates from an initial state to a target while
 /// avoiding conflicts with the environment.
-pub trait ConflictAvoider<State, Target, Guidance, Environment> {
+pub trait ConflictAvoider<State, Target, Guidance, Key, Environment> {
     type AvoidanceAction;
     type AvoidanceError;
 
@@ -30,6 +30,7 @@ pub trait ConflictAvoider<State, Target, Guidance, Environment> {
         State: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
         Environment: 'a;
 
     fn avoid_conflicts<'a>(
@@ -37,6 +38,7 @@ pub trait ConflictAvoider<State, Target, Guidance, Environment> {
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
         in_environment: &Environment,
     ) -> Self::AvoidanceActionIter<'a>
     where
@@ -46,5 +48,6 @@ pub trait ConflictAvoider<State, Target, Guidance, Environment> {
         State: 'a,
         Target: 'a,
         Guidance: 'a,
-        Environment: 'a;
+        Environment: 'a,
+        Key: 'a;
 }

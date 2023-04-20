@@ -22,7 +22,7 @@ use crate::{
     },
     error::StdError,
     graph::{Edge, Graph},
-    motion::Timed,
+    motion::{MaybeTimed, TimePoint, Timed},
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
     util::{FlatResultMapTrait, ForkIter},
 };
@@ -73,7 +73,7 @@ impl<S, G, E> Domain for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     G: Graph,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
     type State = IncrementalState<S::State, G>;
     type Error = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
@@ -87,7 +87,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::IncrementalExtrapolationError: StdError,
 {
     type ActivityAction = E::IncrementalExtrapolation;
@@ -123,6 +123,10 @@ where
                             self.space.waypoint(&from_state.base_state).borrow(),
                             to_v_ref.borrow(),
                             &with_guidance,
+                            (
+                                Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
+                                Some(&to_key),
+                            ),
                         );
 
                         let from_state = from_state.clone();
@@ -189,6 +193,15 @@ where
                                 self.space.waypoint(&from_state.base_state).borrow(),
                                 v.borrow(),
                                 &with_guidance,
+                                (
+                                    Some(
+                                        self.space
+                                            .key_for(&from_state.base_state)
+                                            .borrow()
+                                            .borrow(),
+                                    ),
+                                    Some(&to_key),
+                                ),
                             );
 
                             let from_state = from_state.clone();
@@ -302,7 +315,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>
         + Backtrack<S::Waypoint, E::IncrementalExtrapolation>,
 {
     type BacktrackError = E::BacktrackError;
@@ -419,12 +432,18 @@ impl<BaseState: SelfKey, G: Graph> SelfKey for IncrementalState<BaseState, G> {
 }
 
 impl<BaseState: Timed, G: Graph> Timed for IncrementalState<BaseState, G> {
-    fn set_time(&mut self, new_time: time_point::TimePoint) {
+    fn set_time(&mut self, new_time: TimePoint) {
         self.base_state.set_time(new_time)
     }
 
-    fn time(&self) -> &time_point::TimePoint {
+    fn time(&self) -> TimePoint {
         self.base_state.time()
+    }
+}
+
+impl<BaseState: Timed, G: Graph> MaybeTimed for IncrementalState<BaseState, G> {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.base_state.time())
     }
 }
 

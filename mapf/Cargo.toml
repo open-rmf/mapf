@@ -26,6 +26,9 @@ thiserror = "*"
 paste = "0.1"
 float-ord = "*"
 smallvec = "1.10"
+serde = { version="1.0", features = ["derive"] }
+serde_yaml = "*"
+slotmap = "1.0"
 
 [dev-dependencies]
 approx = "*"

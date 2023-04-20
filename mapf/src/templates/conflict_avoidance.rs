@@ -16,17 +16,27 @@
 */
 
 use crate::domain::{ConflictAvoider, Extrapolator};
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ConflictAvoidance<Avoider, Environment> {
     pub avoider: Avoider,
-    pub environment: Environment,
+    pub environment: Arc<Environment>,
 }
 
-impl<Avoider, Env, State, Target, Guidance> Extrapolator<State, Target, Guidance>
+impl<Avoider: Clone, Environment> Clone for ConflictAvoidance<Avoider, Environment> {
+    fn clone(&self) -> Self {
+        Self {
+            avoider: self.avoider.clone(),
+            environment: self.environment.clone(),
+        }
+    }
+}
+
+impl<Avoider, Env, State, Target, Guidance, Key> Extrapolator<State, Target, Guidance, Key>
     for ConflictAvoidance<Avoider, Env>
 where
-    Avoider: ConflictAvoider<State, Target, Guidance, Env>,
+    Avoider: ConflictAvoider<State, Target, Guidance, Key, Env>,
 {
     type Extrapolation = Avoider::AvoidanceAction;
     type ExtrapolationError = Avoider::AvoidanceError;
@@ -37,13 +47,15 @@ where
         Self::ExtrapolationError: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn extrapolate<'a>(
         &'a self,
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
     ) -> Self::ExtrapolationIter<'a>
     where
         Self: 'a,
@@ -52,9 +64,16 @@ where
         State: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         self.avoider
-            .avoid_conflicts(from_state, to_target, with_guidance, &self.environment)
+            .avoid_conflicts(
+                from_state,
+                to_target,
+                with_guidance,
+                for_keys,
+                &*self.environment,
+            )
             .into_iter()
     }
 }

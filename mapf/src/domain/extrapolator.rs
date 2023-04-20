@@ -23,7 +23,7 @@ use crate::error::NoError;
 /// * [`IncrementalExtrapolator`]
 /// * [`crate::domain::ConflictAvoider`]
 /// * [`crate::domain::Connectable`]
-pub trait Extrapolator<State, Target, Guidance> {
+pub trait Extrapolator<State, Target, Guidance, Key> {
     /// What kind of action is produced during extrapolation
     type Extrapolation;
 
@@ -46,7 +46,8 @@ pub trait Extrapolator<State, Target, Guidance> {
         Self::ExtrapolationError: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     /// Extrapolate an action from a state to a target with the provided guidance.
     /// For each alternative action that the agent can use to reach the target,
@@ -54,17 +55,21 @@ pub trait Extrapolator<State, Target, Guidance> {
     /// once the target is reached. If the target cannot be reached, return an
     /// empty iterator.
     ///
+    /// ### Arguments
+    ///
     /// * `from_state` - The initial state to extrapolate from.
     /// * `to_target` - The target to extrapolate towards. This can be a different
     /// type than the `State`. For example, if `State` is a position in SE2, then
     /// the `Target` could be a position in R2.
     /// * `with_guidance` - Parameters to describe how the extrapolation should
     /// be performed. This can include constraints like speed limits.
+    /// * `for_keys` - The keys for the start vertex and target vertex, if applicable.
     fn extrapolate<'a>(
         &'a self,
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
     ) -> Self::ExtrapolationIter<'a>
     where
         Self: 'a,
@@ -72,7 +77,8 @@ pub trait Extrapolator<State, Target, Guidance> {
         Self::ExtrapolationError: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 }
 
 /// Incrementally extrapolate an action from a state to a target with the
@@ -95,7 +101,7 @@ pub trait Extrapolator<State, Target, Guidance> {
 /// * [`Extrapolator`]
 /// * [`crate::domain::ConflictAvoider`]
 /// * [`crate::domain::Connectable`]
-pub trait IncrementalExtrapolator<State, Target, Guidance> {
+pub trait IncrementalExtrapolator<State, Target, Guidance, Key> {
     /// What kind of action is produced during extrapolation
     type IncrementalExtrapolation;
 
@@ -122,7 +128,8 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
         Self::IncrementalExtrapolationError: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     /// Extrapolate an action from a state towards a target with the provided
     /// guidance. For each alternative action that the agent can use to move
@@ -141,6 +148,7 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
         from_state: &State,
         to_target: &Target,
         with_guidance: &Guidance,
+        for_keys: (Option<&Key>, Option<&Key>),
     ) -> Self::IncrementalExtrapolationIter<'a>
     where
         Self: 'a,
@@ -148,7 +156,8 @@ pub trait IncrementalExtrapolator<State, Target, Guidance> {
         Self::IncrementalExtrapolationError: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,7 +177,9 @@ impl ExtrapolationProgress {
 }
 
 pub struct NoExtrapolation<E>(std::marker::PhantomData<E>);
-impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExtrapolation<E> {
+impl<State, Target, Guidance, Key, E> Extrapolator<State, Target, Guidance, Key>
+    for NoExtrapolation<E>
+{
     type Extrapolation = E;
     type ExtrapolationError = NoError;
     type ExtrapolationIter<'a> = [Result<(E, State), NoError>; 0]
@@ -176,25 +187,28 @@ impl<State, Target, Guidance, E> Extrapolator<State, Target, Guidance> for NoExt
         E: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn extrapolate<'a>(
         &'a self,
         _: &State,
         _: &Target,
         _: &Guidance,
+        _: (Option<&Key>, Option<&Key>),
     ) -> [Result<(E, State), NoError>; 0]
     where
         E: 'a,
         State: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         []
     }
 }
 
-impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance>
+impl<State, Target, Guidance, Key, E> IncrementalExtrapolator<State, Target, Guidance, Key>
     for NoExtrapolation<E>
 {
     type IncrementalExtrapolation = E;
@@ -204,19 +218,22 @@ impl<State, Target, Guidance, E> IncrementalExtrapolator<State, Target, Guidance
         E: 'a,
         State: 'a,
         Target: 'a,
-        Guidance: 'a;
+        Guidance: 'a,
+        Key: 'a;
 
     fn incremental_extrapolate<'a>(
         &'a self,
         _: &State,
         _: &Target,
         _: &Guidance,
+        _: (Option<&Key>, Option<&Key>),
     ) -> [Result<(E, State, ExtrapolationProgress), NoError>; 0]
     where
         E: 'a,
         State: 'a,
         Target: 'a,
         Guidance: 'a,
+        Key: 'a,
     {
         []
     }

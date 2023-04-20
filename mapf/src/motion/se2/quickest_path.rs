@@ -17,13 +17,20 @@
 
 use crate::{
     algorithm::{BackwardDijkstra, Path},
-    domain::{Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
+    domain::{Connectable, Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
     error::{Anyhow, ThisError},
     motion::{
-        r2::{DiscreteSpaceTimeR2, InitializeR2, LineFollow, Positioned, StateR2, WaypointR2},
-        se2::{DifferentialDriveLineFollow, KeySE2, MaybeOriented, StateSE2, WaypointSE2},
-        SpeedLimiter,
+        r2::{
+            DiscreteSpaceTimeR2, InitializeR2, LineFollow, MaybePositioned, Positioned, StateR2,
+            WaypointR2,
+        },
+        se2::{
+            DifferentialDriveLineFollow, DifferentialDriveLineFollowError,
+            DifferentialDriveLineFollowMotion, KeySE2, MaybeOriented, MergeIntoGoal, StateSE2,
+        },
+        MaybeTimed, SpeedLimiter, TimePoint, Timed,
     },
+    planner::halt::StepLimit,
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
     Graph, Planner,
 };
@@ -44,7 +51,8 @@ pub type QuickestPathSearch<G, W> = UninformedSearch<
     LazyGraphMotion<DiscreteSpaceTimeR2<<G as Graph>::Key>, G, LineFollow, (), ()>,
 >;
 
-pub type QuickestPathPlanner<G, W> = Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>>;
+pub type QuickestPathPlanner<G, W> =
+    Planner<Arc<BackwardDijkstra<QuickestPathSearch<G, W>>>, StepLimit>;
 
 #[derive(Clone)]
 pub struct QuickestPathHeuristic<G, WeightR2, WeightSE2, const R: u32>
@@ -52,7 +60,7 @@ where
     WeightR2: Reversible,
     WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -61,7 +69,15 @@ where
     planner: QuickestPathPlanner<G, WeightR2>,
     extrapolator: DifferentialDriveLineFollow,
     weight_se2: WeightSE2,
-    cost_cache: Arc<RwLock<HashMap<HeuristicKey<G::Key, R>, Option<WeightSE2::Cost>>>>,
+    cost_cache: Arc<
+        RwLock<HashMap<HeuristicKey<G::Key, R>, Option<CostCache<WeightSE2::Cost, G::Key, R>>>>,
+    >,
+}
+
+#[derive(Clone, Copy)]
+struct CostCache<Cost, Key, const R: u32> {
+    cost: Cost,
+    arrival_state: StateSE2<Key, R>,
 }
 
 type HeuristicKey<K, const R: u32> = (KeySE2<K, R>, K);
@@ -71,7 +87,7 @@ where
     WeightR2: Reversible,
     WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -89,6 +105,7 @@ where
             graph: graph.clone(),
             extrapolator: line_follow,
         };
+        let step_limit = StepLimit::new(Some(10000));
 
         Ok(Self {
             planner: Planner::new(Arc::new(BackwardDijkstra::new(
@@ -103,7 +120,8 @@ where
                     keyring: (),
                     chain: (),
                 }),
-            )?)),
+            )?))
+            .with_halting(step_limit),
             extrapolator,
             weight_se2,
             cost_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -113,31 +131,30 @@ where
     pub fn planner(&self) -> &QuickestPathPlanner<G, WeightR2> {
         &self.planner
     }
-}
 
-impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
-    for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
-where
-    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
-    WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, ArrayVec<WaypointSE2, 3>>,
-    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
-    WeightSE2::WeightedError: Into<Anyhow>,
-    G: Graph + Reversible + Clone,
-    G::Key: Key + Clone,
-    G::Vertex: Positioned + MaybeOriented,
-    G::EdgeAttributes: SpeedLimiter + Clone,
-    State: Borrow<StateSE2<G::Key, R>>,
-    Goal: Borrow<G::Key>,
-{
-    type CostEstimate = WeightSE2::Cost;
-    type InformedError = QuickestPathHeuristicError;
-    fn estimate_remaining_cost(
+    pub fn set_step_limit(&mut self, limit: StepLimit) {
+        self.planner.set_default_halting(limit);
+    }
+
+    fn invariant_cost<State, Goal>(
         &self,
         from_state: &State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<CostCache<WeightSE2::Cost, G::Key, R>>, QuickestPathHeuristicError>
+    where
+        WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+        WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
+        WeightR2::WeightedError: Into<Anyhow>,
+        WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+        WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
+        WeightSE2::WeightedError: Into<Anyhow>,
+        G: Graph + Reversible + Clone,
+        G::Key: Key + Clone,
+        G::Vertex: Positioned + MaybeOriented,
+        G::EdgeAttributes: SpeedLimiter + Clone,
+        State: Borrow<StateSE2<G::Key, R>>,
+        Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed,
+    {
         let start: &StateSE2<G::Key, R> = from_state.borrow();
         let goal: &G::Key = to_goal.borrow();
 
@@ -151,13 +168,13 @@ where
         }
 
         // The cost wasn't in the cache, so let's use the planner to find it.
-        let cost = 'cost: {
+        let invariant = 'cost: {
             let solution: Path<_, _, _> = match self
                 .planner
                 .plan(start.key.vertex.clone(), goal.clone())
-                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .map_err(|err| QuickestPathHeuristicError::PlannerError(err.into()))?
                 .solve()
-                .map_err(|_| QuickestPathHeuristicError::PlannerError)?
+                .map_err(|err| QuickestPathHeuristicError::PlannerError(err.into()))?
                 .solution()
             {
                 Some(solution) => solution,
@@ -167,7 +184,7 @@ where
             let mut cost = match self
                 .weight_se2
                 .initial_cost(start)
-                .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
             {
                 Some(cost) => cost,
                 None => break 'cost None,
@@ -181,44 +198,118 @@ where
                     &previous_state.waypoint,
                     &child_state.waypoint.position,
                     &(),
+                    (Some(&start.key.vertex), Some(goal)),
                 ) {
-                    Some(wp) => wp.map_err(|_| QuickestPathHeuristicError::Extrapolation)?,
+                    Some(wp) => wp.map_err(QuickestPathHeuristicError::Extrapolation)?,
                     None => break 'cost None,
                 };
 
                 let child_state = StateSE2::new(child_state.key.clone(), child_wp);
-
                 let child_cost = match self
                     .weight_se2
                     .cost(&previous_state, &action, &child_state)
-                    .map_err(|_| QuickestPathHeuristicError::BrokenWeight)?
+                    .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
                 {
                     Some(cost) => cost,
                     None => break 'cost None,
                 };
 
                 cost = cost + child_cost;
-
                 previous_state = child_state;
             }
-            Some(cost)
+
+            // Shift the time of the final state to what it would be if the
+            // start time had been zero.
+            previous_state.waypoint.time =
+                TimePoint::zero() + (previous_state.waypoint.time - start.waypoint.time);
+            Some(CostCache {
+                cost,
+                arrival_state: previous_state,
+            })
         };
 
-        Ok(cost)
+        match self.cost_cache.write() {
+            Ok(mut cache) => {
+                cache.insert((start.key.clone(), goal.clone()), invariant.clone());
+            }
+            Err(_) => return Err(QuickestPathHeuristicError::PoisonedMutex),
+        }
+
+        Ok(invariant)
+    }
+}
+
+impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
+    for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
+where
+    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
+    WeightR2::WeightedError: Into<Anyhow>,
+    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+    WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
+    WeightSE2::WeightedError: Into<Anyhow>,
+    G: Graph + Reversible + Clone,
+    G::Key: Key + Clone,
+    G::Vertex: Positioned + MaybeOriented,
+    G::EdgeAttributes: SpeedLimiter + Clone,
+    State: Borrow<StateSE2<G::Key, R>>,
+    Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed,
+{
+    type CostEstimate = WeightSE2::Cost;
+    type InformedError = QuickestPathHeuristicError;
+    fn estimate_remaining_cost(
+        &self,
+        from_state: &State,
+        to_goal: &Goal,
+    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+        // Calculate an invariant for getting to this goal from the start, no
+        // matter what time it is being done.
+        let invariant = match self.invariant_cost(from_state, to_goal)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let start: &StateSE2<G::Key, R> = from_state.borrow();
+        // Shift the time of the arrival state so that it it makes sense for the
+        // starting time.
+        // TODO(@mxgrey): Write unit tests specifically to make sure this time
+        // shifting is working correctly.
+        let arrival_state = invariant
+            .arrival_state
+            .time_shifted_by(start.time() - TimePoint::zero());
+
+        // Now add the cost of the final connection, which may vary based on time
+        let cost = match MergeIntoGoal(self.extrapolator).connect(arrival_state.clone(), to_goal) {
+            Some(r) => {
+                let (connect, final_state): (DifferentialDriveLineFollowMotion, _) =
+                    r.map_err(QuickestPathHeuristicError::Extrapolation)?;
+
+                match self
+                    .weight_se2
+                    .cost(&arrival_state, &connect, &final_state)
+                    .map_err(|err| QuickestPathHeuristicError::BrokenWeight(err.into()))?
+                {
+                    Some(connection_cost) => invariant.cost + connection_cost,
+                    None => return Ok(None),
+                }
+            }
+            None => invariant.cost,
+        };
+        Ok(Some(cost))
     }
 }
 
 // TODO(@mxgrey): Put actual error information inside of here.
 #[derive(Debug, ThisError)]
 pub enum QuickestPathHeuristicError {
-    #[error("An error occurred in the planner")]
-    PlannerError,
+    #[error("An error occurred in the planner:\n{0}")]
+    PlannerError(Anyhow),
     #[error("The mutex was poisoned")]
     PoisonedMutex,
-    #[error("An error occurred during SE2 extrapolation")]
-    Extrapolation,
-    #[error("An error occurred while calculating SE2 cost")]
-    BrokenWeight,
+    #[error("An error occurred during SE2 extrapolation:\n{0}")]
+    Extrapolation(DifferentialDriveLineFollowError),
+    #[error("An error occurred while calculating SE2 cost:\n{0}")]
+    BrokenWeight(Anyhow),
 }
 
 #[cfg(test)]
@@ -230,7 +321,7 @@ mod tests {
             SharedGraph, SimpleGraph,
         },
         motion::{
-            se2::{GoalSE2, Point},
+            se2::{GoalSE2, Point, WaypointSE2},
             CircularProfile, TimePoint, TravelTimeCost,
         },
     };
@@ -320,18 +411,15 @@ mod tests {
         .unwrap();
 
         let state_cell = Cell::new(0, 0);
-        let state_p = state_cell.to_center_point(cell_size);
+        let state_p = state_cell.center_point(cell_size);
         let goal_cell = Cell::new(10, 0);
-        let goal_p = goal_cell.to_center_point(cell_size);
+        let goal_p = goal_cell.center_point(cell_size);
         let from_state = StateSE2::new(
             state_cell,
             WaypointSE2::new_f64(0.0, state_p.x, state_p.y, 0.0),
         );
 
-        let goal = GoalSE2 {
-            key: goal_cell,
-            orientation: None,
-        };
+        let goal = GoalSE2::new(goal_cell);
 
         let remaining_cost_estimate = heuristic
             .estimate_remaining_cost(&from_state, &goal)
@@ -373,10 +461,7 @@ mod tests {
             WaypointSE2::new_f64(1.256802684, -5.5, -2.5, 45_f64.to_radians()),
         );
 
-        let goal = GoalSE2 {
-            key: Cell::new(18, 3),
-            orientation: None,
-        };
+        let goal = GoalSE2::new(Cell::new(18, 3));
 
         heuristic
             .estimate_remaining_cost(&from_state, &goal)

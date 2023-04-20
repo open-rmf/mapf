@@ -32,9 +32,9 @@ use std::collections::HashMap;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct OccupancyVisual<Message, G: Grid> {
+pub struct VisibilityVisual<Message, G: Grid> {
     #[derivative(Debug = "ignore")]
-    occupancy: Visibility<G>,
+    visibility: Visibility<G>,
 
     // NOTE: After changing one of the public fields below, you must clear the
     // cache of the SpatialCanvas that this program belongs to before the change
@@ -57,10 +57,10 @@ pub struct OccupancyVisual<Message, G: Grid> {
     #[derivative(Debug = "ignore")]
     pub on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
 
-    _msg: std::marker::PhantomData<Message>,
+    _ignore: std::marker::PhantomData<Message>,
 }
 
-impl<Message, G: Grid> OccupancyVisual<Message, G> {
+impl<Message, G: Grid> VisibilityVisual<Message, G> {
     pub fn new(
         grid: G,
         robot_radius: f32,
@@ -68,71 +68,55 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         on_occupancy_change: Option<Box<dyn Fn() -> Message>>,
     ) -> Self {
         Self {
-            occupancy: {
-                let mut vis = Visibility::new(grid, robot_radius as f64);
-                // vis.change_cells(
-                //     &(-10..=-1_i64)
-                //     .into_iter()
-                //     .map(|y| (Cell::new(3, y), true))
-                //     .collect()
-                // );
-                // vis.change_cells(&[(Cell::new(5, 0), true)].into_iter().collect());
-
-                // vis.change_cells(
-                //     &(-10..10).into_iter()
-                //     .map(|y| (Cell::new(5, y), true))
-                //     .collect()
-                // );
-
-                for x in [-3, 1] {
-                    vis.change_cells(
-                        &(-14..=-1)
-                            .into_iter()
-                            .map(|y| (Cell::new(x, y), true))
-                            .collect(),
-                    );
-                }
-                vis
-            },
+            visibility: Visibility::new(grid, robot_radius as f64),
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
             default_visibility_color: iced::Color::from_rgb8(230, 166, 33),
             special_visibility_color: Default::default(),
             show_visibility_graph: true,
             show_details: false,
             cell_toggler: Some(Box::new(FillToggler::new(
-                DragToggler::new(Some(mouse::Button::Left), None),
                 DragToggler::new(
                     None,
                     Some((keyboard::Modifiers::SHIFT, mouse::Button::Left)),
                 ),
-            ))),
-            corner_select_toggler: Some(Box::new(FillToggler::new(
-                DragToggler::new(Some(mouse::Button::Right), None),
                 DragToggler::new(
                     None,
                     Some((keyboard::Modifiers::SHIFT, mouse::Button::Right)),
                 ),
             ))),
+            corner_select_toggler: Some(Box::new(FillToggler::new(
+                DragToggler::new(None, Some((keyboard::Modifiers::ALT, mouse::Button::Left))),
+                DragToggler::new(None, Some((keyboard::Modifiers::ALT, mouse::Button::Right))),
+            ))),
             on_corner_select,
             on_occupancy_change,
-            _msg: Default::default(),
+            _ignore: Default::default(),
         }
     }
 
+    pub fn showing_visibility_graph(mut self, showing: bool) -> Self {
+        self.show_visibility_graph = showing;
+        self
+    }
+
     pub fn set_robot_radius(&mut self, radius: f32) {
-        self.occupancy.change_agent_radius(radius as f64);
+        self.visibility.change_agent_radius(radius as f64);
     }
 
     pub fn visibility(&self) -> &Visibility<G> {
-        &self.occupancy
+        &self.visibility
     }
 
     pub fn visibility_mut(&mut self) -> &mut Visibility<G> {
-        &mut self.occupancy
+        &mut self.visibility
     }
 
     pub fn grid(&self) -> &G {
-        &self.occupancy.grid()
+        &self.visibility.grid()
+    }
+
+    pub fn set_grid(&mut self, grid: G) {
+        self.visibility = Visibility::new(grid, self.visibility.agent_radius());
     }
 
     /// The cache of the spatial canvas needs to be cleared after changing this
@@ -145,14 +129,14 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
         if let Some(cell_toggler) = &self.cell_toggler {
             let cell = Cell::from_point(
                 [p.x as f64, p.y as f64].into(),
-                self.occupancy.grid().cell_size(),
+                self.visibility.grid().cell_size(),
             );
             match cell_toggler.state() {
                 Toggle::On => {
-                    return self.occupancy.change_cells(&[(cell, true)].into());
+                    return self.visibility.change_cells(&[(cell, true)].into());
                 }
                 Toggle::Off => {
-                    return self.occupancy.change_cells(&[(cell, false)].into());
+                    return self.visibility.change_cells(&[(cell, false)].into());
                 }
                 Toggle::NoChange => {
                     return false;
@@ -165,11 +149,11 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
 
     fn find_closest(&self, p: iced::Point) -> Option<Cell> {
         let mut closest: Option<(Cell, f64)> = None;
-        let r = self.occupancy.agent_radius();
+        let r = self.visibility.agent_radius();
         let p = Point::new(p.x as f64, p.y as f64);
 
-        for (cell, _) in self.occupancy.iter_points() {
-            let p_cell = cell.to_center_point(self.grid().cell_size());
+        for (cell, _) in self.visibility.iter_points() {
+            let p_cell = cell.center_point(self.grid().cell_size());
             let dist = (p_cell - p).norm();
             if dist <= r {
                 if let Some((_, old_dist)) = closest {
@@ -186,7 +170,7 @@ impl<Message, G: Grid> OccupancyVisual<Message, G> {
     }
 }
 
-impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message, G> {
+impl<Message, G: Grid> SpatialCanvasProgram<Message> for VisibilityVisual<Message, G> {
     fn update(
         &mut self,
         event: Event,
@@ -239,10 +223,10 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
     }
 
     fn draw_in_space(&self, frame: &mut Frame, _: Rectangle, _: Cursor) {
-        let cell_size = self.occupancy.grid().cell_size();
-        let robot_radius = self.occupancy.agent_radius() as f32;
-        for cell in self.occupancy.grid().occupied_cells() {
-            let p = cell.to_bottom_left_point(cell_size);
+        let cell_size = self.visibility.grid().cell_size();
+        let robot_radius = self.visibility.agent_radius() as f32;
+        for cell in self.visibility.grid().occupied_cells() {
+            let p = cell.bottom_left_point(cell_size);
             frame.fill_rectangle(
                 [p.x as f32, p.y as f32].into(),
                 iced::Size::new(cell_size as f32, cell_size as f32),
@@ -251,8 +235,8 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
         }
 
         if self.show_visibility_graph {
-            for (cell, _) in self.occupancy.iter_points() {
-                let p = cell.to_center_point(cell_size);
+            for (cell, _) in self.visibility.iter_points() {
+                let p = cell.center_point(cell_size);
                 let color = self
                     .special_visibility_color
                     .get(cell)
@@ -264,9 +248,9 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
                 );
             }
 
-            for (cell_i, cell_j) in self.occupancy.iter_edges() {
-                let p_i = cell_i.to_center_point(cell_size);
-                let p_j = cell_j.to_center_point(cell_size);
+            for (cell_i, cell_j) in self.visibility.iter_edges() {
+                let p_i = cell_i.center_point(cell_size);
+                let p_j = cell_j.center_point(cell_size);
                 frame.stroke(
                     &Path::line(
                         [p_i.x as f32, p_i.y as f32].into(),
@@ -358,9 +342,9 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
             return;
         }
 
-        for (cell, _) in self.occupancy.iter_points() {
-            let p = cell.to_center_point(self.occupancy.grid().cell_size());
-            let r = self.occupancy.agent_radius() as f32 / 2_f32.sqrt();
+        for (cell, _) in self.visibility.iter_points() {
+            let p = cell.center_point(self.visibility.grid().cell_size());
+            let r = self.visibility.agent_radius() as f32 / 2_f32.sqrt();
             let delta = iced::Vector::new(r, -r);
             let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
 
@@ -374,9 +358,9 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
 
     fn estimate_bounds(&self) -> InclusionZone {
         let mut zone = InclusionZone::Empty;
-        let r = self.occupancy.agent_radius() as f32;
-        for (cell, _) in self.occupancy.iter_points() {
-            let p = cell.to_center_point(self.occupancy.grid().cell_size());
+        let r = self.visibility.agent_radius() as f32;
+        for (cell, _) in self.visibility.iter_points() {
+            let p = cell.center_point(self.visibility.grid().cell_size());
             let p: iced::Point = [p.x as f32, p.y as f32].into();
             let d = iced::Vector::new(r, r);
             zone.include(p + d);
@@ -387,4 +371,4 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for OccupancyVisual<Message
     }
 }
 
-pub type SparseGridOccupancyVisual<Message> = OccupancyVisual<Message, SparseGrid>;
+pub type SparseGridVisibilityVisual<Message> = VisibilityVisual<Message, SparseGrid>;

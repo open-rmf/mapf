@@ -96,7 +96,7 @@ impl<State: Timed, Action: Measurable<State>> Weighted<State, Action> for Travel
         // implementation to work both forwards and backwards in time. We are
         // assuming that any case where time is decreasing in the child state,
         // a reverse search is being performed.
-        let duration = (*to_state.time() - *from_state.time()).as_secs_f64().abs();
+        let duration = (to_state.time() - from_state.time()).as_secs_f64().abs();
         let arclength = action.arclength(from_state, to_state);
         let cost = self.time * duration
             + self.translation * arclength.translational

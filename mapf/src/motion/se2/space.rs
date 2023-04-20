@@ -25,7 +25,7 @@ use crate::{
     motion::{
         r2::{MaybePositioned, Point, Positioned},
         se2::*,
-        IntegrateWaypoints, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
+        IntegrateWaypoints, MaybeTimed, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
     },
     util::{wrap_to_pi, FlatResultMapTrait},
 };
@@ -170,8 +170,14 @@ impl<K, const R: u32> Timed for StateSE2<K, R> {
         self.waypoint.set_time(new_time);
     }
 
-    fn time(&self) -> &TimePoint {
+    fn time(&self) -> TimePoint {
         self.waypoint.time()
+    }
+}
+
+impl<K, const R: u32> MaybeTimed for StateSE2<K, R> {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.waypoint.time())
     }
 }
 
@@ -238,6 +244,12 @@ impl<K, const R: u32> MaybeOriented for KeySE2<K, R> {
 
 impl<K, const R: u32> MaybePositioned for KeySE2<K, R> {
     fn maybe_point(&self) -> Option<crate::motion::r2::Point> {
+        None
+    }
+}
+
+impl<K, const R: u32> MaybeTimed for KeySE2<K, R> {
+    fn maybe_time(&self) -> Option<TimePoint> {
         None
     }
 }
@@ -733,7 +745,7 @@ impl From<DifferentialDriveLineFollow> for SatisfySE2 {
 
 impl<K, const R: u32, Goal> Satisfiable<StateSE2<K, R>, Goal> for SatisfySE2
 where
-    Goal: SelfKey<Key = K> + MaybeOriented,
+    Goal: SelfKey<Key = K> + MaybeOriented + MaybeTimed,
     K: PartialEq,
 {
     type SatisfactionError = NoError;
@@ -755,6 +767,12 @@ where
             }
         }
 
+        if let Some(target_time) = for_goal.maybe_time() {
+            if by_state.time() < target_time {
+                return Ok(false);
+            }
+        }
+
         Ok(true)
     }
 }
@@ -763,6 +781,32 @@ where
 pub struct GoalSE2<K> {
     pub key: K,
     pub orientation: Option<Orientation>,
+    pub minimum_time: Option<TimePoint>,
+}
+
+impl<K> GoalSE2<K> {
+    pub fn new(key: K) -> Self {
+        Self {
+            key,
+            orientation: None,
+            minimum_time: None,
+        }
+    }
+
+    pub fn with_key(mut self, key: K) -> Self {
+        self.key = key;
+        self
+    }
+
+    pub fn with_orientation(mut self, orientation: Option<Orientation>) -> Self {
+        self.orientation = orientation;
+        self
+    }
+
+    pub fn with_minimum_time(mut self, minimum_time: Option<TimePoint>) -> Self {
+        self.minimum_time = minimum_time;
+        self
+    }
 }
 
 impl<K: Key> Keyed for GoalSE2<K> {
@@ -788,6 +832,12 @@ impl<K> MaybeOriented for GoalSE2<K> {
 impl<K> MaybePositioned for GoalSE2<K> {
     fn maybe_point(&self) -> Option<crate::motion::r2::Point> {
         None
+    }
+}
+
+impl<K> MaybeTimed for GoalSE2<K> {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        self.minimum_time
     }
 }
 

@@ -1,0 +1,45 @@
+name: ci_windows
+on:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    # The final 1 indicates that we want to run this test on Tuesdays, making
+    # this a weekly test.
+    - cron:  '30 2 * * 1'
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+
+    - name: Install Rustup using win.rustup.rs
+      run: |
+        # Disable the download progress bar which can cause perf issues
+        $ProgressPreference = "SilentlyContinue"
+        Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
+        .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --default-toolchain=none
+        del rustup-init.exe
+        rustup default nightly
+        rustup target add x86_64-pc-windows-msvc
+      shell: powershell
+
+    - name: build
+      run: |
+        rustc -Vv
+        cargo -V
+        cargo build --workspace --tests
+      shell: cmd
+
+    - name: test
+      run: |
+        cargo test --tests
+      shell: cmd

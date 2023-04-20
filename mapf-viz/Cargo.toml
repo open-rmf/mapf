@@ -11,7 +11,7 @@ iced = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale", fe
 iced_aw = { git = "https://github.com/iced-rs/iced_aw", branch = "main" }
 iced_native = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale" }
 serde = { version="1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_yaml = "*"
 async-std = "1.0"
 directories-next = "2.0"
 native-dialog = "*"
@@ -20,3 +20,4 @@ lyon = "*"
 nalgebra = "*"
 arrayvec = "*"
 time-point = "*"
+clap = { version = "4.2.1", features = ["derive"] }

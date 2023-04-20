@@ -17,7 +17,7 @@
 
 use crate::{
     algorithm::{
-        tree::*, Algorithm, Coherent, Measure, MinimumCostBound, Path, SearchStatus, Solvable,
+        tree::*, Algorithm, Coherent, MinimumCostBound, Path, QueueLength, SearchStatus, Solvable,
     },
     domain::{
         Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Informed,
@@ -50,12 +50,12 @@ pub struct AStarConnect<D>(pub D);
 #[derive(Debug)]
 pub struct Memory<Closed, State, Action, Cost>(pub Tree<Closed, Node<State, Action, Cost>, Cost>);
 
-impl<Closed, State, Action, Cost> Measure for Memory<Closed, State, Action, Cost>
+impl<Closed, State, Action, Cost> QueueLength for Memory<Closed, State, Action, Cost>
 where
     Cost: Clone + Add<Cost, Output = Cost>,
 {
-    fn size(&self) -> usize {
-        self.0.size()
+    fn queue_length(&self) -> usize {
+        self.0.queue_length()
     }
 }
 
@@ -338,10 +338,9 @@ where
 
 impl<D: Configurable> Configurable for AStar<D> {
     type Configuration = D::Configuration;
-    type ConfigurationError = D::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         Ok(AStar(self.0.configure(f)?))
     }
@@ -436,10 +435,9 @@ where
 
 impl<D: Configurable> Configurable for AStarConnect<D> {
     type Configuration = D::Configuration;
-    type ConfigurationError = D::ConfigurationError;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         Ok(AStarConnect(self.0.configure(f)?))
     }
@@ -460,6 +458,10 @@ impl<State, Action, Cost> Node<State, Action, Cost> {
 
     pub fn remaining_cost_estimate(&self) -> &Cost {
         &self.remaining_cost_estimate
+    }
+
+    pub fn state(&self) -> &State {
+        &self.state
     }
 }
 

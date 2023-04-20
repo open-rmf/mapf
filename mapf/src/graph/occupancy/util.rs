@@ -129,7 +129,7 @@ impl LineSegment {
         let bound_distance = proximity + 1.4143 * cell_size;
         for m in [0, 1] {
             for n in [0, 1] {
-                let p = cell.shifted(m, n).to_bottom_left_point(cell_size);
+                let p = cell.shifted(m, n).bottom_left_point(cell_size);
                 let dist = self.distance_from_point(p);
                 if dist < proximity {
                     return true;
@@ -141,8 +141,8 @@ impl LineSegment {
             }
         }
 
-        let p_min = cell.to_bottom_left_point(cell_size);
-        let p_max = cell.shifted(1, 1).to_bottom_left_point(cell_size);
+        let p_min = cell.bottom_left_point(cell_size);
+        let p_max = cell.shifted(1, 1).bottom_left_point(cell_size);
 
         // We need to check if either line segment endpoint is inside the cell
         for p in [&self.p0, &self.p1] {

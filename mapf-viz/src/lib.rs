@@ -18,8 +18,11 @@
 pub mod spatial_canvas;
 pub use spatial_canvas::SpatialCanvasProgram;
 
-pub mod occupancy;
-pub use occupancy::{OccupancyVisual, SparseGridOccupancyVisual};
+pub mod visibility_visual;
+pub use visibility_visual::{SparseGridVisibilityVisual, VisibilityVisual};
+
+pub mod accessibility_visual;
+pub use accessibility_visual::{AccessibilityVisual, SparseGridAccessibilityVisual};
 
 pub mod grid;
 pub use grid::InfiniteGrid;

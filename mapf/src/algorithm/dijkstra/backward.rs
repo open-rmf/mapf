@@ -27,7 +27,7 @@ use crate::{
         Activity, ArrivalKeyring, Backtrack, Closable, ClosedStatusForKey, Configurable,
         Connectable, Domain, Initializable, Keyed, Keyring, Reversible, Weighted,
     },
-    error::ThisError,
+    error::{Anyhow, ThisError},
 };
 use std::ops::Add;
 
@@ -161,22 +161,21 @@ where
         + Activity<D::State>
         + Weighted<D::State, D::ActivityAction>
         + Closable<D::State>,
+    D::ReversalError: Into<Anyhow>,
 {
     type Configuration = D::Configuration;
-    type ConfigurationError = BackwardConfigurationError<D::ReversalError, D::ConfigurationError>;
-    fn configure<F>(self, f: F) -> Result<Self, Self::ConfigurationError>
+    fn configure<F>(self, f: F) -> Result<Self, Anyhow>
     where
-        F: FnOnce(Self::Configuration) -> Self::Configuration,
+        F: FnOnce(Self::Configuration) -> Result<Self::Configuration, Anyhow>,
     {
         let configured = self
             .backward
             .domain()
             .reversed()
-            .map_err(BackwardConfigurationError::Reverse)?
-            .configure(f)
-            .map_err(BackwardConfigurationError::Configure)?;
+            .map_err(Into::into)?
+            .configure(f)?;
 
-        Self::new(&configured).map_err(BackwardConfigurationError::Reverse)
+        Self::new(&configured).map_err(Into::into)
     }
 }
 
@@ -270,7 +269,7 @@ mod tests {
             .unwrap(),
         ));
 
-        for i in 0..=8 {
+        for i in 0..=8usize {
             for angle in [0.0, 90.0, 180.0, 30.0, -140.0_f64] {
                 let start_key = KeySE2::new(i, angle.to_radians());
                 let result = planner.plan(start_key, i).unwrap().solve().unwrap();

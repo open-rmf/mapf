@@ -102,7 +102,13 @@ where
         for action in self {
             let wp: W = match action {
                 SafeAction::Move(wp) => wp.clone().into(),
-                SafeAction::Wait(wait) => initial_waypoint.with_time(wait.time_estimate),
+                SafeAction::Wait(wait) => {
+                    if initial_waypoint.time() < wait.time_estimate {
+                        initial_waypoint.with_time(wait.time_estimate)
+                    } else {
+                        continue;
+                    }
+                }
             };
 
             waypoints.push(Ok(wp.clone()));
@@ -256,7 +262,7 @@ where
         });
     }
 
-    ranked_hints.sort_by(|a, b| match a.contour.cmp(&b.contour) {
+    ranked_hints.sort_unstable_by(|a, b| match a.contour.cmp(&b.contour) {
         Ordering::Equal => {
             if a.reach <= b.reach {
                 Ordering::Less
@@ -503,8 +509,14 @@ where
             // Test if the start waypoint can arrive at this hint. If it can
             // then we have found our path.
             let hint_arrival_wp = make_parent_arrival(from_point, hint_wp);
+            // TODO(@mxgrey): We have seen cases where hint_arrival_wp.time
+            // is larger than hint_wp.time. We should consider whether this is
+            // a bug or is acceptable. In the worst case it means we have some
+            // unhelpful hints which we should be ignoring to reduce the search
+            // effort. Maybe we can filter based on the contour.
             let safe_hint_arrival =
                 is_safe_segment((&from_point, &hint_arrival_wp), None, in_environment)
+                    && hint_arrival_wp.time <= hint_wp.time
                     && is_safe_segment((&hint_arrival_wp, &hint_wp), None, in_environment);
             if safe_hint_arrival {
                 // We have found the desired path
@@ -529,7 +541,7 @@ where
                 path.push(SafeAction::Move(final_wp));
                 return Some(path);
             }
-        };
+        }
     }
 
     None
@@ -717,6 +729,7 @@ fn detect_proximity(
     };
 }
 
+#[derive(Debug)]
 struct CandidateAdjustment {
     pushed: bool,
     result: Option<TimePoint>,
@@ -736,7 +749,7 @@ where
     let mut this_obs_violated = false;
     let mut new_candidate_time: Option<TimePoint> = None;
     for [wp0, wp1] in obs_traj.iter_from(candidate_time).pairs() {
-        if candidate_time < *wp0.time() && !this_obs_violated {
+        if candidate_time < wp0.time() && !this_obs_violated {
             break;
         }
 
@@ -866,7 +879,7 @@ pub fn is_safe_segment<Env, W>(
     in_environment: &Env,
 ) -> bool
 where
-    W: Into<WaypointR2> + Waypoint,
+    W: Into<WaypointR2> + Waypoint + std::fmt::Debug,
     Env: Environment<CircularProfile, DynamicCircularObstacle<W>>,
 {
     let profile = in_environment.agent_profile();
@@ -887,7 +900,7 @@ where
         }
 
         for [wp0_b, wp1_b] in obs_traj.iter_range(line_a.0.time, line_a.1.time).pairs() {
-            if line_a.1.time < *wp0_b.time() {
+            if line_a.1.time < wp0_b.time() {
                 // The trajectories are no longer overlapping in time so there
                 // is no longer a risk.
                 return true;
@@ -896,45 +909,78 @@ where
             let wp0_b: WaypointR2 = wp0_b.into();
             let wp1_b: WaypointR2 = wp1_b.into();
             let line_b = (&wp0_b, &wp1_b);
-
-            if !bb.overlaps(Some(
-                BoundingBox::for_line(obs.profile(), &wp0_b, &wp1_b).inflated_by(1e-3),
-            )) {
-                continue;
-            }
-
-            let in_time_range = |t: &TimePoint| -> bool {
-                line_a.0.time < *t && *t < line_a.1.time && line_b.0.time < *t && *t < line_b.1.time
-            };
-
-            let proximity = detect_proximity(conflict_distance_squared, line_a, line_b);
-
-            if let Some(t) = proximity.enter.filter(in_time_range) {
-                let t_range = compute_t_range(line_a, line_b);
-                let t = (t - t_range.0).as_secs_f64();
-                let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
-                let a = dv.dot(&dv);
-                let b = 2.0 * dv.dot(&dp0);
-                let deriv = 2.0 * a * t + b;
-                // Allow for a little floating point error. When the derivative
-                // is very very close to zero (which is a perfectly acceptable
-                // value), floating point calculation errors can cause its
-                // calculated value to dip into the negative.
-                //
-                // TODO(@mxgrey): Consider if there are more robust ways (not
-                // sensitive to floating point error) to determine whether the
-                // segment is safe.
-                if deriv < -1e-6 {
-                    // The distance between the agents is reducing while they
-                    // are already within an unsafe proximity, so we will call
-                    // this situation unsafe.
-                    return false;
-                }
+            if have_conflict(
+                line_a,
+                Some(bb),
+                in_environment.agent_profile(),
+                line_b,
+                None,
+                obs.profile(),
+                conflict_distance_squared,
+            ) {
+                return false;
             }
         }
     }
 
     true
+}
+
+#[inline]
+pub fn have_conflict(
+    line_a: (&WaypointR2, &WaypointR2),
+    bb_a: Option<BoundingBox>,
+    profile_a: &CircularProfile,
+    line_b: (&WaypointR2, &WaypointR2),
+    bb_b: Option<BoundingBox>,
+    profile_b: &CircularProfile,
+    conflict_distance_squared: f64,
+) -> bool {
+    let bb_a = match bb_a {
+        Some(bb_a) => bb_a,
+        None => BoundingBox::for_line(profile_a, line_a.0, line_a.1),
+    };
+
+    let bb_b = match bb_b {
+        Some(bb_b) => bb_b,
+        None => BoundingBox::for_line(profile_b, line_b.0, line_b.1),
+    };
+
+    if !bb_a.overlaps(Some(bb_b)) {
+        return false;
+    }
+
+    let in_time_range = |t: &TimePoint| -> bool {
+        line_a.0.time < *t && *t < line_a.1.time && line_b.0.time < *t && *t < line_b.1.time
+    };
+
+    let proximity = detect_proximity(conflict_distance_squared, line_a, line_b);
+
+    if let Some(t) = proximity.enter.filter(in_time_range) {
+        let t_range = compute_t_range(line_a, line_b);
+        let t = (t - t_range.0).as_secs_f64();
+        let (dp0, dv) = compute_dp0_dv(line_a, line_b, &t_range);
+        let a = dv.dot(&dv);
+        let b = 2.0 * dv.dot(&dp0);
+        // let deriv = 2.0 * a * t + b;
+        let deriv = 2.0 * a * t + b;
+        // Allow for a little floating point error. When the derivative
+        // is very very close to zero (which is a perfectly acceptable
+        // value), floating point calculation errors can cause its
+        // calculated value to dip into the negative.
+        //
+        // TODO(@mxgrey): Consider if there are more robust ways (not
+        // sensitive to floating point error) to determine whether the
+        // segment is safe.
+        if deriv < -1e-6 {
+            // The distance between the agents is reducing while they
+            // are already within an unsafe proximity, so we will call
+            // this situation unsafe.
+            return true;
+        }
+    }
+
+    return false;
 }
 
 #[inline]
@@ -963,6 +1009,7 @@ where
 
     let mut wait_hints = SmallVec::new();
     for (for_obstacle, obs) in in_environment.obstacles().into_iter().enumerate() {
+        // dbg!((for_obstacle, obs));
         if !bb.overlaps(obs.bounding_box().cloned()) {
             continue;
         }
@@ -1277,7 +1324,7 @@ fn compute_quadratic_wait_hints(
 }
 
 #[inline]
-fn compute_stationary_proximity(
+pub fn compute_stationary_proximity(
     r: Point,
     p0: Point,
     v: Vector2,
@@ -1605,6 +1652,28 @@ mod tests {
                 assert!(obs_tf < tf);
                 assert!(tf < obs_tf + 1.0);
             }
+        }
+    }
+
+    #[test]
+    fn test_indefinite_finish_safety() {
+        for expect_safe in [true, false] {
+            let obstacle = Trajectory::from_iter([
+                WaypointR2::new_f64(0.0, 0.0, 0.0),
+                WaypointR2::new_f64(1.0, 0.0, 0.0),
+            ])
+            .unwrap()
+            .with_indefinite_finish_time(!expect_safe);
+
+            let profile = CircularProfile::new(1.0, 0.0, 0.0).unwrap();
+            let mut environment = DynamicEnvironment::new(profile);
+            environment
+                .obstacles
+                .push(DynamicCircularObstacle::new(profile).with_trajectory(Some(obstacle)));
+
+            let p0 = WaypointR2::new_f64(0.0, -5.0, 0.0);
+            let p1 = WaypointR2::new_f64(20.0, 5.0, 0.0);
+            assert_eq!(expect_safe, is_safe_segment((&p0, &p1), None, &environment));
         }
     }
 }

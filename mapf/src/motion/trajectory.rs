@@ -21,7 +21,7 @@ use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FindWaypoint {
     /// The requested time is exactly on the waypoint at this index
     Exact(usize),
@@ -91,6 +91,10 @@ impl<W: Waypoint> Trajectory<W> {
         self
     }
 
+    pub fn set_indefinite_initial_time(&mut self, value: bool) {
+        self.indefinite_initial_time = value;
+    }
+
     pub fn has_indefinite_initial_time(&self) -> bool {
         self.indefinite_initial_time
     }
@@ -98,6 +102,10 @@ impl<W: Waypoint> Trajectory<W> {
     pub fn with_indefinite_finish_time(mut self, value: bool) -> Self {
         self.indefinite_finish_time = value;
         self
+    }
+
+    pub fn set_indefinite_finish_time(&mut self, value: bool) {
+        self.indefinite_finish_time = value;
     }
 
     pub fn has_indefinite_finish_time(&self) -> bool {
@@ -108,7 +116,7 @@ impl<W: Waypoint> Trajectory<W> {
     /// If the finish time is equal to the start time, then this will return an
     /// Err.
     pub fn hold(from: W, until: TimePoint) -> Result<Self, ()> {
-        if *from.time() == until {
+        if from.time() == until {
             return Result::Err(());
         }
 
@@ -196,7 +204,7 @@ impl<W: Waypoint> Trajectory<W> {
         unsafe {
             let vec = self.waypoints.get_unchecked_mut_vec();
             for element in vec.iter_mut() {
-                let new_time = *element.0.time() + by;
+                let new_time = element.0.time() + by;
                 element.0.set_time(new_time);
             }
         }
@@ -220,7 +228,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn motion_duration(&self) -> Duration {
-        *self.finish_motion().time() - *self.initial_motion().time()
+        self.finish_motion().time() - self.initial_motion().time()
     }
 
     /// Trajectories always have at least two values, so we can always get the
@@ -243,7 +251,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn initial_motion_time(&self) -> TimePoint {
-        *self.initial_motion().time()
+        self.initial_motion().time()
     }
 
     /// Get the time that the trajectory finishes.
@@ -256,7 +264,7 @@ impl<W: Waypoint> Trajectory<W> {
     }
 
     pub fn finish_motion_time(&self) -> TimePoint {
-        *self.finish_motion().time()
+        self.finish_motion().time()
     }
 
     /// Make changes to the waypoint at a specified index. If a change is made
@@ -294,14 +302,14 @@ impl<W: Waypoint> Trajectory<W> {
             f(&mut wp.0);
 
             if let Some(lower_bound) = lower_bound_opt {
-                if *wp.0.time() <= lower_bound {
+                if wp.0.time() <= lower_bound {
                     wp.0.set_time(original_time);
                     return Result::Err(MutateError::InvalidTimeChange);
                 }
             }
 
             if let Some(upper_bound) = upper_bound_opt {
-                if *wp.0.time() >= upper_bound {
+                if wp.0.time() >= upper_bound {
                     wp.0.set_time(original_time);
                     return Result::Err(MutateError::InvalidTimeChange);
                 }
@@ -373,13 +381,23 @@ impl<W: Waypoint> Trajectory<W> {
 }
 
 impl<W: Waypoint> std::fmt::Debug for Trajectory<W> {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut builder = fmt.debug_list();
-        for wp in self.waypoints.iter() {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Trajectory")
+            .field("indefinite_initial_time", &self.indefinite_initial_time)
+            .field("indefinite_finish_time", &self.indefinite_finish_time)
+            .field("waypoints", &DebugWaypoints(&self.waypoints))
+            .finish()
+    }
+}
+
+struct DebugWaypoints<'a, W: Waypoint>(&'a SortedSet<TimeCmp<W>>);
+impl<'a, W: Waypoint> std::fmt::Debug for DebugWaypoints<'a, W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut builder = f.debug_list();
+        for wp in self.0.iter() {
             builder.entry(&wp.0);
         }
-
-        return builder.finish();
+        builder.finish()
     }
 }
 
@@ -393,34 +411,47 @@ impl<W: Waypoint> std::ops::Deref for Trajectory<W> {
 
 pub struct TrajectoryMotion<'a, W: Waypoint> {
     trajectory: &'a Trajectory<W>,
+    // TODO(@mxgrey): We could probably use references with explicit lifetimes
+    // instead of Rc.
     motion_cache: RefCell<UnboundCache<usize, Rc<W::Motion>>>,
 }
 
 impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
-    fn find_motion_segment(&self, time: &TimePoint) -> Result<Rc<W::Motion>, InterpError> {
+    fn find_motion_segment(&self, time: &TimePoint) -> Result<MotionSegment<W>, InterpError> {
         match self.trajectory.find(time) {
             FindWaypoint::Exact(index) => {
                 if index == 0 {
-                    return Ok(self.get_motion_segment(index + 1));
+                    return Ok(MotionSegment::Interp(self.get_motion_segment(index + 1)));
                 } else {
-                    return Ok(self.get_motion_segment(index));
+                    return Ok(MotionSegment::Interp(self.get_motion_segment(index)));
                 }
             }
             FindWaypoint::Approaching(index) => {
-                return Ok(self.get_motion_segment(index));
+                return Ok(MotionSegment::Interp(self.get_motion_segment(index)));
             }
-            FindWaypoint::BeforeStart | FindWaypoint::AfterFinish => {
-                // TODO(@mxgrey): Handle this differently for trajectories with
-                // indefinite initial/final times.
-                return Err(InterpError::OutOfBounds {
-                    range: [
-                        self.trajectory.initial_motion_time(),
-                        self.trajectory.finish_motion_time(),
-                    ],
-                    request: *time,
-                });
+            FindWaypoint::BeforeStart => {
+                if self.trajectory.has_indefinite_initial_time() {
+                    return Ok(MotionSegment::Holding(
+                        self.trajectory.initial_motion().position(),
+                    ));
+                }
+            }
+            FindWaypoint::AfterFinish => {
+                if self.trajectory.has_indefinite_finish_time() {
+                    return Ok(MotionSegment::Holding(
+                        self.trajectory.finish_motion().position(),
+                    ));
+                }
             }
         }
+
+        Err(InterpError::OutOfBounds {
+            range: [
+                self.trajectory.initial_motion_time(),
+                self.trajectory.finish_motion_time(),
+            ],
+            request: *time,
+        })
     }
 
     fn get_motion_segment(&self, index: usize) -> Rc<W::Motion> {
@@ -441,13 +472,24 @@ impl<'a, W: Waypoint> TrajectoryMotion<'a, W> {
     }
 }
 
+enum MotionSegment<W: Waypoint> {
+    Interp(Rc<W::Motion>),
+    Holding(W::Position),
+}
+
 impl<'a, W: Waypoint> Motion<W::Position, W::Velocity> for TrajectoryMotion<'a, W> {
     fn compute_position(&self, time: &TimePoint) -> Result<W::Position, InterpError> {
-        return self.find_motion_segment(time)?.compute_position(time);
+        match self.find_motion_segment(time)? {
+            MotionSegment::Interp(motion) => motion.compute_position(time),
+            MotionSegment::Holding(p) => Ok(p),
+        }
     }
 
     fn compute_velocity(&self, time: &TimePoint) -> Result<W::Velocity, InterpError> {
-        return self.find_motion_segment(time)?.compute_velocity(time);
+        match self.find_motion_segment(time)? {
+            MotionSegment::Interp(motion) => motion.compute_velocity(time),
+            MotionSegment::Holding(_) => Ok(W::zero_velocity()),
+        }
     }
 }
 
@@ -477,7 +519,7 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
             }
             FindWaypoint::Exact(index) => TrajectoryIterNext::Index(index),
             FindWaypoint::Approaching(index) => TrajectoryIterNext::Index(index - 1),
-            FindWaypoint::AfterFinish => TrajectoryIterNext::Depleted,
+            FindWaypoint::AfterFinish => TrajectoryIterNext::StartPostFinish(begin),
         };
 
         Self {
@@ -492,7 +534,8 @@ impl<'a, W: Waypoint> TrajectoryIter<'a, W> {
 enum TrajectoryIterNext {
     PreInitial(TimePoint),
     Index(usize),
-    PostFinish(TimePoint),
+    StartPostFinish(TimePoint),
+    ReachedPostFinish(TimePoint),
     Depleted,
 }
 
@@ -517,11 +560,11 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
             TrajectoryIterNext::Index(index) => {
                 let wp = self.trajectory.get(index).map(|wp| wp.clone());
                 if let (Some(t_f), Some(wp)) = (self.until, &wp) {
-                    if t_f <= *wp.time() {
+                    if t_f <= wp.time() {
                         // We only include the first element that exceeds the
                         // finish time.
                         self.next_element = TrajectoryIterNext::Depleted;
-                        if *wp.time() < self.begin {
+                        if wp.time() < self.begin {
                             // This element comes before the begin time.
                             // This is not supposed to happen, but let's handle
                             // it gracefully anyway.
@@ -531,11 +574,11 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
                     }
                 }
 
-                self.next_element = if wp.is_some() {
+                self.next_element = if index + 1 < self.trajectory.len() {
                     TrajectoryIterNext::Index(index + 1)
                 } else {
                     if let Some(t_f) = self.until {
-                        TrajectoryIterNext::PostFinish(t_f)
+                        TrajectoryIterNext::ReachedPostFinish(t_f)
                     } else {
                         TrajectoryIterNext::Depleted
                     }
@@ -543,18 +586,31 @@ impl<'a, W: Waypoint> Iterator for TrajectoryIter<'a, W> {
 
                 wp
             }
-            TrajectoryIterNext::PostFinish(t) => {
+            TrajectoryIterNext::StartPostFinish(t) => {
                 if !self.trajectory.has_indefinite_finish_time() {
                     self.next_element = TrajectoryIterNext::Depleted;
                     return None;
                 }
 
                 let mut wp = self.trajectory.finish_motion().clone();
-                if *wp.time() < t {
-                    wp.set_time(t);
-                    return Some(wp);
+                wp.set_time(t);
+                if let Some(t_f) = self.until {
+                    self.next_element = TrajectoryIterNext::ReachedPostFinish(t_f);
+                } else {
+                    self.next_element = TrajectoryIterNext::Depleted;
                 }
-                None
+                return Some(wp);
+            }
+            TrajectoryIterNext::ReachedPostFinish(t) => {
+                if !self.trajectory.has_indefinite_finish_time() {
+                    self.next_element = TrajectoryIterNext::Depleted;
+                    return None;
+                }
+
+                let mut wp = self.trajectory.finish_motion().clone();
+                wp.set_time(t);
+                self.next_element = TrajectoryIterNext::Depleted;
+                return Some(wp);
             }
             TrajectoryIterNext::Depleted => None,
         }

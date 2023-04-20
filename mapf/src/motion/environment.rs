@@ -15,9 +15,12 @@
  *
 */
 
-use crate::motion::{
-    r2::{Point, WaypointR2},
-    Trajectory, Waypoint,
+use crate::{
+    domain::Key,
+    motion::{
+        r2::{Point, WaypointR2},
+        Trajectory, Waypoint,
+    },
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -84,18 +87,93 @@ impl<W: Waypoint> Default for DynamicEnvironmentOverlay<W> {
     }
 }
 
+pub type CcbsKey<K> = (K, K);
+
 #[derive(Debug, Clone)]
-pub struct OverlayedDynamicEnvironment<W: Waypoint> {
-    base: Arc<DynamicEnvironment<W>>,
-    overlay: DynamicEnvironmentOverlay<W>,
+pub struct CcbsConstraint<W: Waypoint> {
+    pub obstacle: DynamicCircularObstacle<W>,
+    pub mask: usize,
 }
 
-impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
+/// A dynamic environment for performing Continuous-time Conflict Based Search.
+#[derive(Debug, Clone)]
+pub struct CcbsEnvironment<W: Waypoint, K> {
+    base: Arc<DynamicEnvironment<W>>,
+    overlay: DynamicEnvironmentOverlay<W>,
+    constraints: HashMap<CcbsKey<K>, Vec<CcbsConstraint<W>>>,
+    mask: Option<usize>,
+}
+
+impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     pub fn new(base: Arc<DynamicEnvironment<W>>) -> Self {
         Self {
             base,
             overlay: Default::default(),
+            constraints: Default::default(),
+            mask: None,
         }
+    }
+
+    pub fn view_for<'a>(&'a self, key: Option<&CcbsKey<K>>) -> CcbsEnvironmentView<'a, W, K>
+    where
+        K: Key,
+    {
+        CcbsEnvironmentView {
+            view: self,
+            constraints: key.map(|key| self.constraints.get(key)).flatten(),
+        }
+    }
+
+    /// Iterate over all obstacles that might be visible for this environment,
+    /// including all constraints for all masks, but not including any base
+    /// obstacles that are hidden by the overlay.
+    pub fn iter_all_obstacles(&self) -> impl Iterator<Item = &DynamicCircularObstacle<W>> {
+        self.base
+            .obstacles
+            .iter()
+            .enumerate()
+            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self.constraints
+                    .values()
+                    .flat_map(|x| x)
+                    .map(|x| &x.obstacle),
+            )
+    }
+
+    pub fn iter_obstacles_from(
+        &self,
+        key: K,
+        mask: usize,
+    ) -> impl Iterator<Item = &DynamicCircularObstacle<W>>
+    where
+        K: Key + Clone,
+    {
+        self.base
+            .obstacles
+            .iter()
+            .enumerate()
+            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self.constraints
+                    .iter()
+                    .filter(move |((k, _), _)| *k == key)
+                    .flat_map(|(_, constraints)| constraints)
+                    .filter_map(move |x| {
+                        if x.mask == mask {
+                            return None;
+                        }
+                        Some(&x.obstacle)
+                    }),
+            )
+    }
+
+    pub fn overlay_profile(&mut self, profile: CircularProfile) {
+        self.overlay.profile = Some(profile);
+    }
+
+    pub fn revert_profile(&mut self) {
+        self.overlay.profile = None;
     }
 
     /// Overlay an obstacle. If there was already an overlay for this obstacle
@@ -107,6 +185,9 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
     /// However, the overlaid data will be retained and will become applicable
     /// if the base environment is changed to one that does contain the obstacle
     /// entry.
+    ///
+    /// To add an entirely new obstacle that does not exist in the underlay, use
+    /// `insert_obstacle`.
     pub fn overlay_obstacle(
         &mut self,
         index: usize,
@@ -204,25 +285,73 @@ impl<W: Waypoint> OverlayedDynamicEnvironment<W> {
         self.base = Arc::new(env);
         self
     }
+
+    pub fn insert_constraint(&mut self, key: CcbsKey<K>, constraint: CcbsConstraint<W>)
+    where
+        K: Key,
+    {
+        self.constraints.entry(key).or_default().push(constraint);
+    }
+
+    pub fn set_mask(&mut self, mask: Option<usize>) {
+        self.mask = mask;
+    }
 }
 
-impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
-    for OverlayedDynamicEnvironment<W>
+// #[derive(Clone, Copy)]
+pub struct CcbsEnvironmentView<'a, W: Waypoint, K> {
+    view: &'a CcbsEnvironment<W, K>,
+    constraints: Option<&'a Vec<CcbsConstraint<W>>>,
+}
+
+impl<'a, W: Waypoint, K> Clone for CcbsEnvironmentView<'a, W, K> {
+    fn clone(&self) -> Self {
+        Self {
+            view: self.view,
+            constraints: self.constraints,
+        }
+    }
+}
+
+impl<'a, W: Waypoint, K> Copy for CcbsEnvironmentView<'a, W, K> {}
+
+impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstacle<W>>
+    for CcbsEnvironmentView<'e, W, K>
 {
     type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
     where
-        W: 'a;
+        W: 'a,
+        K: 'a,
+        'e: 'a;
 
     fn agent_profile(&self) -> &CircularProfile {
-        self.overlay.profile.as_ref().unwrap_or(&self.base.profile)
+        self.view
+            .overlay
+            .profile
+            .as_ref()
+            .unwrap_or(&self.view.base.profile)
     }
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
-        self.base
+        self.view
+            .base
             .obstacles
             .iter()
             .enumerate()
-            .map(|(i, obs)| self.overlay.obstacles.get(&i).unwrap_or(obs))
+            .map(|(i, obs)| self.view.overlay.obstacles.get(&i).unwrap_or(obs))
+            .chain(
+                self.constraints
+                    .iter()
+                    .flat_map(|x| *x)
+                    .filter_map(|constraint| {
+                        if let Some(mask) = self.view.mask {
+                            if constraint.mask == mask {
+                                return None;
+                            }
+                        }
+                        Some(&constraint.obstacle)
+                    }),
+            )
     }
 }
 

@@ -21,7 +21,7 @@ use crate::{
     motion::{
         self,
         se2::{MaybeOriented, WaypointSE2},
-        IntegrateWaypoints, InterpError, Interpolation, TimePoint, Timed,
+        IntegrateWaypoints, InterpError, Interpolation, MaybeTimed, TimePoint, Timed,
     },
 };
 use arrayvec::ArrayVec;
@@ -62,12 +62,18 @@ impl WaypointR2 {
 }
 
 impl Timed for WaypointR2 {
-    fn time(&self) -> &TimePoint {
-        return &self.time;
+    fn time(&self) -> TimePoint {
+        return self.time;
     }
 
     fn set_time(&mut self, new_time: TimePoint) {
         self.time = new_time;
+    }
+}
+
+impl MaybeTimed for WaypointR2 {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        Some(self.time)
     }
 }
 
@@ -102,6 +108,13 @@ impl From<WaypointSE2> for WaypointR2 {
 impl motion::Waypoint for WaypointR2 {
     type Position = Position;
     type Velocity = Velocity;
+    fn position(&self) -> Self::Position {
+        self.position
+    }
+
+    fn zero_velocity() -> Self::Velocity {
+        Velocity::zeros()
+    }
 }
 
 pub struct Motion {

@@ -15,7 +15,10 @@
  *
 */
 
-use crate::util::triangular_for;
+use crate::{
+    motion::{MaybeTimed, TimePoint},
+    util::triangular_for,
+};
 use bitfield::{bitfield, Bit, BitMut};
 use std::collections::{hash_map, HashMap, HashSet};
 use std::ops::Sub;
@@ -48,12 +51,24 @@ impl Cell {
 
     /// Get the point on the "bottom left" (lowest coordinate values) corner of
     /// the cell.
-    pub fn to_bottom_left_point(&self, cell_size: f64) -> Point {
+    pub fn bottom_left_point(&self, cell_size: f64) -> Point {
         Point::new(cell_size * self.x as f64, cell_size * self.y as f64)
     }
 
+    pub fn bottom_right_point(&self, cell_size: f64) -> Point {
+        self.shifted(1, 0).bottom_left_point(cell_size)
+    }
+
+    pub fn top_left_point(&self, cell_size: f64) -> Point {
+        self.shifted(0, 1).bottom_left_point(cell_size)
+    }
+
+    pub fn top_right_point(&self, cell_size: f64) -> Point {
+        self.shifted(1, 1).bottom_left_point(cell_size)
+    }
+
     /// Get the point in the center of the cell.
-    pub fn to_center_point(&self, cell_size: f64) -> Point {
+    pub fn center_point(&self, cell_size: f64) -> Point {
         Point::new(
             cell_size * (self.x as f64 + 0.5),
             cell_size * (self.y as f64 + 0.5),
@@ -80,10 +95,40 @@ impl Cell {
     }
 }
 
+impl From<[i64; 2]> for Cell {
+    fn from(value: [i64; 2]) -> Self {
+        Cell::new(value[0], value[1])
+    }
+}
+
+impl From<(i64, i64)> for Cell {
+    fn from((x, y): (i64, i64)) -> Self {
+        Cell::new(x, y)
+    }
+}
+
+impl From<Cell> for [i64; 2] {
+    fn from(value: Cell) -> Self {
+        [value.x, value.y]
+    }
+}
+
+impl From<Cell> for (i64, i64) {
+    fn from(value: Cell) -> Self {
+        (value.x, value.y)
+    }
+}
+
 impl Sub for Cell {
     type Output = (i64, i64);
     fn sub(self, other: Self) -> Self::Output {
         (self.x - other.x, self.y - other.y)
+    }
+}
+
+impl MaybeTimed for Cell {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        None
     }
 }
 
@@ -130,7 +175,7 @@ bitfield! {
     /// Indicates what type of type of corner a cell is. This is implemented as
     /// a bitfield, so you can call northwest(), southeast(), etc to get a
     /// boolean which indicates whether this is a corner in that direction.
-    #[derive(Clone, Copy, PartialEq)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct CornerStatus(u8);
     impl Debug;
     u8;
@@ -207,6 +252,8 @@ impl IntoIterator for &CornerStatus {
 type ConfirmedChanges = Vec<(Cell, bool)>;
 type ChangedCorners = Vec<(Cell, CornerStatus)>;
 
+// TODO(@mxgrey): Consider splitting the corner-related functions into a separate
+// trait since they are not necessarily needed by all grid users.
 pub trait Grid: std::fmt::Debug {
     type OccupiedIterator<'a>: IntoIterator<Item = &'a Cell>
     where
@@ -242,6 +289,10 @@ pub trait Grid: std::fmt::Debug {
     /// Check if a square has any occupancy. The first cell found that occupies
     /// the space will be returned.
     fn is_square_occupied(&self, p: Point, width: f64) -> Option<Cell>;
+
+    /// Check if a circle has any occupancy. The first cell found that occupies
+    /// the circle will be returned.
+    fn is_circle_occupied(&self, p: Point, radius: f64) -> Option<Cell>;
 
     /// Check if a rectangular sweep from p0 to p1 with the specified width has
     /// any occupancy. The first cell found that occupies the space will be
@@ -365,8 +416,8 @@ impl<G: Grid> Visibility<G> {
                                 }
 
                                 let cell_size = self.grid.cell_size();
-                                let p0 = cell.to_center_point(cell_size);
-                                let p1 = v_cell.to_center_point(cell_size);
+                                let p0 = cell.center_point(cell_size);
+                                let p1 = v_cell.center_point(cell_size);
                                 return self
                                     .grid
                                     .is_sweep_occupied(p0, p1, 2.0 * self.agent_radius)
@@ -383,7 +434,7 @@ impl<G: Grid> Visibility<G> {
             .filter(|of_cell| {
                 self.grid()
                     .is_square_occupied(
-                        of_cell.to_center_point(self.grid().cell_size()),
+                        of_cell.center_point(self.grid().cell_size()),
                         2.0 * self.agent_radius,
                     )
                     .is_none()
@@ -399,8 +450,8 @@ impl<G: Grid> Visibility<G> {
                             if self
                                 .grid()
                                 .is_sweep_occupied(
-                                    of_cell.to_center_point(cell_size),
-                                    neighbor.to_center_point(cell_size),
+                                    of_cell.center_point(cell_size),
+                                    neighbor.center_point(cell_size),
                                     2.0 * self.agent_radius(),
                                 )
                                 .is_none()
@@ -473,7 +524,7 @@ impl<G: Grid> Visibility<G> {
                             // If this corner point is currently vacant, then we
                             // need to check whether it has any blockers.
                             let blocked_by = grid.is_square_occupied(
-                                cell.to_center_point(grid.cell_size()),
+                                cell.center_point(grid.cell_size()),
                                 2.0 * agent_radius,
                             );
 
@@ -559,7 +610,7 @@ impl<G: Grid> Visibility<G> {
                             // visibility point, then the visibility point might
                             // be unoccupied now, but we need to test that.
                             *point_blocked_by = grid.is_square_occupied(
-                                point_cell.to_center_point(grid.cell_size()),
+                                point_cell.center_point(grid.cell_size()),
                                 2.0 * agent_radius,
                             );
 
@@ -601,8 +652,8 @@ impl<G: Grid> Visibility<G> {
                     }
 
                     let blocked_by = grid.is_sweep_occupied(
-                        cell.to_center_point(grid.cell_size()),
-                        other.to_center_point(grid.cell_size()),
+                        cell.center_point(grid.cell_size()),
+                        other.center_point(grid.cell_size()),
                         2.0 * agent_radius,
                     );
 
@@ -643,8 +694,8 @@ impl<G: Grid> Visibility<G> {
                 {
                     if *occupied {
                         let line = LineSegment::new(
-                            cell_i.to_center_point(grid.cell_size()),
-                            cell_j.to_center_point(grid.cell_size()),
+                            cell_i.center_point(grid.cell_size()),
+                            cell_j.center_point(grid.cell_size()),
                         );
 
                         if line.passes_near_cell(changed_cell, grid.cell_size(), agent_radius) {
@@ -657,8 +708,8 @@ impl<G: Grid> Visibility<G> {
                         if let Some(blocked_by) = *entry.get() {
                             if blocked_by == *changed_cell {
                                 let new_blocker = grid.is_sweep_occupied(
-                                    cell_i.to_center_point(grid.cell_size()),
-                                    cell_j.to_center_point(grid.cell_size()),
+                                    cell_i.center_point(grid.cell_size()),
+                                    cell_j.center_point(grid.cell_size()),
                                     2.0 * agent_radius,
                                 );
 
@@ -787,4 +838,6 @@ pub mod sparse_grid;
 pub use sparse_grid::SparseGrid;
 pub mod visibility_graph;
 pub use visibility_graph::{NeighborhoodGraph, VisibilityGraph};
+pub mod accessibility_graph;
+pub use accessibility_graph::{Accessibility, AccessibilityGraph};
 mod util;

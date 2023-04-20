@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    algorithm::{Measure, MinimumCostBound, Path},
+    algorithm::{MinimumCostBound, Path, QueueLength},
     domain::{ClosedSet, ClosedStatus},
     error::ThisError,
 };
@@ -138,6 +138,11 @@ impl<Cost: Eq> Eq for TreeQueueTicket<Cost> {}
 impl<Cost: PartialOrd> PartialOrd for TreeQueueTicket<Cost> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.evaluation.partial_cmp(&other.evaluation) {
+            // TODO(@mxgrey): Let downstream users to define criteria for
+            // deciding when two evaluations are close enough that the biases
+            // should be compared instead. Small floating point numerical
+            // residue could cause one evaluation to be unfairly favored over
+            // another that should be considered equal.
             Some(Ordering::Equal) => {
                 if let (Some(l), Some(r)) = (&self.bias, &other.bias) {
                     l.partial_cmp(r)
@@ -216,9 +221,9 @@ pub enum TreeError {
     BrokenReference(usize),
 }
 
-impl<Closed, Node: TreeNode> Measure for Tree<Closed, Node, Node::Cost> {
-    fn size(&self) -> usize {
-        self.arena.len() * std::mem::size_of::<Node>()
+impl<Closed, Node: TreeNode> QueueLength for Tree<Closed, Node, Node::Cost> {
+    fn queue_length(&self) -> usize {
+        self.queue.len()
     }
 }
 

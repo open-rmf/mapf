@@ -49,7 +49,7 @@ where
     G: Graph,
     G::Key: Clone,
     G::EdgeAttributes: Clone,
-    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes>,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::Extrapolation: Into<Action>,
     Action: Into<E::Extrapolation>,
     R: ArrivalKeyring<G::Key, G::Key, Goal>,
@@ -89,12 +89,14 @@ where
                 let from_key = from_key.clone();
                 r.map_err(LazyGraphMotionError::Keyring)
                     .flat_result_map(move |to_vertex: G::Key| {
+                        let from_key = from_key.clone();
                         let from_spatial_state = from_spatial_state.clone();
                         self.motion
                             .graph
                             .lazy_edges_between(&from_key, &to_vertex)
                             .into_iter()
                             .flat_map(move |edge| {
+                                let from_key = from_key.clone();
                                 let from_state = from_spatial_state.clone();
                                 let to_vertex = to_vertex.clone();
                                 let edge: G::EdgeAttributes = edge.attributes().clone();
@@ -106,12 +108,14 @@ where
                                         LazyGraphMotionError::MissingVertex(to_vertex.clone())
                                     })
                                     .flat_result_map(move |v| {
+                                        let from_key = from_key.clone();
                                         let from_state = from_state.clone();
                                         let to_vertex = to_vertex.clone();
                                         let extrapolations = self.motion.extrapolator.extrapolate(
                                             self.motion.space.waypoint(&from_state).borrow(),
                                             v.borrow(),
                                             &edge,
+                                            (Some(&from_key), Some(&to_vertex)),
                                         );
 
                                         extrapolations.into_iter().map(move |r| {
@@ -204,7 +208,6 @@ pub enum LazyGraphMotionReversalError<M, R, C> {
 mod tests {
     use super::*;
     use crate::{graph::occupancy::*, motion::se2::*};
-    use arrayvec::ArrayVec;
     use std::sync::Arc;
 
     #[test]
@@ -227,7 +230,7 @@ mod tests {
         };
 
         let from_cell = Cell::new(2, 3);
-        let from_p = from_cell.to_center_point(cell_size);
+        let from_p = from_cell.center_point(cell_size);
         let from_state = StateSE2::new(
             from_cell,
             WaypointSE2::new_f64(0.0, from_p.x, from_p.y, 0.0),
@@ -241,7 +244,7 @@ mod tests {
             (Cell::new(-30, -30), 1),
             (Cell::new(-60, 20), 1),
         ] {
-            let r: Result<Vec<(ArrayVec<WaypointSE2, 3>, _)>, _> =
+            let r: Result<Vec<(DifferentialDriveLineFollowMotion, _)>, _> =
                 lazy.connect(from_state, &to_cell).into_iter().collect();
 
             let connections = r.unwrap();

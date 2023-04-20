@@ -15,10 +15,10 @@
  *
 */
 
-use time_point::TimePoint;
+use time_point::{Duration, TimePoint};
 
-pub trait Timed {
-    fn time(&self) -> &TimePoint;
+pub trait Timed: MaybeTimed {
+    fn time(&self) -> TimePoint;
     fn set_time(&mut self, new_time: TimePoint);
 
     fn with_time(mut self, new_time: TimePoint) -> Self
@@ -27,6 +27,24 @@ pub trait Timed {
     {
         self.set_time(new_time);
         self
+    }
+
+    fn time_shifted_by(mut self, delta_t: Duration) -> Self
+    where
+        Self: Sized,
+    {
+        self.set_time(self.time() + delta_t);
+        self
+    }
+}
+
+pub trait MaybeTimed {
+    fn maybe_time(&self) -> Option<TimePoint>;
+}
+
+impl MaybeTimed for usize {
+    fn maybe_time(&self) -> Option<TimePoint> {
+        None
     }
 }
 
