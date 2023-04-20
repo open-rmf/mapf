@@ -44,6 +44,7 @@ pub struct AccessibilityVisual<Message, G: Grid> {
     // will be rendered.
     pub occupancy_color: iced::Color,
     pub inaccessible_color: iced::Color,
+    pub open_corner_color: iced::Color,
     pub show_accessibility: bool,
 
     #[derivative(Debug = "ignore")]
@@ -65,6 +66,7 @@ impl<Message, G: Grid> AccessibilityVisual<Message, G> {
             accessibility: Accessibility::new(grid, robot_radius as f64),
             occupancy_color: iced::Color::from_rgb8(0x40, 0x44, 0x4B),
             inaccessible_color: iced::Color::from_rgb8(204, 210, 219),
+            open_corner_color: iced::Color::from_rgb8(240, 240, 240),
             show_accessibility: true,
             cell_toggler: Some(Box::new(FillToggler::new(
                 DragToggler::new(
@@ -165,31 +167,52 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for AccessibilityVisual<Mes
 
         if self.show_accessibility {
             for (cell, a) in self.accessibility.iter_accessibility() {
-                match a {
-                    CellAccessibility::Inaccessible => {
-                        let p = cell.bottom_left_point(cell_size);
-                        frame.fill_rectangle(
-                            [p.x as f32, p.y as f32].into(),
-                            iced::Size::new(cell_size as f32, cell_size as f32),
-                            self.inaccessible_color,
-                        );
-                    }
-                    CellAccessibility::Accessible(directions) => {
-                        for [i, j] in directions.iter_inaccessible() {
-                            if i == 0 || j == 0 {
-                                continue;
+                if a.is_inaccessible() {
+                    let p = cell.bottom_left_point(cell_size);
+                    frame.fill_rectangle(
+                        [p.x as f32, p.y as f32].into(),
+                        iced::Size::new(cell_size as f32, cell_size as f32),
+                        self.inaccessible_color,
+                    );
+                }
+            }
+
+            for (cell, a) in self.accessibility.iter_accessibility() {
+                if let CellAccessibility::Accessible(directions) = a {
+                    let p0 = cell.center_point(cell_size);
+                    let p0 = iced::Point::new(p0.x as f32, p0.y as f32);
+                    for [i, j] in directions.iter() {
+                        if i == 0 || j == 0 {
+                            continue;
+                        }
+
+                        let i_bl = (i+1) / 2;
+                        let j_bl = (j+1) / 2;
+
+                        let show_corner = 'corner: {
+                            for [k, m] in [[0, 0], [-1, 0], [-1, -1], [0, -1]] {
+                                let check = cell.shifted(i_bl, j_bl).shifted(k, m);
+                                if self.accessibility.is_inaccessible(&check) {
+                                    break 'corner true;
+                                }
                             }
 
-                            let i = (i+1) / 2;
-                            let j = (j+1) / 2;
-                            let p_corner = cell.shifted(i, j).bottom_left_point(cell_size);
-                            frame.fill(
-                                &Path::circle(
-                                    [p_corner.x as f32, p_corner.y as f32].into(),
-                                    (cell_size / 20.0) as f32,
-                                ),
-                                self.occupancy_color,
-                            );
+                            false
+                        };
+
+                        if show_corner {
+                            let p1 = cell.shifted(i, j).center_point(cell_size);
+                            let p1 = iced::Point::new(p1.x as f32, p1.y as f32);
+                            let ratio = 1.0/4.0 as f32;
+                            let w = cell_size as f32 * ratio;
+                            let path = Path::new(|mut builder| {
+                                builder.move_to(p0 + iced::Vector::new(w, 0.0));
+                                builder.line_to(p1 + iced::Vector::new(w, 0.0));
+                                builder.line_to(p1 + iced::Vector::new(-w, 0.0));
+                                builder.line_to(p0 + iced::Vector::new(-w, 0.0));
+                            });
+
+                            frame.fill(&path, self.open_corner_color);
                         }
                     }
                 }

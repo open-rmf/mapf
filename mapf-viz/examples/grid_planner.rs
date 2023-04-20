@@ -762,7 +762,7 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
     }
 }
 
-spatial_layers!(GridLayers<Message>: SparseGridAccessibilityVisual, InfiniteGrid, EndpointSelector, SolutionVisual);
+spatial_layers!(GridLayers<Message>: InfiniteGrid, SparseGridAccessibilityVisual, EndpointSelector, SolutionVisual);
 
 type SparseAccessibilityGraph = AccessibilityGraph<SparseGrid>;
 
@@ -780,6 +780,7 @@ struct App {
     agent_speed_slider: slider::State,
     agent_spin_slider: slider::State,
     add_agent_button: button::State,
+    remove_agent_button: button::State,
     pick_agent_state: pick_list::State<String>,
     reset_view_button: button::State,
     reset_time_button: button::State,
@@ -853,14 +854,14 @@ impl App {
     }
 
     fn set_robot_radius(&mut self, radius: f64) {
-        self.canvas.program.layers.0.set_robot_radius(radius as f32);
+        self.canvas.program.layers.1.set_robot_radius(radius as f32);
         let endpoint_selector = &mut self.canvas.program.layers.2;
         if endpoint_selector.set_agent_radius(radius) {
             for endpoint in [Endpoint::Start, Endpoint::Goal] {
                 if let Some(cell) = endpoint_selector.endpoint_cell(endpoint) {
                     let cell: Cell = (*cell).into();
                     let p = cell.center_point(endpoint_selector.cell_size);
-                    let valid = self.canvas.program.layers.0.grid().is_circle_occupied(p, radius).is_none();
+                    let valid = self.canvas.program.layers.1.grid().is_circle_occupied(p, radius).is_none();
                     endpoint_selector.set_endpoint_valid(endpoint, valid);
                 }
             }
@@ -873,11 +874,11 @@ impl App {
     fn update_all_endpoints(&mut self) {
         self.canvas.program.layers.2.update_endpoint_conflicts(
             Endpoint::Start,
-            &self.canvas.program.layers.0.accessibility(),
+            &self.canvas.program.layers.1.accessibility(),
         );
         self.canvas.program.layers.2.update_endpoint_conflicts(
             Endpoint::Goal,
-            &self.canvas.program.layers.0.accessibility(),
+            &self.canvas.program.layers.1.accessibility(),
         );
     }
 
@@ -990,10 +991,16 @@ impl App {
 
         self.canvas.program.layers.2.agents.insert(name.clone(), AgentContext::new(agent));
         self.canvas.program.layers.2.selected_agent = Some(name);
-        self.canvas.program.layers.0.set_robot_radius(agent.radius as f32);
+        self.canvas.program.layers.1.set_robot_radius(agent.radius as f32);
         self.update_all_endpoints();
         self.canvas.cache.clear();
         self.generate_plan();
+    }
+
+    fn remove_agent(&mut self) {
+        if let Some(selected) = &self.canvas.program.layers.2.selected_agent {
+            self.canvas.program.layers.2.agents.remove(selected);
+        }
     }
 
     fn make_scenario(&self) -> Scenario {
@@ -1005,7 +1012,7 @@ impl App {
         Scenario {
             agents: self.canvas.program.layers.2.agents.iter().map(|(n, a)| (n.clone(), a.agent.clone())).collect(),
             obstacles: self.canvas.program.layers.3.obstacles.iter().map(|obs| Obstacle::new(obs.0, &obs.1, cell_size)).collect(),
-            occupancy: serialize_grid(self.canvas.program.layers.0.grid()),
+            occupancy: serialize_grid(self.canvas.program.layers.1.grid()),
             cell_size,
             camera_bounds,
         }
@@ -1021,7 +1028,7 @@ impl App {
 
         if self.debug_on {
             let endpoints = &self.canvas.program.layers.2;
-            let accessibility = self.canvas.program.layers.0.accessibility();
+            let accessibility = self.canvas.program.layers.1.accessibility();
             let Some(ctx) = endpoints.selected_agent() else { return };
 
             if !ctx.endpoints_valid() {
@@ -1284,12 +1291,12 @@ impl Application for App {
         let mut canvas = SpatialCanvas::new(
             GridLayers{
                 layers: (
+                    InfiniteGrid::new(cell_size),
                     SparseGridAccessibilityVisual::new(
                         grid,
                         default_radius() as f32,
                         Some(Box::new(|| { Message::OccupancyChanged })),
                     ).showing_accessibility(true),
-                    InfiniteGrid::new(cell_size),
                     EndpointSelector::new(
                         agents,
                         cell_size as f64,
@@ -1320,6 +1327,7 @@ impl Application for App {
             agent_speed_slider: slider::State::new(),
             agent_spin_slider: slider::State::new(),
             add_agent_button: button::State::new(),
+            remove_agent_button: button::State::new(),
             pick_agent_state: pick_list::State::new(),
             reset_view_button: button::State::new(),
             reset_time_button: button::State::new(),
@@ -1372,6 +1380,10 @@ impl Application for App {
                 self.add_agent();
                 self.generate_plan();
             }
+            Message::RemoveAgent => {
+                self.remove_agent();
+                self.generate_plan();
+            }
             Message::SaveFile | Message::SaveFileAs => {
                 if matches!(message, Message::SaveFileAs) {
                     match FileDialog::new().show_save_single_file() {
@@ -1405,7 +1417,7 @@ impl Application for App {
                     return Command::none();
                 }
 
-                self.canvas.program.layers.0.set_grid(grid);
+                self.canvas.program.layers.1.set_grid(grid);
                 self.canvas.program.layers.2.agents = agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
                 self.canvas.program.layers.3.obstacles = obstacles;
                 self.update_all_endpoints();
@@ -1420,7 +1432,7 @@ impl Application for App {
                 match self.canvas.program.layers.2.agents.get(&new_agent) {
                     Some(ctx) => {
                         self.canvas.program.layers.2.selected_agent = Some(new_agent);
-                        self.canvas.program.layers.0.set_robot_radius(ctx.agent.radius as f32);
+                        self.canvas.program.layers.1.set_robot_radius(ctx.agent.radius as f32);
                         self.canvas.cache.clear();
                     }
                     None => {}
@@ -1469,14 +1481,14 @@ impl Application for App {
                 if let iced_native::Event::Keyboard(event) = event {
                     match self.show_details.key_toggle(event) {
                         Toggle::On => {
-                            // self.canvas.program.layers.0.show_accessibility = true;
-                            self.canvas.program.layers.0.show_accessibility = false;
+                            // self.canvas.program.layers.1.show_accessibility = true;
+                            self.canvas.program.layers.1.show_accessibility = false;
                             self.canvas.program.layers.2.show_details = true;
                             self.canvas.cache.clear();
                         },
                         Toggle::Off => {
-                            // self.canvas.program.layers.0.show_accessibility = false;
-                            self.canvas.program.layers.0.show_accessibility = true;
+                            // self.canvas.program.layers.1.show_accessibility = false;
+                            self.canvas.program.layers.1.show_accessibility = true;
                             self.canvas.program.layers.2.show_details = false;
                             self.canvas.cache.clear();
                         },
@@ -1533,7 +1545,7 @@ impl Application for App {
                     EndpointSelection::Cell(endpoint) => {
                         self.canvas.program.layers.2.update_endpoint_conflicts(
                             endpoint,
-                            self.canvas.program.layers.0.accessibility(),
+                            self.canvas.program.layers.1.accessibility(),
                         );
                     }
                 }
@@ -1660,6 +1672,12 @@ impl Application for App {
                     &mut self.add_agent_button,
                     iced::Text::new("Add Agent"),
                 ).on_press(Message::AddAgent)
+            )
+            .push(
+                Button::new(
+                    &mut self.remove_agent_button,
+                    iced::Text::new("Remove Agent"),
+                ).on_press(Message::RemoveAgent)
             )
             .push(
                 PickList::new(
@@ -1897,6 +1915,7 @@ enum Message {
     AgentSpeedSlide(u32),
     AgentSpinSlide(u32),
     AddAgent,
+    RemoveAgent,
     SelectAgent(String),
     SaveFileAs,
     SaveFile,
