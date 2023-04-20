@@ -188,7 +188,7 @@ pub fn negotiate(
                 if iters % 10 == 0 {
                     dbg!(iters);
                 }
-                if iters > 10000 {
+                if iters > 1000 {
                     println!("Too many iterations");
 
                     // Dump the remaining queue into the node history

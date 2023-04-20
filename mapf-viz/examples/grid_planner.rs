@@ -797,6 +797,7 @@ struct App {
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
+    next_robot_name_index: usize,
 }
 
 impl App {
@@ -962,7 +963,17 @@ impl App {
     }
 
     fn add_agent(&mut self) {
-        let name = generate_robot_name(self.canvas.program.layers.2.agents.len());
+        let name = {
+            let mut name = generate_robot_name(self.next_robot_name_index);
+            while self.canvas.program.layers.2.agents.contains_key(&name) {
+                self.next_robot_name_index += 1;
+                name = generate_robot_name(self.next_robot_name_index);
+            }
+
+            self.next_robot_name_index += 1;
+            name
+        };
+
         let start = [-30, 0];
         let goal = [-25, 0];
         // let start = [-5, 0];
@@ -1000,6 +1011,8 @@ impl App {
     fn remove_agent(&mut self) {
         if let Some(selected) = &self.canvas.program.layers.2.selected_agent {
             self.canvas.program.layers.2.agents.remove(selected);
+            self.canvas.program.layers.2.selected_agent = self.canvas.program.layers.2.agents
+                .iter().next().map(|r| r.0.clone());
         }
     }
 
@@ -1344,6 +1357,7 @@ impl Application for App {
             debug_step_count: 0,
             debug_node_selected: None,
             negotiation_node_selected: None,
+            next_robot_name_index: 0,
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
