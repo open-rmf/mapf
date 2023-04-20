@@ -3,9 +3,14 @@ name: ci_linux
 on:
   schedule:
     # * is a special character in YAML so you have to quote this string
-    - cron:  '30 2 * * *'
+    # The final 1 indicates that we want to run this test on Tuesdays, making
+    # this a weekly test.
+    - cron:  '30 2 * * 1'
+  workflow_dispatch:
   pull_request:
- 
+  push:
+    branches: [main]
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -15,16 +20,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Instally nightly
+    - name: Install nightly
       run: |
-        rustup toolchain install nightly
         rustup default nightly
     - uses: actions/checkout@v3
-    - name: Build mapf
-      run: cd mapf && cargo build
-    - name: Run tests mapf
-      run: cd mapf && cargo test
-    - name: Build mapf-viz
-      run: cd mapf-viz && cargo build
-    - name: Run tests mapf-viz
-      run: cd mapf-viz && cargo test
+    - name: Build workspace
+      run: |
+        cargo build --workspace --tests
+    - name: Run tests
+      run: |
+        cargo test --tests
