@@ -1,5 +1,6 @@
 [![style](https://github.com/open-rmf/mapf/actions/workflows/style.yaml/badge.svg)](https://github.com/open-rmf/mapf/actions/workflows/style.yaml)
 [![ci_linux](https://github.com/open-rmf/mapf/actions/workflows/ci_linux.yaml/badge.svg)](https://github.com/open-rmf/mapf/actions/workflows/ci_linux.yaml)
+[![ci_windows](https://github.com/open-rmf/mapf/actions/workflows/ci_windows.yaml/badge.svg)](https://github.com/open-rmf/mapf/actions/workflows/ci_windows.yaml)
 
 # multi-agent (path finding) planning framework
 
