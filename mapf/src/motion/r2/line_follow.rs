@@ -19,14 +19,19 @@ use super::{Position, Positioned, WaypointR2};
 use crate::{
     domain::{
         backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, ExtrapolationProgress,
-        Extrapolator, IncrementalExtrapolator, Reversible,
+        Extrapolator, IncrementalExtrapolator, Reversible, Key,
     },
     error::{NoError, ThisError},
     motion::{
         self,
-        conflict::{compute_safe_linear_paths, SafeAction, WaitForObstacle},
-        se2, Duration, DynamicEnvironment, SpeedLimiter,
+        conflict::{
+            compute_safe_arrival_path, compute_safe_linear_path_wait_hints,
+            SafeAction, WaitForObstacle
+        },
+        se2, Duration, SafeIntervalMotionError, SpeedLimiter, SafeIntervalCache,
+        SafeArrivalTimes,
     },
+    graph::Graph,
     util::ForkIter,
 };
 use arrayvec::ArrayVec;
@@ -180,30 +185,31 @@ impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFoll
     }
 }
 
-impl<Target, Guidance, Key, W> ConflictAvoider<WaypointR2, Target, Guidance, Key, DynamicEnvironment<W>>
+impl<Target, Guidance, K, G: Graph<Key=K>> ConflictAvoider<WaypointR2, Target, Guidance, K, SafeIntervalCache<G>>
     for LineFollow
 where
+    G::Vertex: Positioned,
     Target: Positioned,
     Guidance: SpeedLimiter,
-    W: motion::Waypoint + Into<WaypointR2>,
+    K: Key + Clone,
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointR2), LineFollowError>> + 'a
+    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>> + 'a
     where
         Target: 'a,
         Guidance: 'a,
-        Key: 'a,
-        W: 'a;
+        K: 'a,
+        G: 'a;
 
-    type AvoidanceError = LineFollowError;
+    type AvoidanceError = SafeIntervalMotionError<G::Key, LineFollowError>;
 
     fn avoid_conflicts<'a>(
         &'a self,
         from_point: &WaypointR2,
         to_target: &Target,
         with_guidance: &Guidance,
-        for_key: (Option<&Key>, Option<&Key>),
-        in_environment: &DynamicEnvironment<W>,
+        (from_key, target_key): (Option<&K>, Option<&K>),
+        safe_intervals: &SafeIntervalCache<G>,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,
@@ -211,8 +217,8 @@ where
         Self::AvoidanceError: 'a,
         Target: 'a,
         Guidance: 'a,
-        Key: 'a,
-        DynamicEnvironment<W>: 'a,
+        K: 'a,
+        G: 'a,
     {
         let from_point = *from_point;
         let to_point = match self.extrapolate_impl(
@@ -221,35 +227,55 @@ where
             with_guidance.speed_limit(),
         ) {
             Ok(extrapolation) => extrapolation.1,
-            Err(err) => return ForkIter::Left(Some(Err(err)).into_iter()),
+            Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter()),
         };
 
-        let paths = compute_safe_linear_paths(from_point, to_point, in_environment);
-        ForkIter::Right(
-            paths
-                .into_iter()
-                // TODO(@mxgrey): Should we pass an error if the last
-                // element in the action is not a movement? That should
-                // never happen, so being quiet about it might not be a
-                // good thing.
-                // .filter_map(move |action| {
-                //     let wp = action
-                //         .last()
-                //         .map(|m| m.movement())
-                //         .flatten()
-                //         .copied();
-                //     wp.map(move |wp| (action, wp))
-                // })
-                .map(move |action| {
-                    // TODO(@mxgrey): Remove these unwraps before targeting
-                    // production. Either use the map technique that's commented
-                    // out above or return an error. I'm temporarily using
-                    // unwrap to violently catch internal mistakes.
-                    let wp = *action.last().unwrap().movement().unwrap();
+        let mut safe_arrival_times = match target_key {
+            Some(target_key) => match safe_intervals.safe_intervals_for(&target_key) {
+                Ok(r) => r,
+                Err(err) => return ForkIter::Left(Some(Err(SafeIntervalMotionError::Cache(err))).into_iter()),
+            }
+            None => SafeArrivalTimes::new(),
+        };
 
-                    Ok((action, wp))
-                }),
-        )
+        let motion_key = if let (Some(from_key), Some(target_key)) = (from_key, target_key) {
+            Some((from_key.clone(), target_key.clone()))
+        } else {
+            None
+        };
+        let environment_view = safe_intervals.environment().view_for(motion_key.as_ref());
+
+        safe_arrival_times.retain(|t| *t >= to_point.time);
+        // Add the time when the agent would normally arrive at the vertex.
+        safe_arrival_times.insert(0, to_point.time);
+
+        let ranked_hints = compute_safe_linear_path_wait_hints(
+            (&from_point, &to_point),
+            None,
+            &environment_view
+        );
+
+        let paths: SmallVec<[_; 5]> = safe_arrival_times
+            .into_iter()
+            .filter_map(move |arrival_time| {
+                compute_safe_arrival_path(
+                    from_point,
+                    to_point,
+                    arrival_time,
+                    &ranked_hints,
+                    &environment_view,
+                )
+            })
+            .map(move |action| {
+                // TODO(@mxgrey): Remove these unwraps before targeting
+                // production, possibly by returning an error. We're temporarily
+                // using unwrap to violently catch internal mistakes.
+                let wp = *action.last().unwrap().movement().unwrap();
+                Ok((action, wp))
+            })
+            .collect();
+
+        ForkIter::Right(paths.into_iter())
     }
 }
 

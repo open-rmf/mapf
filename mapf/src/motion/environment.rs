@@ -145,7 +145,6 @@ impl<W: Waypoint, K> CcbsEnvironment<W, K> {
     where
         K: Key + Clone,
     {
-        let key_clone = key.clone();
         self.base
             .obstacles
             .iter()

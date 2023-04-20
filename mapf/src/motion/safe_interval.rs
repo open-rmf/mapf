@@ -16,23 +16,15 @@
 */
 
 use crate::{
-    domain::{
-        Activity, Closable, CloseResult, ClosedSet, ClosedStatus, Domain, Key, Keyed, Keyring,
-    },
+    domain::{Closable, CloseResult, ClosedSet, ClosedStatus, Key, Keyed, Keyring},
     error::ThisError,
-    graph::{Edge, Graph},
-    motion::{
-        compute_safe_arrival_path, compute_safe_arrival_times, compute_safe_linear_path_wait_hints,
-        is_safe_segment,
+    graph::Graph,
+    motion::{compute_safe_arrival_times,
         r2::{Positioned, WaypointR2},
-        se2::{
-            DifferentialDriveLineFollow, DifferentialDriveLineFollowError, KeySE2, MaybeOriented,
-            Position, StateSE2, WaypointSE2,
-        },
-        Duration, CcbsEnvironment, SafeAction, SafeArrivalTimes,
-        SpeedLimiter, TimePoint, Timed, WaitForObstacle,
+        se2::WaypointSE2,
+        CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed,
     },
-    util::{FlatResultMapTrait, ForkIter, Minimum},
+    util::Minimum,
 };
 use smallvec::SmallVec;
 use std::{
@@ -357,4 +349,15 @@ impl<T> ClosedIntervals<T> {
                 .filter_map(|(_, value)| value.as_ref()),
         )
     }
+}
+
+#[derive(Debug, ThisError)]
+pub enum SafeIntervalMotionError<K, E> {
+    #[error("The safe interval cache experienced an error:\n{0:?}")]
+    Cache(SafeIntervalCacheError<K>),
+    #[error("The vertex {0:?} does not exist in the graph")]
+    MissingVertex(K),
+    // Give something
+    #[error("An error occurred in the extrapolator:\n{0:?}")]
+    Extrapolator(E),
 }

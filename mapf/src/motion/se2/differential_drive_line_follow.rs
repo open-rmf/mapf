@@ -30,7 +30,7 @@ use crate::{
         },
         r2::{WaypointR2, MaybePositioned, Positioned},
         se2::{MaybeOriented, Point, Position, StateSE2, WaypointSE2, Orientation},
-        Duration, SafeIntervalCache, SafeIntervalCacheError, SpeedLimiter,
+        Duration, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
         CcbsEnvironment, SafeArrivalTimes,
     },
     graph::Graph,
@@ -381,7 +381,7 @@ where
         K: 'a,
         G: 'a;
 
-    type AvoidanceError = SafeIntervalMotionError<G::Key>;
+    type AvoidanceError = SafeIntervalMotionError<G::Key, DifferentialDriveLineFollowError>;
 
     fn avoid_conflicts<'a>(
         &'a self,
@@ -417,9 +417,7 @@ where
         } else {
             None
         };
-        let environment_view = safe_intervals.environment().view_for(
-            motion_key.as_ref(),
-        );
+        let environment_view = safe_intervals.environment().view_for(motion_key.as_ref());
 
         let target_point = to_target.point();
         let mut arrival = match self.move_towards_target(
@@ -538,17 +536,6 @@ where
 pub enum DifferentialDriveLineFollowError {
     #[error("provided with an invalid speed limit (must be >0.0): {0}")]
     InvalidSpeedLimit(f64),
-}
-
-#[derive(Debug, ThisError)]
-pub enum SafeIntervalMotionError<K> {
-    #[error("The safe interval cache experienced an error:\n{0:?}")]
-    Cache(SafeIntervalCacheError<K>),
-    #[error("The vertex {0:?} does not exist in the graph")]
-    MissingVertex(K),
-    // Give something
-    #[error("An error occurred in the extrapolator:\n{0:?}")]
-    Extrapolator(DifferentialDriveLineFollowError),
 }
 
 impl Reversible for DifferentialDriveLineFollow {

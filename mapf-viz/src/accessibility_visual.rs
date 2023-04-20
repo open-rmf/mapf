@@ -17,19 +17,19 @@
 
 
 use super::{
-    spatial_canvas::{self, InclusionZone, SpatialCache, SpatialCanvasProgram},
+    spatial_canvas::{InclusionZone, SpatialCache, SpatialCanvasProgram},
     toggle::{DragToggler, FillToggler, Toggle, Toggler},
 };
 use derivative::Derivative;
 use iced::{
     canvas::{
         event::{self, Event},
-        Cursor, Frame, Path, Stroke,
+        Cursor, Frame, Path,
     },
     keyboard, mouse, Rectangle,
 };
 use mapf::graph::occupancy::{
-    Cell, Grid, Point, SparseGrid, Accessibility,
+    Cell, Grid, SparseGrid, Accessibility,
     accessibility_graph::CellAccessibility,
 };
 
@@ -205,7 +205,7 @@ impl<Message, G: Grid> SpatialCanvasProgram<Message> for AccessibilityVisual<Mes
                             let p1 = iced::Point::new(p1.x as f32, p1.y as f32);
                             let ratio = 1.0/4.0 as f32;
                             let w = cell_size as f32 * ratio;
-                            let path = Path::new(|mut builder| {
+                            let path = Path::new(|builder| {
                                 builder.move_to(p0 + iced::Vector::new(w, 0.0));
                                 builder.line_to(p1 + iced::Vector::new(w, 0.0));
                                 builder.line_to(p1 + iced::Vector::new(-w, 0.0));

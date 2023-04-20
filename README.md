@@ -1,3 +1,6 @@
+[![style](https://github.com/open-rmf/mapf/actions/workflows/style.yaml/badge.svg)](https://github.com/open-rmf/mapf/actions/workflows/style.yaml)
+[![ci_linux](https://github.com/open-rmf/mapf/actions/workflows/ci_linux.yaml/badge.svg)](https://github.com/open-rmf/mapf/actions/workflows/ci_linux.yaml)
+
 # multi-agent (path finding) planning framework
 
 Mapf is a (currently experimental) Rust library for multi-agent planning, with
@@ -10,3 +13,5 @@ This is being developed as part of the [Open-RMF](https://github.com/open-rmf)
 project which provides an open source framework for enabling interoperability
 between heterogeneous fleets of mobile robots, including cooperation across
 different platforms and vendors.
+
+###

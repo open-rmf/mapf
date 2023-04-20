@@ -20,16 +20,14 @@ pub use scenario::*;
 
 use crate::{
     premade::{SippSE2, StateSippSE2},
-    domain::{Configurable, Reversible, Cost, CloseResult, ClosedStatus},
+    domain::{Configurable, Cost, ClosedStatus},
     motion::{
-        CcbsEnvironment, CcbsConstraint, CcbsKey, DynamicEnvironment, DynamicCircularObstacle,
+        CcbsEnvironment, CcbsConstraint, DynamicEnvironment, DynamicCircularObstacle,
         CircularProfile, TravelEffortCost, TimePoint, BoundingBox, have_conflict,
-        Duration, compute_stationary_proximity, FindWaypoint, compute_safe_arrival_times,
-        Timed,
-        compute_safe_linear_paths,
+        Duration, Timed,
         trajectory::TrajectoryIter,
         se2::{DifferentialDriveLineFollow, WaypointSE2},
-        r2::{WaypointR2, Positioned, Point},
+        r2::{WaypointR2, Positioned},
     },
     algorithm::{
         AStarConnect, SearchStatus, QueueLength,
