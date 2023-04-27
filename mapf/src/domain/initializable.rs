@@ -79,7 +79,7 @@ impl<Start: Into<State>, Goal, State> Initializable<Start, Goal, State> for Init
     }
 }
 
-/// This struct implements Initializable for any Start that implements Into<Option<State>>
+/// This struct implements [`Initializable`] for any Start that implements `Into<Option<State>>`
 pub struct MaybeInitFrom;
 
 impl<Start: Into<Option<State>>, Goal, State> Initializable<Start, Goal, State> for MaybeInitFrom {
