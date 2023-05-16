@@ -1,0 +1,40 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MAPF Grid</title>
+  <style>
+    body {
+      background-color: #101010;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      background-color: #401010;
+    }
+  </style>
+</head>
+<body>
+<canvas id="mapf_grid">
+</canvas>
+<script type="module">
+  import init from "./libgrid.js";
+
+  document.addEventListener('contextmenu', function(evt) { evt.preventDefault(); });
+  resize_canvas();
+  window.addEventListener('resize', resize_canvas);
+
+  function resize_canvas() {
+    let canvas = document.getElementById("mapf_grid");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    console.log('canvas size: ' + canvas.width + ' ' + canvas.height);
+  }
+
+  init("./libgrid_bg_optimized.wasm").then(function (wasm) {
+    wasm.run_js();
+  });
+</script>
+</body>
+</html>

@@ -58,8 +58,12 @@ use std::{
     collections::{HashMap, BTreeMap},
     sync::Arc,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use native_dialog::FileDialog;
 use clap::Parser;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::wasm_bindgen;
 
 type SparseAccessibility = Accessibility<SparseGrid>;
 
@@ -958,10 +962,8 @@ impl App {
             name
         };
 
-        let start = [-30, 0];
-        let goal = [-25, 0];
-        // let start = [-5, 0];
-        // let goal = [5, 0];
+        let start = [-5, 0];
+        let goal = [5, 0];
         let yaw = 0.0;
         let agent = match self.canvas.program.layers.2.selected_agent() {
             Some(ctx) => {
@@ -1210,94 +1212,97 @@ struct Args {
     filename: Option<String>,
 }
 
-fn load_file(filename: &String) -> Option<Scenario> {
-    let f = match std::fs::File::open(&filename) {
-        Ok(f) => f,
-        Err(err) => {
-            println!("Unable to open file {}: {err:?}", filename);
-            return None;
-        }
-    };
-    let scenario: Scenario = match serde_yaml::from_reader(f) {
-        Ok(scenario) => scenario,
-        Err(err) => {
-            println!("Unable to parse scenario in file {}: {err:?}", filename);
-            return None;
-        }
-    };
-    Some(scenario)
+struct Flags {
+    filename: Option<String>,
+    loaded: Loaded,
 }
 
-fn load_scenario(filename: Option<&String>) -> (
-    BTreeMap<String, Agent>,
-    Vec<(f64, Trajectory<WaypointSE2>)>,
-    SparseGrid,
-    InclusionZone,
-    bool,
-) {
-    let mut agents = BTreeMap::new();
-    let mut obstacles = Vec::new();
+fn load_file(_filename: &String) -> Option<Scenario> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let f = match std::fs::File::open(&_filename) {
+            Ok(f) => f,
+            Err(err) => {
+                println!("Unable to open file {}: {err:?}", _filename);
+                return None;
+            }
+        };
+        let scenario: Scenario = match serde_yaml::from_reader(f) {
+            Ok(scenario) => scenario,
+            Err(err) => {
+                println!("Unable to parse scenario in file {}: {err:?}", _filename);
+                return None;
+            }
+        };
+        return Some(scenario);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    None
+}
+
+struct Loaded {
+    agents: BTreeMap<String, Agent>,
+    obstacles: Vec<(f64, Trajectory<WaypointSE2>)>,
+    grid: SparseGrid,
+    zone: InclusionZone,
+}
+
+fn load_scenario(scenario: Scenario) -> Loaded {
     let mut grid = SparseGrid::new(1.0);
     let mut zone = InclusionZone::Empty;
-    let mut success = false;
-    if let Some(filename) = filename {
-        if let Some(scenario) = load_file(filename) {
-            let cell_size = scenario.cell_size;
-            agents = scenario.agents;
-            obstacles = scenario.obstacles.into_iter().filter_map(|obs| {
-                LinearTrajectorySE2::from_iter(
-                    obs.trajectory.into_iter()
-                    .map(|(t, x, y)| {
-                        let p = Cell::new(x, y).center_point(cell_size);
-                        WaypointSE2::new_f64(t, p.x, p.y, 0.0)
-                    })
-                ).ok()
-                .map(|t|
-                    t
-                    .with_indefinite_initial_time(obs.indefinite_start)
-                    .with_indefinite_finish_time(obs.indefinite_finish)
-                )
-                .map(|t| (obs.radius, t))
-            }).collect();
-            for (y, row) in scenario.occupancy {
-                for x in row {
-                    grid.change_cells(
-                        &[(Cell::new(x, y), true)].into_iter().collect()
-                    );
-                }
-            }
-
-            if let Some(bounds) = scenario.camera_bounds {
-                for p in bounds {
-                    zone.include(iced::Point::new(p[0], p[1]));
-                }
-            }
-            success = true;
+    let cell_size = scenario.cell_size;
+    let agents = scenario.agents;
+    let obstacles = scenario.obstacles.into_iter().filter_map(|obs| {
+        LinearTrajectorySE2::from_iter(
+            obs.trajectory.into_iter()
+            .map(|(t, x, y)| {
+                let p = Cell::new(x, y).center_point(cell_size);
+                WaypointSE2::new_f64(t, p.x, p.y, 0.0)
+            })
+        ).ok()
+        .map(|t|
+            t
+            .with_indefinite_initial_time(obs.indefinite_start)
+            .with_indefinite_finish_time(obs.indefinite_finish)
+        )
+        .map(|t| (obs.radius, t))
+    }).collect();
+    for (y, row) in scenario.occupancy {
+        for x in row {
+            grid.change_cells(
+                &[(Cell::new(x, y), true)].into_iter().collect()
+            );
         }
     }
-    (agents, obstacles, grid, zone, success)
+
+    if let Some(bounds) = scenario.camera_bounds {
+        for p in bounds {
+            zone.include(iced::Point::new(p[0], p[1]));
+        }
+    }
+    Loaded { agents, obstacles, grid, zone }
 }
 
 impl Application for App {
     type Message = Message;
     type Executor = executor::Default;
-    type Flags = Args;
+    type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let cell_size = 1.0_f32;
-        let (agents, obstacles, grid, mut zone, _) = load_scenario(flags.filename.as_ref());
 
         let mut canvas = SpatialCanvas::new(
             GridLayers{
                 layers: (
                     InfiniteGrid::new(cell_size),
                     SparseGridAccessibilityVisual::new(
-                        grid,
+                        flags.loaded.grid,
                         default_radius() as f32,
                         Some(Box::new(|| { Message::OccupancyChanged })),
                     ).showing_accessibility(true),
                     EndpointSelector::new(
-                        agents,
+                        flags.loaded.agents,
                         cell_size as f64,
                         Self::default_invalid_color(),
                         Self::default_selected_color(),
@@ -1308,7 +1313,7 @@ impl Application for App {
                         cell_size as f64,
                         Self::default_solution_color(),
                         Self::default_search_color(),
-                        obstacles,
+                        flags.loaded.obstacles,
                     ),
                 )
             }
@@ -1347,16 +1352,10 @@ impl Application for App {
             next_robot_name_index: 0,
         };
 
-        if app.canvas.program.layers.2.agents.is_empty() {
-            app.add_agent();
-            zone.include(iced::Point::new(-10.0, -10.0));
-            zone.include(iced::Point::new(10.0, 10.0));
-        }
-
         app.update_all_endpoints();
         app.generate_plan();
 
-        let set_view = Command::perform(async move {}, move |_| Message::SetView(zone));
+        let set_view = Command::perform(async move {}, move |_| Message::SetView(flags.loaded.zone));
         let top_agent = app.canvas.program.layers.2.agents.iter().next();
         let set_agent = if let Some((top_agent, _)) = top_agent {
             let top_agent = top_agent.clone();
@@ -1386,45 +1385,51 @@ impl Application for App {
                 self.generate_plan();
             }
             Message::SaveFile | Message::SaveFileAs => {
-                if matches!(message, Message::SaveFileAs) {
-                    match FileDialog::new().show_save_single_file() {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    if matches!(message, Message::SaveFileAs) {
+                        match FileDialog::new().show_save_single_file() {
+                            Ok(f) => match f {
+                                Some(f) => self.file_text_input_value = f.as_path().as_os_str().to_str().unwrap().to_owned(),
+                                None => return Command::none(),
+                            }
+                            Err(err) => {
+                                println!("Unable to select file: {err:?}");
+                                return Command::none();
+                            }
+                        }
+                    }
+
+                    self.save_file(&self.file_text_input_value);
+                }
+            }
+            Message::LoadFile => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    match FileDialog::new().show_open_single_file() {
                         Ok(f) => match f {
-                            Some(f) => self.file_text_input_value = f.as_path().as_os_str().to_str().unwrap().to_owned(),
+                            Some(value) => self.file_text_input_value = value.as_path().as_os_str().to_str().unwrap().to_owned(),
                             None => return Command::none(),
                         }
                         Err(err) => {
-                            println!("Unable to select file: {err:?}");
+                            println!("Unable to load selected file: {err:?}");
                             return Command::none();
                         }
                     }
-                }
 
-                self.save_file(&self.file_text_input_value);
-            }
-            Message::LoadFile => {
-                match FileDialog::new().show_open_single_file() {
-                    Ok(f) => match f {
-                        Some(value) => self.file_text_input_value = value.as_path().as_os_str().to_str().unwrap().to_owned(),
-                        None => return Command::none(),
-                    }
-                    Err(err) => {
-                        println!("Unable to load selected file: {err:?}");
-                        return Command::none();
-                    }
-                }
+                    let Some(loaded) = load_file(&self.file_text_input_value)
+                        .map(|scenario| load_scenario(scenario)) else {
+                        return Command::none()
+                    };
 
-                let (agents, obstacles, grid, zone, success) = load_scenario(Some(&self.file_text_input_value));
-                if !success {
-                    return Command::none();
+                    self.canvas.program.layers.1.set_grid(loaded.grid);
+                    self.canvas.program.layers.2.agents = loaded.agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
+                    self.canvas.program.layers.3.obstacles = loaded.obstacles;
+                    self.update_all_endpoints();
+                    self.canvas.cache.clear();
+                    self.generate_plan();
+                    return Command::perform(async move {}, move |_| Message::SetView(loaded.zone));
                 }
-
-                self.canvas.program.layers.1.set_grid(grid);
-                self.canvas.program.layers.2.agents = agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
-                self.canvas.program.layers.3.obstacles = obstacles;
-                self.update_all_endpoints();
-                self.canvas.cache.clear();
-                self.generate_plan();
-                return Command::perform(async move {}, move |_| Message::SetView(zone));
             }
             Message::ScenarioFileInput(value) => {
                 self.file_text_input_value = value;
@@ -1945,8 +1950,63 @@ enum Message {
 }
 
 fn main() -> iced::Result {
-    let flags = Args::parse();
-    App::run(iced::Settings::with_flags(flags))
+    let args = Args::parse();
+    let loaded = load_scenario(
+        args.filename.as_ref()
+        .map(|filename| load_file(filename))
+        .flatten()
+        .unwrap_or(default_scenario())
+    );
+
+    App::run(iced::Settings::with_flags(
+        Flags {
+            loaded,
+            filename: args.filename,
+        }
+    ))
+}
+
+fn default_scenario() -> Scenario {
+    Scenario {
+        agents: BTreeMap::from_iter([
+            (
+                "A".to_owned(),
+                Agent {
+                    start: [-5, 0],
+                    yaw: 0.0,
+                    goal: [5, 0],
+                    radius: default_radius(),
+                    speed: default_speed(),
+                    spin: default_spin(),
+                }
+            )
+        ]),
+        obstacles: Vec::default(),
+        occupancy: HashMap::default(),
+        cell_size: 1.0,
+        camera_bounds: Some([
+            [-8.0, 0.0],
+            [9.0, 0.0],
+        ]),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn run_js() {
+    let wasm_scenario_str = include_str!("../scenarios/sizes.yaml");
+    let scenario: Scenario = match serde_yaml::from_str(wasm_scenario_str) {
+        Ok(scenario) => scenario,
+        Err(_) => default_scenario(),
+    };
+
+    let loaded = load_scenario(scenario);
+    let _ = App::run(iced::Settings::with_flags(
+        Flags {
+            loaded,
+            filename: None,
+        }
+    ));
 }
 
 mod style {

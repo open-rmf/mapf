@@ -8,16 +8,21 @@ edition = "2021"
 [dependencies]
 mapf = { path="../mapf" }
 iced = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale", features = ["canvas", "smol"] }
-iced_aw = { git = "https://github.com/iced-rs/iced_aw", branch = "main" }
 iced_native = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale" }
 serde = { version="1.0", features = ["derive"] }
 serde_yaml = "*"
 async-std = "1.0"
 directories-next = "2.0"
-native-dialog = "*"
 derivative = "*"
 lyon = "*"
 nalgebra = "*"
 arrayvec = "*"
 time-point = "*"
 clap = { version = "4.2.1", features = ["derive"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+native-dialog = "*"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+# wasm-bindgen 0.2.85 introduces a compile error in stdweb
+wasm-bindgen = "=0.2.84"
