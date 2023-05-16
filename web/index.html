@@ -19,7 +19,7 @@
 <canvas id="mapf_grid">
 </canvas>
 <script type="module">
-  import init from "./libgrid.js";
+  import init from "./grid.js";
 
   document.addEventListener('contextmenu', function(evt) { evt.preventDefault(); });
   resize_canvas();
@@ -32,7 +32,7 @@
     console.log('canvas size: ' + canvas.width + ' ' + canvas.height);
   }
 
-  init("./libgrid_bg_optimized.wasm").then(function (wasm) {
+  init("./grid_bg_optimized.wasm").then(function (wasm) {
     wasm.run_js();
   });
 </script>
