@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 mapf = { path="../mapf" }
 iced = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale", features = ["canvas", "smol"] }
-iced_aw = { git = "https://github.com/iced-rs/iced_aw", branch = "main" }
+iced_aw = { git = "https://github.com/iced-rs/iced_aw", branch = "v0.1.0" }
 iced_native = { git = "https://github.com/mxgrey/iced", branch = "asymmetric_scale" }
 serde = { version="1.0", features = ["derive"] }
 serde_yaml = "*"

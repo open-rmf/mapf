@@ -168,8 +168,12 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
     }
 
     pub fn camera_bounds(&self) -> InclusionZone {
-        let Some(bounds) = &self.bounds else { return InclusionZone::Empty };
-        let Some(s_inv) = Transform::scale(self.zoom, -self.zoom).inverse() else { return InclusionZone::Empty };
+        let Some(bounds) = &self.bounds else {
+            return InclusionZone::Empty;
+        };
+        let Some(s_inv) = Transform::scale(self.zoom, -self.zoom).inverse() else {
+            return InclusionZone::Empty;
+        };
         let bound_center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
         let p0 = s_inv.transform_point(bound_center - self.offset) - bound_center / self.zoom;
         let p1 = iced::Point::new(
@@ -182,7 +186,9 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
     }
 
     pub fn fit_to_zone(&mut self, zone: InclusionZone) -> bool {
-        let Some(bounds) = &mut self.bounds else { return false };
+        let Some(bounds) = &mut self.bounds else {
+            return false;
+        };
 
         if let InclusionZone::Some { lower, upper } = zone {
             let x_zoom = bounds.width / (upper.x - lower.x);

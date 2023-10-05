@@ -513,7 +513,9 @@ impl NegotiationCloser {
 
     pub fn status<'a>(&'a self, node: &NegotiationNode) -> ClosedStatus<'a, ()> {
         let mut key_iter = node.keys.iter();
-        let Some(first_key) = key_iter.next() else { return ClosedStatus::Open };
+        let Some(first_key) = key_iter.next() else {
+            return ClosedStatus::Open;
+        };
 
         let mut candidates: HashSet<usize> = HashSet::from_iter(
             self.closed_set
@@ -528,7 +530,9 @@ impl NegotiationCloser {
                 break;
             }
 
-            let Some(new_candidates) = self.closed_set.get(next_key) else { return ClosedStatus::Open };
+            let Some(new_candidates) = self.closed_set.get(next_key) else {
+                return ClosedStatus::Open;
+            };
             candidates.retain(|c| new_candidates.contains(c));
         }
 
@@ -862,7 +866,9 @@ fn reconsider_negotiations(
     let mut merge_old_negotiation_into_new: HashMap<usize, HashSet<usize>> = HashMap::new();
     for (i, negotiation) in &new_negotiations {
         for agent in &negotiation.participants {
-            let Some(n_prev) = previous_negotiation_of_agent.get(agent).cloned() else { continue };
+            let Some(n_prev) = previous_negotiation_of_agent.get(agent).cloned() else {
+                continue;
+            };
             merge_old_negotiation_into_new
                 .entry(n_prev)
                 .or_default()
