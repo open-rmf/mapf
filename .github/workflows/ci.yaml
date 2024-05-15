@@ -1,4 +1,5 @@
-name: ci_windows
+name: ci
+
 on:
   schedule:
     # * is a special character in YAML so you have to quote this string
@@ -8,38 +9,43 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: main
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runs-on }}-latest
+    strategy:
+      matrix:
+        runs-on: [ubuntu, windows]
 
     steps:
-    - name: checkout
-      uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Install Rustup using win.rustup.rs
+    - name: Install Rustup on Windows
+      if: matrix.runs-on == 'windows'
       run: |
         # Disable the download progress bar which can cause perf issues
         $ProgressPreference = "SilentlyContinue"
         Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
         .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --default-toolchain=none
         del rustup-init.exe
-        rustup default nightly
-        rustup target add x86_64-pc-windows-msvc
-      shell: powershell
 
-    - name: build
+    - name: Set Rust version to nightly
+      run: rustup default nightly
+
+    - name: Add Windows target
+      if: matrix.runs-on == 'windows'
       run: |
         rustc -Vv
         cargo -V
-        cargo build --workspace --tests
-      shell: cmd
+        rustup target add x86_64-pc-windows-msvc
 
-    - name: test
-      run: |
-        cargo test --tests
-      shell: cmd
+    - name: Build workspace
+      run: cargo build --workspace --tests
+
+    - name: Run tests
+      run: cargo test --tests
