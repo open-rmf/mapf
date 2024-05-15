@@ -68,15 +68,17 @@ pub fn negotiate(
     let cs = scenario.cell_size;
     let mut conflicts = HashMap::new();
     triangular_for(scenario.agents.iter(), |(n_a, a), (n_b, b)| {
+        let min_dist = a.radius + b.radius;
+        let min_dist_squared = min_dist * min_dist;
+
         for (cell_a, cell_b) in [
             (a.start_cell(), b.start_cell()),
             (a.goal_cell(), b.goal_cell()),
         ] {
             let pa = cell_a.center_point(cs);
             let pb = cell_b.center_point(cs);
-            let dist = (pa - pb).norm();
-            let min_dist = a.radius + b.radius;
-            if dist < min_dist {
+            let dist = (pa - pb).norm_squared();
+            if dist < min_dist_squared {
                 conflicts.insert(
                     (**n_a).clone().min((*n_b).clone()),
                     (**n_a).clone().max((*n_b).clone()),
