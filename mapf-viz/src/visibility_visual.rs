@@ -155,14 +155,14 @@ impl<Message, G: Grid> VisibilityVisual<Message, G> {
 
         for (cell, _) in self.visibility.iter_points() {
             let p_cell = cell.center_point(self.grid().cell_size());
-            let dist = (p_cell - p).norm_squared();
-            if dist <= r_squared {
-                if let Some((_, old_dist)) = closest {
-                    if dist < old_dist {
-                        closest = Some((*cell, dist));
+            let dist_squared = (p_cell - p).norm_squared();
+            if dist_squared <= r_squared {
+                if let Some((_, old_dist_squared)) = closest {
+                    if dist_squared < old_dist_squared {
+                        closest = Some((*cell, dist_squared));
                     }
                 } else {
-                    closest = Some((*cell, dist));
+                    closest = Some((*cell, dist_squared));
                 }
             }
         }
