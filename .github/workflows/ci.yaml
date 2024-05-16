@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    # The final 1 indicates that we want to run this test on Tuesdays, making
+    # this a weekly test.
+    - cron:  '30 2 * * 1'
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runs-on }}-latest
+    strategy:
+      matrix:
+        runs-on: [ubuntu, windows]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rustup on Windows
+      if: matrix.runs-on == 'windows'
+      run: |
+        # Disable the download progress bar which can cause perf issues
+        $ProgressPreference = "SilentlyContinue"
+        Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
+        .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --default-toolchain=none
+        del rustup-init.exe
+
+    - name: Set Rust version to nightly
+      run: rustup default nightly
+
+    - name: Add Windows target
+      if: matrix.runs-on == 'windows'
+      run: |
+        rustc -Vv
+        cargo -V
+        rustup target add x86_64-pc-windows-msvc
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build workspace
+      run: cargo build --workspace --tests
+
+    - name: Run tests
+      run: cargo test --tests
