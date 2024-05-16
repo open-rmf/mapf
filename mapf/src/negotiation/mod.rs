@@ -77,8 +77,8 @@ pub fn negotiate(
         ] {
             let pa = cell_a.center_point(cs);
             let pb = cell_b.center_point(cs);
-            let dist = (pa - pb).norm_squared();
-            if dist < min_dist_squared {
+            let dist_squared = (pa - pb).norm_squared();
+            if dist_squared < min_dist_squared {
                 conflicts.insert(
                     (**n_a).clone().min((*n_b).clone()),
                     (**n_a).clone().max((*n_b).clone()),
