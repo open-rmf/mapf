@@ -99,7 +99,7 @@ where
         }
 
         // The final state should be almost exactly the same as the last move
-        assert!((to_state.point() - last_p).norm() < 1e-3);
+        assert!((to_state.point() - last_p).norm_squared() < 1e-6);
         Arclength {
             translational,
             rotational,
