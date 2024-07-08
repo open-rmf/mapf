@@ -1,0 +1,9 @@
+[package]
+name = "mapf-rse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rmf_site_format = { path = "../../rmf_site/rmf_site_format" }
+rmf_site_editor = { path = "../../rmf_site/rmf_site_editor" }
+bevy = { version = "0.12", features = ["pnm", "jpeg", "tga"] }

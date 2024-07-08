@@ -1,7 +1,6 @@
 [workspace]
 members = [
-    "mapf",
-    "mapf-viz",
-]
+    "mapf"
+, "mapf-rse"]
 
 resolver = "2"
