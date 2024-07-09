@@ -21,6 +21,12 @@
     result_flattening
 )]
 
+// TODO(@mxgrey): Eliminate the need for this by reducing the complexity of
+// struct names, e.g. the typename for the complex chain that implements Lifted
+// in activity.rs. This will probably go hand-in-hand with removing the need for
+// nightly features, and improve compile times all at once.
+#![type_length_limit="157633981"]
+
 pub mod domain;
 
 pub mod planner;
