@@ -18,10 +18,14 @@
 use bevy::{
     ecs::system::{CommandQueue, SystemState},
     prelude::*,
-    tasks::{block_on, AsyncComputeTaskPool, Task as BevyTask},
+    tasks::{block_on, AsyncComputeTaskPool, Task},
     time::Stopwatch,
 };
-use std::{collections::{HashMap, BTreeMap}, fmt::Debug};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    time::Duration,
+};
 
 use librmf_site_editor::{
     interaction::{Select, Selection},
@@ -29,37 +33,41 @@ use librmf_site_editor::{
     site::{
         level, location, Anchor, Category, Change, ChangeCurrentScenario, CurrentLevel,
         CurrentScenario, Delete, DifferentialDrive, Group, LocationTags, MobileRobotMarker,
-        ModelMarker, NameInSite, Point, Pose, Scenario, ScenarioMarker, SiteParent, Task, Tasks,
+        ModelMarker, NameInSite, Point, Pose, Scenario, ScenarioMarker, SiteParent,
+        Task as RobotTask, Tasks as RobotTasks,
     },
-    widgets::{prelude::*, view_scenarios::ScenarioDisplay, Icons},
 };
 
-use mapf::{motion::se2::differential_drive_line_follow, negotiation::{Agent, Scenario as MapfScenario, Obstacle}};
+use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
 
 pub mod control_tile;
 pub use control_tile::*;
 
-pub mod debug_panel;
-pub use debug_panel::*;
+// pub mod debug_panel;
+// pub use debug_panel::*;
 
 #[derive(Event)]
 pub struct Negotiate;
+
+#[derive(Component)]
+pub struct ComputeNegotiateTask(Task<Duration>);
 
 #[derive(Default, Debug, Clone, Resource)]
 pub struct NegotiationData {
     pub is_generating: bool,
     pub cell_size: f32,
-    pub planning_time: f32,
+    pub planning_elapsed_time: Duration,
 }
 
 pub fn generate_plan(
+    mut commands: Commands,
     mobile_robots: Query<
         (
             Entity,
             &NameInSite,
             &Pose,
             &DifferentialDrive,
-            &Tasks<Entity>,
+            &RobotTasks<Entity>,
         ),
         (With<ModelMarker>, Without<Group>),
     >,
@@ -74,7 +82,6 @@ pub fn generate_plan(
     if negotiation_request.len() == 0 {
         return;
     }
-    // let thread_pool = AsyncComputeTaskPool::get();
 
     // Occupancy
     let mut occupancy = HashMap::<i64, Vec<i64>>::new();
@@ -103,9 +110,12 @@ pub fn generate_plan(
     for cell in grid.occupied.iter() {
         occupancy.entry(cell.y).or_default().push(cell.x);
     }
+
     for (_, column) in &mut occupancy {
         column.sort_unstable();
     }
+    println!("Y_MAX: {:?}", occupancy.len());
+    println!("X_MAX: {:?}", occupancy.values().map(|x| x.len()).max());
 
     // Agent
     let mut agents = BTreeMap::<String, Agent>::new();
@@ -114,7 +124,7 @@ pub fn generate_plan(
             .0
             .iter()
             .filter_map(|task| {
-                if let Task::GoToPlace(SiteParent(Some(location_entity))) = task {
+                if let RobotTask::GoToPlace(SiteParent(Some(location_entity))) = task {
                     Some(location_entity)
                 } else {
                     None
@@ -135,13 +145,13 @@ pub fn generate_plan(
             start: to_cell(
                 robot_pose.trans[0],
                 robot_pose.trans[1],
-                negotiation_data.cell_size,
+                cell_size,
             ),
             yaw: f64::from(robot_pose.rot.yaw().radians()),
             goal: to_cell(
                 goal_transform.translation.x,
                 goal_transform.translation.y,
-                negotiation_data.cell_size,
+                cell_size,
             ),
             radius: 0.5,
             speed: f64::from(differential_drive.translational_speed),
@@ -164,14 +174,24 @@ pub fn generate_plan(
         cell_size: f64::from(cell_size),
         camera_bounds: None,
     };
-    let res = mapf::negotiation::negotiate(&scenario, Some(1_000_000));
-    println!("Done");
+
+    // Execute asynchronously
+    let thread_pool = AsyncComputeTaskPool::get();
+    let start_time = std::time::Instant::now();
+    let task = thread_pool.spawn(async move {
+        let res = mapf::negotiation::negotiate(&scenario, Some(1_000_000));
+        let elapsed_time = start_time.elapsed();
+        println!("Elapsed time: {:?}", elapsed_time);
+        elapsed_time
+    });
+    let task_entity = commands.spawn_empty().id();
+    commands.entity(task_entity).insert(ComputeNegotiateTask(task));
+
 }
 
 pub fn to_cell(x: f32, y: f32, cell_size: f32) -> [i64; 2] {
+    println!("TO_CELL: {:?}, {:?}, {:?}", x, y, cell_size);
     let cell = Cell::from_point(Vec2::new(x, y), cell_size);
-    [
-        cell.x,
-        cell.y,
-    ]
+    println!("CELL: {:?}", cell);
+    [cell.x, cell.y]
 }
