@@ -27,7 +27,7 @@ use std::{
     time::Duration,
 };
 
-use librmf_site_editor::{
+use rmf_site_editor::{
     interaction::{Select, Selection},
     occupancy::{Cell, Grid},
     site::{
@@ -142,11 +142,7 @@ pub fn generate_plan(
         };
 
         let agent = Agent {
-            start: to_cell(
-                robot_pose.trans[0],
-                robot_pose.trans[1],
-                cell_size,
-            ),
+            start: to_cell(robot_pose.trans[0], robot_pose.trans[1], cell_size),
             yaw: f64::from(robot_pose.rot.yaw().radians()),
             goal: to_cell(
                 goal_transform.translation.x,
@@ -185,8 +181,9 @@ pub fn generate_plan(
         elapsed_time
     });
     let task_entity = commands.spawn_empty().id();
-    commands.entity(task_entity).insert(ComputeNegotiateTask(task));
-
+    commands
+        .entity(task_entity)
+        .insert(ComputeNegotiateTask(task));
 }
 
 pub fn to_cell(x: f32, y: f32, cell_size: f32) -> [i64; 2] {

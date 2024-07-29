@@ -246,7 +246,11 @@ mod tests {
         let p = motion.compute_position(&t).ok().unwrap();
         assert_relative_eq!(p.translation.vector[0], 1f64, max_relative = 0.001);
         assert_relative_eq!(p.translation.vector[1], 7.5f64, max_relative = 0.001);
-        assert_relative_eq!(p.rotation.angle(), -(5f64).to_radians(), max_relative = 0.001);
+        assert_relative_eq!(
+            p.rotation.angle(),
+            -(5f64).to_radians(),
+            max_relative = 0.001
+        );
 
         let v = motion.compute_velocity(&t).ok().unwrap();
         assert_relative_eq!(v.translational[0], 0f64, max_relative = 0.001);

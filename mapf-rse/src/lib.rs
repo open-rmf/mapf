@@ -19,8 +19,8 @@ pub mod simulation;
 pub use simulation::*;
 
 pub mod negotiation;
-use librmf_site_editor::widgets::PropertiesTilePlugin;
 pub use negotiation::*;
+use rmf_site_editor::widgets::PropertiesTilePlugin;
 
 use bevy::prelude::*;
 

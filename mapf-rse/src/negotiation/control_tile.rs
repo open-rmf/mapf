@@ -21,7 +21,7 @@ use bevy_egui::egui::{
     Align, CollapsingHeader, Color32, ComboBox, DragValue, Frame, Layout, ScrollArea, Slider,
     Stroke, Ui,
 };
-use librmf_site_editor::{
+use rmf_site_editor::{
     interaction::{Select, Selection},
     site::{
         location, mobile_robot, Category, Change, ChangeCurrentScenario, CurrentScenario, Delete,

@@ -19,7 +19,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{
     Button, CollapsingHeader, Color32, ComboBox, DragValue, Frame, ScrollArea, Slider, Stroke, Ui,
 };
-use librmf_site_editor::{
+use rmf_site_editor::{
     interaction::{Select, Selection},
     site::{
         Category, Change, ChangeCurrentScenario, CurrentScenario, Delete, Group, MobileRobotMarker,

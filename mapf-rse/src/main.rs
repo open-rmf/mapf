@@ -16,15 +16,12 @@
 */
 
 use bevy::prelude::*;
-use librmf_site_editor::*;
 use mapf_rse::MapfRsePlugin;
+use rmf_site_editor::*;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins((
-        SiteEditor::default(),
-        MapfRsePlugin::default(),
-    ));
+    app.add_plugins((SiteEditor::default(), MapfRsePlugin::default()));
 
     app.run();
 }
