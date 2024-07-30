@@ -32,6 +32,10 @@ use rmf_site_editor::{
     widgets::{view_scenarios::ScenarioDisplay, Icons},
 };
 
+use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
+use mapf::negotiation::*;
+use std::collections::{BTreeMap, HashMap};
+
 #[derive(SystemParam)]
 pub struct MapfConfigWidget<'w, 's> {
     simulation_config: ResMut<'w, SimulationConfig>,
@@ -144,6 +148,10 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             );
         });
 
+        if ui.button("Negotiation Test").clicked() {
+            negotiation_test();
+        }
+
         // Results
         ui.separator();
         match self.negotiation_data.as_ref() {
@@ -185,4 +193,53 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
     pub fn show_planner(&mut self, ui: &mut Ui) {
         ui.label("Unavailable");
     }
+}
+
+pub fn negotiation_test() {
+    let mut agents: BTreeMap<String, Agent> = BTreeMap::new();
+    agents.insert(
+        "A".to_string(),
+        Agent {
+            start: get_cell(5.0, 5.0, 1.0),
+            goal: get_cell(1.0, 1.0, 1.0),
+            yaw: 1.0,
+            radius: 0.5,
+            speed: 1.0,
+            spin: 1.0,
+        },
+    );
+    let obstacles: Vec<Obstacle> = Vec::new();
+    let occupancy: HashMap<i64, Vec<i64>> = HashMap::new();
+    let cell_size = 0.2;
+
+    let scenario = MapfScenario {
+        agents,
+        obstacles,
+        occupancy,
+        cell_size,
+        camera_bounds: None,
+    };
+
+    let res = match negotiate(&scenario, Some(1_000_000)) {
+        Ok(res) => res,
+        Err(err) => {
+            match err {
+                NegotiationError::PlanningFailed((nodes, name_map)) => {
+                    println!("Unable to find a solution");
+                    for node in nodes {
+                        println!("{:?}", node);
+                    }
+                }
+                err => println!("Error while planning: {err:?}"),
+            };
+            return;
+        }
+    };
+}
+
+pub fn get_cell(x: f64, y: f64, cell_size: f64) -> [i64; 2] {
+    [
+        (x / cell_size).floor() as i64,
+        (y / cell_size).floor() as i64,
+    ]
 }

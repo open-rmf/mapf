@@ -47,14 +47,14 @@ impl Plugin for NegotiationPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<NegotiationRequest>()
             .init_resource::<NegotiationParams>()
-            .init_resource::<NegotiationData>()
-            .add_systems(
-                Update,
-                (
-                    start_compute_negotiation,
-                    handle_compute_negotiation_complete,
-                ),
-            );
+            .init_resource::<NegotiationData>();
+            // .add_systems(
+            //     Update,
+            //     (
+            //         start_compute_negotiation,
+            //         handle_compute_negotiation_complete,
+            //     ),
+            // );
     }
 }
 
