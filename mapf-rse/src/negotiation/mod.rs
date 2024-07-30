@@ -16,50 +16,181 @@
 */
 
 use bevy::{
-    ecs::system::{CommandQueue, SystemState},
     prelude::*,
     tasks::{block_on, AsyncComputeTaskPool, Task},
-    time::Stopwatch,
 };
+use futures_lite::future;
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Debug,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use mapf::negotiation::*;
 use rmf_site_editor::{
-    interaction::{Select, Selection},
     occupancy::{Cell, Grid},
     site::{
-        level, location, Anchor, Category, Change, ChangeCurrentScenario, CurrentLevel,
-        CurrentScenario, Delete, DifferentialDrive, Group, LocationTags, MobileRobotMarker,
-        ModelMarker, NameInSite, Point, Pose, Scenario, ScenarioMarker, SiteParent,
-        Task as RobotTask, Tasks as RobotTasks,
+        Anchor, CurrentLevel, DifferentialDrive, Group, LocationTags, ModelMarker, NameInSite,
+        Point, Pose, Task as RobotTask, Tasks as RobotTasks,
     },
 };
 
 use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
 
-pub mod control_tile;
-pub use control_tile::*;
+pub mod debug_panel;
+pub use debug_panel::*;
 
-// pub mod debug_panel;
-// pub use debug_panel::*;
+#[derive(Default)]
+pub struct NegotiationPlugin;
 
-#[derive(Event)]
-pub struct Negotiate;
-
-#[derive(Component)]
-pub struct ComputeNegotiateTask(Task<Duration>);
-
-#[derive(Default, Debug, Clone, Resource)]
-pub struct NegotiationData {
-    pub is_generating: bool,
-    pub cell_size: f32,
-    pub planning_elapsed_time: Duration,
+impl Plugin for NegotiationPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<NegotiationRequest>()
+            .init_resource::<NegotiationParams>()
+            .init_resource::<NegotiationData>()
+            .add_systems(
+                Update,
+                (
+                    start_compute_negotiation,
+                    handle_compute_negotiation_complete,
+                ),
+            );
+    }
 }
 
-pub fn generate_plan(
+#[derive(Event)]
+pub struct NegotiationRequest;
+
+#[derive(Debug, Clone, Resource)]
+pub struct NegotiationParams {
+    pub queue_length_limit: usize,
+}
+
+impl Default for NegotiationParams {
+    fn default() -> Self {
+        Self {
+            queue_length_limit: 1_000_000,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Resource)]
+pub enum NegotiationData {
+    #[default]
+    NotStarted,
+    InProgress {
+        start_time: Instant,
+    },
+    Complete {
+        elapsed_time: Duration,
+        solution: Option<NegotiationNode>,
+        negotiation_history: Vec<NegotiationNode>,
+        entity_id_map: HashMap<usize, Entity>,
+        error_message: Option<String>,
+        conflicting_endpoints: Vec<(Entity, Entity)>,
+    },
+}
+
+impl NegotiationData {
+    pub fn is_in_progress(&self) -> bool {
+        matches!(self, NegotiationData::InProgress { .. })
+    }
+}
+
+#[derive(Component)]
+pub struct ComputeNegotiateTask(
+    Task<
+        Result<
+            (
+                NegotiationNode,
+                Vec<NegotiationNode>,
+                HashMap<usize, String>,
+            ),
+            NegotiationError,
+        >,
+    >,
+);
+
+pub fn handle_compute_negotiation_complete(
+    mut commands: Commands,
+    mut compute_negotiation_task: Query<(Entity, &mut ComputeNegotiateTask)>,
+    mut negotiation_data: ResMut<NegotiationData>,
+) {
+    let NegotiationData::InProgress { start_time } = *negotiation_data else {
+        return;
+    };
+
+    fn bits_string_to_entity(bits_string: &str) -> Entity {
+        let bits = u64::from_str_radix(bits_string, 10).expect("Invalid entity id");
+        Entity::from_bits(bits)
+    }
+
+    for (mut entity, mut task) in &mut compute_negotiation_task {
+        if let Some(result) = block_on(future::poll_once(&mut task.0)) {
+            let elapsed_time = start_time.elapsed();
+
+            match result {
+                Ok((solution, negotiation_history, name_map)) => {
+                    *negotiation_data = NegotiationData::Complete {
+                        elapsed_time,
+                        solution: Some(solution),
+                        negotiation_history,
+                        entity_id_map: name_map
+                            .into_iter()
+                            .map(|(id, bits_string)| (id, bits_string_to_entity(&bits_string)))
+                            .collect(),
+                        error_message: None,
+                        conflicting_endpoints: Vec::new(),
+                    };
+                }
+                Err(err) => match err {
+                    NegotiationError::PlanningImpossible(msg) => {
+                        *negotiation_data = NegotiationData::Complete {
+                            elapsed_time,
+                            solution: None,
+                            negotiation_history: Vec::new(),
+                            entity_id_map: HashMap::new(),
+                            error_message: Some(msg),
+                            conflicting_endpoints: Vec::new(),
+                        };
+                    }
+                    NegotiationError::ConflictingEndpoints(conflicts) => {
+                        *negotiation_data = NegotiationData::Complete {
+                            elapsed_time,
+                            solution: None,
+                            negotiation_history: Vec::new(),
+                            entity_id_map: HashMap::new(),
+                            error_message: None,
+                            conflicting_endpoints: conflicts
+                                .into_iter()
+                                .map(|(a, b)| {
+                                    (bits_string_to_entity(&a), bits_string_to_entity(&b))
+                                })
+                                .collect(),
+                        };
+                    }
+                    NegotiationError::PlanningFailed((negotiation_history, name_map)) => {
+                        println!("HERE");
+                        *negotiation_data = NegotiationData::Complete {
+                            elapsed_time,
+                            solution: None,
+                            negotiation_history,
+                            entity_id_map: name_map
+                                .into_iter()
+                                .map(|(id, bits_string)| (id, bits_string_to_entity(&bits_string)))
+                                .collect(),
+                            error_message: None,
+                            conflicting_endpoints: Vec::new(),
+                        };
+                    }
+                },
+            };
+            commands.entity(entity).remove::<ComputeNegotiateTask>();
+        }
+    }
+}
+
+pub fn start_compute_negotiation(
     mut commands: Commands,
     mobile_robots: Query<
         (
@@ -71,10 +202,10 @@ pub fn generate_plan(
         ),
         (With<ModelMarker>, Without<Group>),
     >,
-    locations: Query<(Entity, &Point<Entity>), With<LocationTags>>, // locations: Query<'w, 's, (&'static NameInSite, Option<&'static SiteID>)>,
+    locations: Query<(Entity, &Point<Entity>), With<LocationTags>>,
     anchors: Query<(Entity, &Anchor, &Transform)>,
-    negotiation_request: EventReader<Negotiate>,
-    negotiation_data: Res<NegotiationData>,
+    negotiation_request: EventReader<NegotiationRequest>,
+    mut negotiation_data: ResMut<NegotiationData>,
     current_level: Res<CurrentLevel>,
     grids: Query<(Entity, &Grid)>,
     parents: Query<&Parent>,
@@ -82,10 +213,15 @@ pub fn generate_plan(
     if negotiation_request.len() == 0 {
         return;
     }
+    if let NegotiationData::InProgress { .. } = *negotiation_data {
+        warn!("Negotiation requested while another negotiation is in progress");
+        return;
+    }
 
     // Occupancy
     let mut occupancy = HashMap::<i64, Vec<i64>>::new();
-    let Some(grid) = grids
+    let mut cell_size = 1.0;
+    let grid = grids
         .iter()
         .filter_map(|(grid_entity, grid)| {
             if let Some(level_entity) = current_level.0 {
@@ -101,31 +237,32 @@ pub fn generate_plan(
                 None
             }
         })
-        .next()
-    else {
-        println!("No occupancy map available");
-        return;
-    };
-    let cell_size = grid.cell_size;
-    for cell in grid.occupied.iter() {
-        occupancy.entry(cell.y).or_default().push(cell.x);
+        .next();
+    match grid {
+        Some(grid) => {
+            cell_size = grid.cell_size;
+            for cell in grid.occupied.iter() {
+                occupancy.entry(cell.y).or_default().push(cell.x);
+            }
+            for (_, column) in &mut occupancy {
+                column.sort_unstable();
+            }
+        }
+        None => {
+            occupancy.entry(0).or_default().push(0);
+            warn!("No occupancy grid found, defaulting to empty");
+        }
     }
-
-    for (_, column) in &mut occupancy {
-        column.sort_unstable();
-    }
-    println!("Y_MAX: {:?}", occupancy.len());
-    println!("X_MAX: {:?}", occupancy.values().map(|x| x.len()).max());
 
     // Agent
     let mut agents = BTreeMap::<String, Agent>::new();
-    for (robot_entity, robot_name, robot_pose, differential_drive, tasks) in mobile_robots.iter() {
+    for (robot_entity, _, robot_pose, differential_drive, tasks) in mobile_robots.iter() {
         let Some(location_entity) = tasks
             .0
             .iter()
             .filter_map(|task| {
-                if let RobotTask::GoToPlace(SiteParent(Some(location_entity))) = task {
-                    Some(location_entity)
+                if let RobotTask::GoToPlace { location } = task {
+                    Some(location.0)
                 } else {
                     None
                 }
@@ -134,7 +271,7 @@ pub fn generate_plan(
         else {
             continue;
         };
-        let Ok((_, Point(anchor_entity))) = locations.get(*location_entity) else {
+        let Ok((_, Point(anchor_entity))) = locations.get(location_entity) else {
             continue;
         };
         let Ok((_, _, goal_transform)) = anchors.get(*anchor_entity) else {
@@ -149,46 +286,37 @@ pub fn generate_plan(
                 goal_transform.translation.y,
                 cell_size,
             ),
-            radius: 0.5,
+            radius: 0.2,
             speed: f64::from(differential_drive.translational_speed),
             spin: f64::from(differential_drive.rotational_speed),
         };
-        agents.insert(format!("{:?}", robot_entity), agent);
+        let agent_id = robot_entity.to_bits().to_string();
+        agents.insert(agent_id, agent);
     }
     if agents.len() == 0 {
-        println!("No active agents");
+        warn!("No agents with valid GoToPlace task");
         return;
     }
 
-    // Obstacles
-    let mut obstacles = Vec::<Obstacle>::new();
-
     let scenario = MapfScenario {
         agents: agents,
-        obstacles: obstacles,
+        obstacles: Vec::<Obstacle>::new(),
         occupancy: occupancy,
         cell_size: f64::from(cell_size),
         camera_bounds: None,
     };
 
     // Execute asynchronously
+    let start_time = Instant::now();
+    *negotiation_data = NegotiationData::InProgress { start_time };
+
     let thread_pool = AsyncComputeTaskPool::get();
-    let start_time = std::time::Instant::now();
-    let task = thread_pool.spawn(async move {
-        let res = mapf::negotiation::negotiate(&scenario, Some(1_000_000));
-        let elapsed_time = start_time.elapsed();
-        println!("Elapsed time: {:?}", elapsed_time);
-        elapsed_time
-    });
-    let task_entity = commands.spawn_empty().id();
-    commands
-        .entity(task_entity)
-        .insert(ComputeNegotiateTask(task));
+    let task = thread_pool.spawn(async move { negotiate(&scenario, Some(1000000)) });
+
+    commands.spawn(ComputeNegotiateTask(task));
 }
 
-pub fn to_cell(x: f32, y: f32, cell_size: f32) -> [i64; 2] {
-    println!("TO_CELL: {:?}, {:?}, {:?}", x, y, cell_size);
+fn to_cell(x: f32, y: f32, cell_size: f32) -> [i64; 2] {
     let cell = Cell::from_point(Vec2::new(x, y), cell_size);
-    println!("CELL: {:?}", cell);
     [cell.x, cell.y]
 }

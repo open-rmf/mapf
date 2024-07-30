@@ -14,13 +14,3 @@
  * limitations under the License.
  *
 */
-
-use bevy::prelude::*;
-use mapf_rse::MapfRsePlugin;
-use rmf_site_editor::*;
-
-fn main() {
-    let mut app = App::new();
-    app.add_plugins((SiteEditor::default(), MapfRsePlugin::default()));
-    app.run();
-}

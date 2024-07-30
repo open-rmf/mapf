@@ -15,11 +15,15 @@
  *
 */
 
-pub mod simulation;
-pub use simulation::*;
-
 pub mod negotiation;
 pub use negotiation::*;
+
+pub mod config_widget;
+pub use config_widget::*;
+
+pub mod misc;
+pub use misc::*;
+
 use rmf_site_editor::widgets::PropertiesTilePlugin;
 
 use bevy::prelude::*;
@@ -31,11 +35,59 @@ impl Plugin for MapfRsePlugin {
     fn build(&self, app: &mut App) {
         app.add_state::<DebugMode>()
             .init_resource::<SimulationConfig>()
-            .add_plugins(PropertiesTilePlugin::<SimulationControlTile>::new());
+            .add_plugins(NegotiationPlugin)
+            .add_plugins(PropertiesTilePlugin::<MapfConfigWidget>::new())
+            .add_systems(Update, load_tiny_robot);
+    }
+}
 
-        app.add_event::<Negotiate>()
-            .init_resource::<NegotiationData>()
-            .add_plugins(PropertiesTilePlugin::<NegotiationControlTile>::new())
-            .add_systems(Update, generate_plan);
+#[derive(Resource, Debug, Clone)]
+pub struct SimulationConfig {
+    pub is_playing: bool,
+    pub speed: f32,
+    pub current_time: f32,
+    pub end_time: f32,
+    pub current_step: u32,
+    pub end_step: u32,
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            is_playing: false,
+            speed: 1.0,
+            current_time: 0.0,
+            end_time: 0.0,
+            current_step: 0,
+            end_step: 0,
+        }
+    }
+}
+
+#[derive(Clone, Default, Eq, PartialEq, Debug, Hash, States)]
+pub enum DebugMode {
+    #[default]
+    Negotiation,
+    Planner,
+}
+
+impl DebugMode {
+    pub fn labels() -> Vec<&'static str> {
+        vec!["Negotiation", "Planner"]
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            DebugMode::Negotiation => Self::labels()[0],
+            DebugMode::Planner => Self::labels()[1],
+        }
+    }
+
+    pub fn from_label(label: &str) -> Self {
+        if label == Self::labels()[0] {
+            return DebugMode::Negotiation;
+        } else {
+            return DebugMode::Planner;
+        }
     }
 }

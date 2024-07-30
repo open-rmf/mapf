@@ -9,3 +9,4 @@ rmf_site_format = { git = "https://github.com/reuben-thomas/rmf_site.git", branc
 rmf_site_editor = { git = "https://github.com/reuben-thomas/rmf_site.git", branch = "scenarios", package = "rmf_site_editor" }
 bevy = { version = "0.12", features = ["pnm", "jpeg", "tga"] }
 bevy_egui = "0.23.0"
+futures-lite = "2.3.0"
