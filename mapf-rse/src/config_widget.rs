@@ -17,24 +17,12 @@
 
 use super::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
-use bevy_egui::egui::{
-    Button, CollapsingHeader, Color32, ComboBox, DragValue, Frame, Grid as EguiGrid, ScrollArea,
-    Slider, Stroke, Ui,
-};
+use bevy_egui::egui::{CollapsingHeader, ComboBox, DragValue, Grid as EguiGrid, Ui};
 use rmf_site_editor::{
-    interaction::{Select, Selection},
     occupancy::Grid,
-    site::{
-        Category, Change, ChangeCurrentScenario, CurrentLevel, CurrentScenario, Delete, Group,
-        MobileRobotMarker, NameInSite, Scenario, ScenarioMarker, Task, Tasks,
-    },
+    site::{CurrentLevel, Group, MobileRobotMarker, Task, Tasks},
     widgets::prelude::*,
-    widgets::{view_scenarios::ScenarioDisplay, Icons},
 };
-
-use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
-use mapf::negotiation::*;
-use std::collections::{BTreeMap, HashMap};
 
 #[derive(SystemParam)]
 pub struct MapfConfigWidget<'w, 's> {
@@ -48,6 +36,7 @@ pub struct MapfConfigWidget<'w, 's> {
     negotiation_request: EventWriter<'w, NegotiationRequest>,
     negotiation_params: ResMut<'w, NegotiationParams>,
     negotiation_data: ResMut<'w, NegotiationData>,
+    negotiation_debug: ResMut<'w, NegotiationDebugData>,
 }
 
 impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
@@ -58,18 +47,24 @@ impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
         CollapsingHeader::new("MAPF Configuration")
             .default_open(true)
             .show(ui, |ui| {
-                ComboBox::from_id_source("mapf_debug_mode")
-                    .selected_text(params.debug_mode.get().label())
-                    .show_ui(ui, |ui| {
-                        for label in DebugMode::labels() {
-                            if ui
-                                .selectable_label(params.debug_mode.get().label() == label, label)
-                                .clicked()
-                            {
-                                params.debug_mode_next.set(DebugMode::from_label(label));
+                ui.horizontal(|ui| {
+                    ui.label("Mode");
+                    ComboBox::from_id_source("mapf_debug_mode")
+                        .selected_text(params.debug_mode.get().label())
+                        .show_ui(ui, |ui| {
+                            for label in DebugMode::labels() {
+                                if ui
+                                    .selectable_label(
+                                        params.debug_mode.get().label() == label,
+                                        label,
+                                    )
+                                    .clicked()
+                                {
+                                    params.debug_mode_next.set(DebugMode::from_label(label));
+                                }
                             }
-                        }
-                    });
+                        });
+                });
 
                 match params.debug_mode.get() {
                     DebugMode::Negotiation => params.show_negotiation(ui),
@@ -81,7 +76,26 @@ impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
 
 impl<'w, 's> MapfConfigWidget<'w, 's> {
     pub fn show_negotiation(&mut self, ui: &mut Ui) {
-        // Agents with Task
+        // Debug Parameters
+        // Visualize
+        ui.horizontal(|ui| {
+            ui.label("Visualize");
+            ui.checkbox(
+                &mut self.negotiation_debug.visualize_trajectories,
+                "Trajectories",
+            );
+            ui.checkbox(&mut self.negotiation_debug.visualize_conflicts, "Conflicts");
+            ui.checkbox(&mut self.negotiation_debug.visualize_keys, "Keys")
+        });
+        // Toggle debug panel
+        ui.horizontal(|ui| {
+            ui.label("Debug Panel");
+            ui.checkbox(&mut self.negotiation_debug.show_debug_panel, "Enabled");
+        });
+
+        // Negotiation Request Properties
+        // Agent tasks
+        ui.separator();
         let num_tasks = self
             .mobile_robots
             .iter()
@@ -117,19 +131,31 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             })
             .next();
         ui.label("Occupancy");
-        ui.indent("occupancy_map_info", |ui| {
+        ui.indent("occupancy_grid_info", |ui| {
             if let Some(grid) = occupancy_grid {
-                ui.label(format!("    cell size: {}m", grid.cell_size));
-                ui.label(format!(
-                    "    grid size: {} x {}",
-                    grid.range.max_cell().x - grid.range.min_cell().x,
-                    grid.range.max_cell().y - grid.range.min_cell().y
-                ));
+                EguiGrid::new("occupancy_map_info")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        ui.label("min cell");
+                        ui.label(format!("{:?}", grid.range.min_cell()));
+                        ui.end_row();
+                        ui.label("max cell");
+                        ui.label(format!("{:?}", grid.range.max_cell()));
+                        ui.end_row();
+                        ui.label("dimension");
+                        ui.label(format!(
+                            "{} x {}",
+                            grid.range.max_cell().x - grid.range.min_cell().x,
+                            grid.range.max_cell().y - grid.range.min_cell().y
+                        ));
+                        ui.end_row();
+                        ui.label("cell size");
+                        ui.label(format!("{} m", grid.cell_size));
+                    });
             } else {
                 ui.label("None");
             }
         });
-
         // Generate Plan
         ui.horizontal(|ui| {
             let allow_generate_plan = num_tasks > 0
@@ -147,10 +173,6 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                     .speed(1000),
             );
         });
-
-        if ui.button("Negotiation Test").clicked() {
-            negotiation_test();
-        }
 
         // Results
         ui.separator();
@@ -185,61 +207,9 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             }
             _ => {}
         }
-
-        ui.label("Nodes: ");
-        ui.label("Successful in : ");
     }
 
     pub fn show_planner(&mut self, ui: &mut Ui) {
         ui.label("Unavailable");
     }
-}
-
-pub fn negotiation_test() {
-    let mut agents: BTreeMap<String, Agent> = BTreeMap::new();
-    agents.insert(
-        "A".to_string(),
-        Agent {
-            start: get_cell(5.0, 5.0, 1.0),
-            goal: get_cell(1.0, 1.0, 1.0),
-            yaw: 1.0,
-            radius: 0.5,
-            speed: 1.0,
-            spin: 1.0,
-        },
-    );
-    let obstacles: Vec<Obstacle> = Vec::new();
-    let occupancy: HashMap<i64, Vec<i64>> = HashMap::new();
-    let cell_size = 0.2;
-
-    let scenario = MapfScenario {
-        agents,
-        obstacles,
-        occupancy,
-        cell_size,
-        camera_bounds: None,
-    };
-
-    let res = match negotiate(&scenario, Some(1_000_000)) {
-        Ok(res) => res,
-        Err(err) => {
-            match err {
-                NegotiationError::PlanningFailed((nodes, name_map)) => {
-                    println!("Unable to find a solution");
-                    for node in nodes {
-                        println!("{:?}", node);
-                    }
-                }
-                err => println!("Error while planning: {err:?}"),
-            };
-            return;
-        }
-    };
-}
-
-pub fn get_cell(x: f64, y: f64, cell_size: f64) -> [i64; 2] {
-    [
-        (x / cell_size).floor() as i64,
-        (y / cell_size).floor() as i64,
-    ]
 }

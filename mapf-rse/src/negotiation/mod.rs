@@ -16,6 +16,7 @@
 */
 
 use bevy::{
+    ecs::query::QueryEntityError,
     prelude::*,
     tasks::{block_on, AsyncComputeTaskPool, Task},
 };
@@ -40,6 +41,9 @@ use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
 pub mod debug_panel;
 pub use debug_panel::*;
 
+pub mod visual;
+pub use visual::*;
+
 #[derive(Default)]
 pub struct NegotiationPlugin;
 
@@ -47,14 +51,16 @@ impl Plugin for NegotiationPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<NegotiationRequest>()
             .init_resource::<NegotiationParams>()
-            .init_resource::<NegotiationData>();
-            // .add_systems(
-            //     Update,
-            //     (
-            //         start_compute_negotiation,
-            //         handle_compute_negotiation_complete,
-            //     ),
-            // );
+            .init_resource::<NegotiationData>()
+            .add_plugins(NegotiationDebugPlugin::default())
+            .add_systems(
+                Update,
+                (
+                    start_compute_negotiation,
+                    handle_compute_negotiation_complete,
+                    visualise_selected_node,
+                ),
+            );
     }
 }
 
@@ -94,6 +100,27 @@ pub enum NegotiationData {
 impl NegotiationData {
     pub fn is_in_progress(&self) -> bool {
         matches!(self, NegotiationData::InProgress { .. })
+    }
+}
+
+#[derive(Resource)]
+pub struct NegotiationDebugData {
+    pub show_debug_panel: bool,
+    pub selected_negotiation_node: Option<usize>,
+    pub visualize_keys: bool,
+    pub visualize_conflicts: bool,
+    pub visualize_trajectories: bool,
+}
+
+impl Default for NegotiationDebugData {
+    fn default() -> Self {
+        Self {
+            show_debug_panel: false,
+            selected_negotiation_node: None,
+            visualize_keys: false,
+            visualize_conflicts: true,
+            visualize_trajectories: true,
+        }
     }
 }
 
@@ -205,6 +232,7 @@ pub fn start_compute_negotiation(
     locations: Query<(Entity, &Point<Entity>), With<LocationTags>>,
     anchors: Query<(Entity, &Anchor, &Transform)>,
     negotiation_request: EventReader<NegotiationRequest>,
+    negotiation_params: Res<NegotiationParams>,
     mut negotiation_data: ResMut<NegotiationData>,
     current_level: Res<CurrentLevel>,
     grids: Query<(Entity, &Grid)>,
@@ -305,13 +333,14 @@ pub fn start_compute_negotiation(
         cell_size: f64::from(cell_size),
         camera_bounds: None,
     };
+    let queue_length_limit = negotiation_params.queue_length_limit;
 
     // Execute asynchronously
     let start_time = Instant::now();
     *negotiation_data = NegotiationData::InProgress { start_time };
 
     let thread_pool = AsyncComputeTaskPool::get();
-    let task = thread_pool.spawn(async move { negotiate(&scenario, Some(1000000)) });
+    let task = thread_pool.spawn(async move { negotiate(&scenario, Some(queue_length_limit)) });
 
     commands.spawn(ComputeNegotiateTask(task));
 }

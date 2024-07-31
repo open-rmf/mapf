@@ -714,6 +714,16 @@ impl std::fmt::Debug for Conflict {
     }
 }
 
+impl Conflict {
+    pub fn time(&self) -> TimePoint {
+        self.time
+    }
+
+    pub fn segments(&self) -> &[Segment; 2] {
+        &self.segments
+    }
+}
+
 pub type SippDecisionRange = DecisionRange<StateSippSE2<Cell>>;
 pub type DecisionRangePair = (SippDecisionRange, SippDecisionRange);
 
@@ -721,6 +731,16 @@ pub type DecisionRangePair = (SippDecisionRange, SippDecisionRange);
 pub struct Segment {
     agent: usize,
     range: SippDecisionRange,
+}
+
+impl Segment {
+    pub fn agent(&self) -> usize {
+        self.agent
+    }
+
+    pub fn range(&self) -> &SippDecisionRange {
+        &self.range
+    }
 }
 
 fn reasses_conflicts(
