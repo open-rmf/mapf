@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 Open Source Robotics Foundation
+ * Copyright (C) 2024 Open Source Robotics Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,12 @@
  *
 */
 
-pub mod spatial_canvas;
-pub use spatial_canvas::SpatialCanvasProgram;
+use bevy::prelude::*;
+use mapf_rse::MapfRsePlugin;
+use rmf_site_editor::*;
 
-pub mod visibility_visual;
-pub use visibility_visual::{SparseGridVisibilityVisual, VisibilityVisual};
-
-pub mod accessibility_visual;
-pub use accessibility_visual::{AccessibilityVisual, SparseGridAccessibilityVisual};
-
-pub mod grid;
-pub use grid::InfiniteGrid;
-
-pub mod toggle;
-pub use toggle::{Toggle, Toggler};
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
+fn main() {
+    let mut app = App::new();
+    app.add_plugins((SiteEditor::default(), MapfRsePlugin::default()));
+    app.run();
 }

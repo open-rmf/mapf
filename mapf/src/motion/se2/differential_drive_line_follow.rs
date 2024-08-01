@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn test_extrapolation() {
         let t0 = time_point::TimePoint::from_secs_f64(3.0);
-        let wp0 = WaypointSE2::new(t0, 1.0, -3.0, -40f64.to_radians());
+        let wp0 = WaypointSE2::new(t0, 1.0, -3.0, -(40f64).to_radians());
         let movement = DifferentialDriveLineFollow::new(2.0, 3.0)
             .expect("Failed to make DifferentialLineFollow");
         let p_target = Position::new(Vector::new(1.0, 3.0), 60f64.to_radians());
