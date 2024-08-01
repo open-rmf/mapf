@@ -70,12 +70,14 @@ pub struct NegotiationRequest;
 #[derive(Debug, Clone, Resource)]
 pub struct NegotiationParams {
     pub queue_length_limit: usize,
+    pub cell_size: f32,
 }
 
 impl Default for NegotiationParams {
     fn default() -> Self {
         Self {
             queue_length_limit: 1_000_000,
+            cell_size: 0.2,
         }
     }
 }
@@ -141,6 +143,7 @@ pub struct ComputeNegotiateTask(
 pub fn handle_compute_negotiation_complete(
     mut commands: Commands,
     mut compute_negotiation_task: Query<(Entity, &mut ComputeNegotiateTask)>,
+    mut negotiation_debug_data: ResMut<NegotiationDebugData>,
     mut negotiation_data: ResMut<NegotiationData>,
 ) {
     let NegotiationData::InProgress { start_time } = *negotiation_data else {
@@ -158,6 +161,7 @@ pub fn handle_compute_negotiation_complete(
 
             match result {
                 Ok((solution, negotiation_history, name_map)) => {
+                    negotiation_debug_data.selected_negotiation_node = Some(solution.id);
                     *negotiation_data = NegotiationData::Complete {
                         elapsed_time,
                         solution: Some(solution),
@@ -234,6 +238,7 @@ pub fn start_compute_negotiation(
     negotiation_request: EventReader<NegotiationRequest>,
     negotiation_params: Res<NegotiationParams>,
     mut negotiation_data: ResMut<NegotiationData>,
+    mut negotiation_debug_data: ResMut<NegotiationDebugData>,
     current_level: Res<CurrentLevel>,
     grids: Query<(Entity, &Grid)>,
     parents: Query<&Parent>,
@@ -245,6 +250,7 @@ pub fn start_compute_negotiation(
         warn!("Negotiation requested while another negotiation is in progress");
         return;
     }
+    negotiation_debug_data.selected_negotiation_node = None;
 
     // Occupancy
     let mut occupancy = HashMap::<i64, Vec<i64>>::new();
@@ -305,7 +311,6 @@ pub fn start_compute_negotiation(
         let Ok((_, _, goal_transform)) = anchors.get(*anchor_entity) else {
             continue;
         };
-
         let agent = Agent {
             start: to_cell(robot_pose.trans[0], robot_pose.trans[1], cell_size),
             yaw: f64::from(robot_pose.rot.yaw().radians()),
@@ -314,7 +319,7 @@ pub fn start_compute_negotiation(
                 goal_transform.translation.y,
                 cell_size,
             ),
-            radius: 0.2,
+            radius: f64::from(differential_drive.collision_radius),
             speed: f64::from(differential_drive.translational_speed),
             spin: f64::from(differential_drive.rotational_speed),
         };

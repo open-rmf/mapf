@@ -19,7 +19,7 @@ use super::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{CollapsingHeader, ComboBox, DragValue, Grid as EguiGrid, Ui};
 use rmf_site_editor::{
-    occupancy::Grid,
+    occupancy::{CalculateGrid, Grid},
     site::{CurrentLevel, Group, MobileRobotMarker, Task, Tasks},
     widgets::prelude::*,
 };
@@ -29,9 +29,11 @@ pub struct MapfConfigWidget<'w, 's> {
     simulation_config: ResMut<'w, SimulationConfig>,
     debug_mode: Res<'w, State<DebugMode>>,
     debug_mode_next: ResMut<'w, NextState<DebugMode>>,
-    mobile_robots: Query<'w, 's, &'static Tasks<Entity>, (With<MobileRobotMarker>, Without<Group>)>,
+    mobile_robots:
+        Query<'w, 's, (Entity, &'static Tasks<Entity>), (With<MobileRobotMarker>, Without<Group>)>,
     current_level: Res<'w, CurrentLevel>,
     grids: Query<'w, 's, (Entity, &'static Grid)>,
+    calculate_grid: EventWriter<'w, CalculateGrid>,
     parents: Query<'w, 's, &'static Parent>,
     negotiation_request: EventWriter<'w, NegotiationRequest>,
     negotiation_params: ResMut<'w, NegotiationParams>,
@@ -99,7 +101,7 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
         let num_tasks = self
             .mobile_robots
             .iter()
-            .filter(|tasks| {
+            .filter(|(_, tasks)| {
                 tasks.0.iter().any(|task| {
                     if let Task::GoToPlace { location: _ } = task {
                         true
@@ -130,13 +132,37 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                 }
             })
             .next();
+        ui.horizontal(|ui| {
+            ui.label("Cell Size: ");
+            if ui
+                .add(
+                    DragValue::new(&mut self.negotiation_params.cell_size)
+                        .clamp_range(0.1..=1.0)
+                        .suffix(" m")
+                        .speed(0.01),
+                )
+                .changed()
+            {
+                self.calculate_grid.send(CalculateGrid {
+                    cell_size: self.negotiation_params.cell_size,
+                    floor: 0.01,
+                    ceiling: 1.5,
+                    ignore: Some(
+                        self.mobile_robots
+                            .iter()
+                            .map(|(entity, _)| entity)
+                            .collect(),
+                    ),
+                });
+            }
+        });
         ui.label("Occupancy");
         ui.indent("occupancy_grid_info", |ui| {
             if let Some(grid) = occupancy_grid {
                 EguiGrid::new("occupancy_map_info")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        ui.label("min cell");
+                        ui.label("range");
                         ui.label(format!("{:?}", grid.range.min_cell()));
                         ui.end_row();
                         ui.label("max cell");
@@ -149,8 +175,6 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                             grid.range.max_cell().y - grid.range.min_cell().y
                         ));
                         ui.end_row();
-                        ui.label("cell size");
-                        ui.label(format!("{} m", grid.cell_size));
                     });
             } else {
                 ui.label("None");

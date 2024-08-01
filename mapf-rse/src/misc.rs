@@ -56,6 +56,7 @@ pub fn load_tiny_robot(
         translational_speed: 1.0,
         rotational_speed: 1.0,
         bidirectional: false,
+        collision_radius: 0.3,
         rotation_center_offset: [0.0, 0.0],
     });
     let mobile_robot_marker = ModelProperty::<MobileRobotMarker>::default();

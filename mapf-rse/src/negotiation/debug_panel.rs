@@ -98,7 +98,7 @@ impl<'w, 's> NegotiationDebugWidget<'w, 's> {
         else {
             return;
         };
-
+        // Solution node
         ui.add_space(10.0);
         ui.label(format!(
             "Solution [found in {} s]",
@@ -112,13 +112,6 @@ impl<'w, 's> NegotiationDebugWidget<'w, 's> {
                     &mut self.negotiation_debug_data,
                     solution,
                 );
-                if self
-                    .negotiation_debug_data
-                    .selected_negotiation_node
-                    .is_none()
-                {
-                    self.negotiation_debug_data.selected_negotiation_node = Some(solution.id);
-                }
             }
             None => {
                 outline_frame(ui, |ui| {
@@ -126,7 +119,7 @@ impl<'w, 's> NegotiationDebugWidget<'w, 's> {
                 });
             }
         }
-
+        // Error display
         ui.add_space(10.0);
         ui.label("Errors");
         if let Some(error_message) = error_message {
@@ -140,7 +133,7 @@ impl<'w, 's> NegotiationDebugWidget<'w, 's> {
                 ui.label("No errors");
             });
         }
-
+        // Negotiatio history
         ui.add_space(10.0);
         ui.label("Negotiation History");
 
