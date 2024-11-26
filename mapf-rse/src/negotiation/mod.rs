@@ -201,7 +201,6 @@ pub fn handle_compute_negotiation_complete(
                         };
                     }
                     NegotiationError::PlanningFailed((negotiation_history, name_map)) => {
-                        println!("HERE");
                         *negotiation_data = NegotiationData::Complete {
                             elapsed_time,
                             solution: None,

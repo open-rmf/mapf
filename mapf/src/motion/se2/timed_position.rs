@@ -205,7 +205,8 @@ impl<W, const N: usize> IntegrateWaypoints<W> for ArrayVec<WaypointSE2, N>
 where
     WaypointSE2: Into<W>,
 {
-    type IntegratedWaypointIter<'a> = ArrayVec<Result<W, NoError>, N>
+    type IntegratedWaypointIter<'a>
+        = ArrayVec<Result<W, NoError>, N>
     where
         W: 'a;
 
@@ -239,25 +240,21 @@ mod tests {
         let t0 = time_point::TimePoint::new(0);
         let t1 = t0 + time_point::Duration::from_secs_f64(2.0);
         let wp0 = WaypointSE2::new(t0, 1.0, 5.0, 10f64.to_radians());
-        let wp1 = WaypointSE2::new(t1, 1.0, 10.0, -(20f64).to_radians());
+        let wp1 = WaypointSE2::new(t1, 1.0, 10.0, -20f64.to_radians());
 
         let motion = wp0.interpolate(&wp1);
         let t = (t1 - t0) / 2f64 + t0;
         let p = motion.compute_position(&t).ok().unwrap();
         assert_relative_eq!(p.translation.vector[0], 1f64, max_relative = 0.001);
         assert_relative_eq!(p.translation.vector[1], 7.5f64, max_relative = 0.001);
-        assert_relative_eq!(
-            p.rotation.angle(),
-            -(5f64).to_radians(),
-            max_relative = 0.001
-        );
+        assert_relative_eq!(p.rotation.angle(), -5f64.to_radians(), max_relative = 0.001);
 
         let v = motion.compute_velocity(&t).ok().unwrap();
         assert_relative_eq!(v.translational[0], 0f64, max_relative = 0.001);
         assert_relative_eq!(v.translational[1], 5.0 / 2.0, max_relative = 0.001);
         assert_relative_eq!(
             v.rotational,
-            -(30f64).to_radians() / 2.0,
+            -30f64.to_radians() / 2.0,
             max_relative = 0.001
         );
     }

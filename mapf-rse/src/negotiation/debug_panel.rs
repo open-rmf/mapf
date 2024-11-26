@@ -74,7 +74,7 @@ impl<'w, 's> WidgetSystem for NegotiationDebugWidget<'w, 's> {
             }
             NegotiationData::InProgress { start_time } => {
                 ui.label(format!(
-                    "In Progresss: {} s",
+                    "In Progress: {} s",
                     start_time.elapsed().as_secs_f32()
                 ));
             }
@@ -133,7 +133,7 @@ impl<'w, 's> NegotiationDebugWidget<'w, 's> {
                 ui.label("No errors");
             });
         }
-        // Negotiatio history
+        // Negotiation history
         ui.add_space(10.0);
         ui.label("Negotiation History");
 
