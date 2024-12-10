@@ -75,7 +75,8 @@ where
     W: Timed + Clone,
     M: Into<W> + Clone,
 {
-    type IntegratedWaypointIter<'a> = SmallVec<[Result<W, SafeActionIntegrateWaypointError>; 5]>
+    type IntegratedWaypointIter<'a>
+        = SmallVec<[Result<W, SafeActionIntegrateWaypointError>; 5]>
     where
         W: 'a,
         M: 'a;
@@ -1041,7 +1042,10 @@ where
                 // There should be a valid unit vector from the start to the end
                 // of the obstacle line segment if it was possible to calculate
                 // an obstruction time range.
-                let obs_u = (obs_r - obs_q).try_normalize(1e-8).unwrap();
+                let obs_u = match (obs_r - obs_q).try_normalize(1e-8) {
+                    Some(u) => u,
+                    None => continue,
+                };
 
                 // Find the times that the main trajectory is within proximity
                 // of the line so that we can compute the waiting location.

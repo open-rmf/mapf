@@ -294,8 +294,12 @@ pub fn start_compute_negotiation(
             .0
             .iter()
             .filter_map(|task| {
-                if let RobotTask::GoToPlace { location } = task {
-                    Some(location.0)
+                if let RobotTask::GoToPlace(go_to_place) = task {
+                    if let Some(location) = go_to_place.location {
+                        Some(location.0)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

@@ -103,7 +103,7 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             .iter()
             .filter(|(_, tasks)| {
                 tasks.0.iter().any(|task| {
-                    if let Task::GoToPlace { location: _ } = task {
+                    if let Task::GoToPlace(_) = task {
                         true
                     } else {
                         false
@@ -143,6 +143,9 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                 )
                 .changed()
             {
+                // TODO(@xiyuoh) we need to send this event once at startup
+                // since no grid exists and we need to insert them. Otherwise
+                // the grid would only be inserted when we change the cell size.
                 self.calculate_grid.send(CalculateGrid {
                     cell_size: self.negotiation_params.cell_size,
                     floor: 0.01,
@@ -155,6 +158,14 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                     ),
                 });
             }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Queue Length Limit: ");
+            ui.add(
+                DragValue::new(&mut self.negotiation_params.queue_length_limit)
+                    .clamp_range(0..=std::usize::MAX)
+                    .speed(1000),
+            );
         });
         ui.label("Occupancy");
         ui.indent("occupancy_grid_info", |ui| {
@@ -191,11 +202,6 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                     self.negotiation_request.send(NegotiationRequest);
                 }
             });
-            ui.add(
-                DragValue::new(&mut self.negotiation_params.queue_length_limit)
-                    .clamp_range(0..=std::usize::MAX)
-                    .speed(1000),
-            );
         });
 
         // Results

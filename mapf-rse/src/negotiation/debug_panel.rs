@@ -23,7 +23,7 @@ use bevy_egui::egui::{
 };
 use mapf::negotiation::Negotiation;
 use rmf_site_editor::{
-    interaction::{outline, ChangeMode, ModelPreviewCamera, SelectAnchor3D},
+    interaction::{outline, ModelPreviewCamera},
     site::{
         AssetSource, FuelClient, Group, IsStatic, Model, ModelDescriptionBundle, ModelMarker,
         ModelProperty, NameInSite, Scale, SetFuelApiKey, UpdateFuelCache,
