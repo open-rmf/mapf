@@ -70,14 +70,12 @@ pub struct NegotiationRequest;
 #[derive(Debug, Clone, Resource)]
 pub struct NegotiationParams {
     pub queue_length_limit: usize,
-    pub cell_size: f32,
 }
 
 impl Default for NegotiationParams {
     fn default() -> Self {
         Self {
             queue_length_limit: 1_000_000,
-            cell_size: 0.2,
         }
     }
 }

@@ -21,7 +21,7 @@ use bevy_egui::egui::{CollapsingHeader, ComboBox, DragValue, Grid as EguiGrid, U
 use rmf_site_editor::{
     occupancy::{CalculateGrid, Grid},
     site::{CurrentLevel, Group, MobileRobotMarker, Task, Tasks},
-    widgets::prelude::*,
+    widgets::{prelude::*, view_occupancy::OccupancyDisplay},
 };
 
 #[derive(SystemParam)]
@@ -39,6 +39,7 @@ pub struct MapfConfigWidget<'w, 's> {
     negotiation_params: ResMut<'w, NegotiationParams>,
     negotiation_data: ResMut<'w, NegotiationData>,
     negotiation_debug: ResMut<'w, NegotiationDebugData>,
+    occupancy_display: ResMut<'w, OccupancyDisplay>,
 }
 
 impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
@@ -134,20 +135,40 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             .next();
         ui.horizontal(|ui| {
             ui.label("Cell Size: ");
+            // The button + slider combination help to indicate that cell size
+            // requires initialization else grid is empty. These also differ
+            // from those in the occupancy widget, as those do not ignore mobile
+            // robots in calculation. However the cell size param used is
+            // consistent, so any updated value will reflect accordingly
             if ui
                 .add(
-                    DragValue::new(&mut self.negotiation_params.cell_size)
+                    DragValue::new(&mut self.occupancy_display.cell_size)
                         .clamp_range(0.1..=1.0)
                         .suffix(" m")
                         .speed(0.01),
                 )
+                .on_hover_text("Slide to calculate occupancy without robots")
                 .changed()
             {
-                // TODO(@xiyuoh) we need to send this event once at startup
-                // since no grid exists and we need to insert them. Otherwise
-                // the grid would only be inserted when we change the cell size.
                 self.calculate_grid.send(CalculateGrid {
-                    cell_size: self.negotiation_params.cell_size,
+                    cell_size: self.occupancy_display.cell_size,
+                    floor: 0.01,
+                    ceiling: 1.5,
+                    ignore: Some(
+                        self.mobile_robots
+                            .iter()
+                            .map(|(entity, _)| entity)
+                            .collect(),
+                    ),
+                });
+            }
+            if ui
+                .button("Calculate Occupancy")
+                .on_hover_text("Click to calculate occupancy without robots")
+                .clicked()
+            {
+                self.calculate_grid.send(CalculateGrid {
+                    cell_size: self.occupancy_display.cell_size,
                     floor: 0.01,
                     ceiling: 1.5,
                     ignore: Some(
