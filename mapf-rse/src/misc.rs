@@ -66,6 +66,4 @@ pub fn load_tiny_robot(
         .insert(Category::ModelDescription)
         .insert(mobile_robot_marker)
         .set_parent(site_entity);
-
-    println!("LOADED");
 }

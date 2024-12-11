@@ -173,13 +173,13 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                 EguiGrid::new("occupancy_map_info")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        ui.label("range");
+                        ui.label("Range");
                         ui.label(format!("{:?}", grid.range.min_cell()));
                         ui.end_row();
-                        ui.label("max cell");
+                        ui.label("Max Cell");
                         ui.label(format!("{:?}", grid.range.max_cell()));
                         ui.end_row();
-                        ui.label("dimension");
+                        ui.label("Dimension");
                         ui.label(format!(
                             "{} x {}",
                             grid.range.max_cell().x - grid.range.min_cell().x,
@@ -218,16 +218,16 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                 EguiGrid::new("negotiation_data")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        ui.label("execution time");
+                        ui.label("Execution Time");
                         ui.label(format!("{:.2} s", elapsed_time.as_secs_f32()));
                         ui.end_row();
-                        ui.label("negotiation history");
+                        ui.label("Negotiation History");
                         ui.label(format!("{}", negotiation_history.len()));
                         ui.end_row();
-                        ui.label("endpoint conflicts");
+                        ui.label("Endpoint Conflicts");
                         ui.label(format!("{}", conflicting_endpoints.len()));
                         ui.end_row();
-                        ui.label("error message");
+                        ui.label("Error Message");
                         ui.label(error_message.clone().unwrap_or("None".to_string()));
                     });
             }
