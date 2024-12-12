@@ -35,7 +35,7 @@ pub fn visualise_selected_node(
     current_level: Res<CurrentLevel>,
 ) {
     // Return unless complete
-    let Ok(negotiation_task) = negotiation_task.get_single_mut() else {
+    let Ok(negotiation_task) = negotiation_task.get_single() else {
         return;
     };
     let NegotiationTaskStatus::Complete {
@@ -52,6 +52,11 @@ pub fn visualise_selected_node(
     if !debug_data.is_changed() {
         return;
     }
+    // Despawn visuals from previous negotiation task
+    for path_visual in path_visuals.iter() {
+        commands.entity(path_visual).despawn_recursive();
+    }
+
     let Some(selected_node) = debug_data
         .selected_negotiation_node
         .and_then(|selected_id| {
@@ -72,9 +77,6 @@ pub fn visualise_selected_node(
         return;
     };
 
-    for path_visual in path_visuals.iter() {
-        commands.entity(path_visual).despawn_recursive();
-    }
     let mut spawn_path_mesh = |lane_tf, lane_material: Handle<StandardMaterial>, lane_mesh| {
         commands
             .spawn(PbrBundle {
