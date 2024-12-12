@@ -26,7 +26,7 @@ pub struct PathVisualMarker;
 
 pub fn visualise_selected_node(
     mut commands: Commands,
-    negotiation_data: Res<NegotiationData>,
+    mut negotiation_task: Query<&NegotiationTask>,
     mut debug_data: ResMut<NegotiationDebugData>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut path_visuals: Query<Entity, With<PathVisualMarker>>,
@@ -35,18 +35,21 @@ pub fn visualise_selected_node(
     current_level: Res<CurrentLevel>,
 ) {
     // Return unless complete
-    let NegotiationData::Complete {
+    let Ok(negotiation_task) = negotiation_task.get_single_mut() else {
+        return;
+    };
+    let NegotiationTaskStatus::Complete {
         elapsed_time,
         solution,
         negotiation_history,
         entity_id_map,
         error_message,
         conflicting_endpoints,
-    } = negotiation_data.as_ref()
+    } = &negotiation_task.status
     else {
         return;
     };
-    if !debug_data.is_changed() && !negotiation_data.is_changed() {
+    if !debug_data.is_changed() {
         return;
     }
     let Some(selected_node) = debug_data

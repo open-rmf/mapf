@@ -51,7 +51,6 @@ impl Plugin for NegotiationPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<NegotiationRequest>()
             .init_resource::<NegotiationParams>()
-            .init_resource::<NegotiationData>()
             .add_plugins(NegotiationDebugPlugin::default())
             .add_systems(
                 Update,
@@ -80,8 +79,8 @@ impl Default for NegotiationParams {
     }
 }
 
-#[derive(Debug, Default, Clone, Resource)]
-pub enum NegotiationData {
+#[derive(Debug, Default, Clone)]
+pub enum NegotiationTaskStatus {
     #[default]
     NotStarted,
     InProgress {
@@ -97,10 +96,25 @@ pub enum NegotiationData {
     },
 }
 
-impl NegotiationData {
+impl NegotiationTaskStatus {
     pub fn is_in_progress(&self) -> bool {
-        matches!(self, NegotiationData::InProgress { .. })
+        matches!(self, NegotiationTaskStatus::InProgress { .. })
     }
+}
+
+#[derive(Component)]
+pub struct NegotiationTask {
+    task: Task<
+        Result<
+            (
+                NegotiationNode,
+                Vec<NegotiationNode>,
+                HashMap<usize, String>,
+            ),
+            NegotiationError,
+        >,
+    >,
+    pub status: NegotiationTaskStatus,
 }
 
 #[derive(Resource)]
@@ -124,45 +138,75 @@ impl Default for NegotiationDebugData {
     }
 }
 
-#[derive(Component)]
-pub struct ComputeNegotiateTask(
-    Task<
-        Result<
-            (
-                NegotiationNode,
-                Vec<NegotiationNode>,
-                HashMap<usize, String>,
-            ),
-            NegotiationError,
-        >,
-    >,
-);
-
 pub fn handle_compute_negotiation_complete(
     mut commands: Commands,
-    mut compute_negotiation_task: Query<(Entity, &mut ComputeNegotiateTask)>,
     mut negotiation_debug_data: ResMut<NegotiationDebugData>,
-    mut negotiation_data: ResMut<NegotiationData>,
+    mut compute_negotiation_task: Query<(Entity, &mut NegotiationTask)>,
 ) {
-    let NegotiationData::InProgress { start_time } = *negotiation_data else {
+    if compute_negotiation_task.is_empty() {
         return;
-    };
+    }
 
     fn bits_string_to_entity(bits_string: &str) -> Entity {
         let bits = u64::from_str_radix(bits_string, 10).expect("Invalid entity id");
         Entity::from_bits(bits)
     }
 
-    for (mut entity, mut task) in &mut compute_negotiation_task {
-        if let Some(result) = block_on(future::poll_once(&mut task.0)) {
-            let elapsed_time = start_time.elapsed();
+    let (mut entity, mut negotiation_task) = compute_negotiation_task
+        .get_single_mut()
+        .expect("Error: Found multiple negotiation tasks!");
 
-            match result {
-                Ok((solution, negotiation_history, name_map)) => {
-                    negotiation_debug_data.selected_negotiation_node = Some(solution.id);
-                    *negotiation_data = NegotiationData::Complete {
+    // We only accept in-progress negotiation task computations
+    let NegotiationTaskStatus::InProgress { start_time } = negotiation_task.status else {
+        return;
+    };
+
+    if let Some(result) = block_on(future::poll_once(&mut negotiation_task.task)) {
+        let elapsed_time = start_time.elapsed();
+
+        match result {
+            Ok((solution, negotiation_history, name_map)) => {
+                negotiation_debug_data.selected_negotiation_node = Some(solution.id);
+                negotiation_task.status = NegotiationTaskStatus::Complete {
+                    elapsed_time,
+                    solution: Some(solution),
+                    negotiation_history,
+                    entity_id_map: name_map
+                        .into_iter()
+                        .map(|(id, bits_string)| (id, bits_string_to_entity(&bits_string)))
+                        .collect(),
+                    error_message: None,
+                    conflicting_endpoints: Vec::new(),
+                };
+            }
+            Err(err) => match err {
+                NegotiationError::PlanningImpossible(msg) => {
+                    negotiation_task.status = NegotiationTaskStatus::Complete {
                         elapsed_time,
-                        solution: Some(solution),
+                        solution: None,
+                        negotiation_history: Vec::new(),
+                        entity_id_map: HashMap::new(),
+                        error_message: Some(msg),
+                        conflicting_endpoints: Vec::new(),
+                    };
+                }
+                NegotiationError::ConflictingEndpoints(conflicts) => {
+                    negotiation_task.status = NegotiationTaskStatus::Complete {
+                        elapsed_time,
+                        solution: None,
+                        negotiation_history: Vec::new(),
+                        entity_id_map: HashMap::new(),
+                        error_message: None,
+                        conflicting_endpoints: conflicts
+                            .into_iter()
+                            .map(|(a, b)| (bits_string_to_entity(&a), bits_string_to_entity(&b)))
+                            .collect(),
+                    };
+                }
+                NegotiationError::PlanningFailed((negotiation_history, name_map)) => {
+                    negotiation_task.status = NegotiationTaskStatus::Complete {
+                        elapsed_time,
+                        solution: None,
                         negotiation_history,
                         entity_id_map: name_map
                             .into_iter()
@@ -172,49 +216,8 @@ pub fn handle_compute_negotiation_complete(
                         conflicting_endpoints: Vec::new(),
                     };
                 }
-                Err(err) => match err {
-                    NegotiationError::PlanningImpossible(msg) => {
-                        *negotiation_data = NegotiationData::Complete {
-                            elapsed_time,
-                            solution: None,
-                            negotiation_history: Vec::new(),
-                            entity_id_map: HashMap::new(),
-                            error_message: Some(msg),
-                            conflicting_endpoints: Vec::new(),
-                        };
-                    }
-                    NegotiationError::ConflictingEndpoints(conflicts) => {
-                        *negotiation_data = NegotiationData::Complete {
-                            elapsed_time,
-                            solution: None,
-                            negotiation_history: Vec::new(),
-                            entity_id_map: HashMap::new(),
-                            error_message: None,
-                            conflicting_endpoints: conflicts
-                                .into_iter()
-                                .map(|(a, b)| {
-                                    (bits_string_to_entity(&a), bits_string_to_entity(&b))
-                                })
-                                .collect(),
-                        };
-                    }
-                    NegotiationError::PlanningFailed((negotiation_history, name_map)) => {
-                        *negotiation_data = NegotiationData::Complete {
-                            elapsed_time,
-                            solution: None,
-                            negotiation_history,
-                            entity_id_map: name_map
-                                .into_iter()
-                                .map(|(id, bits_string)| (id, bits_string_to_entity(&bits_string)))
-                                .collect(),
-                            error_message: None,
-                            conflicting_endpoints: Vec::new(),
-                        };
-                    }
-                },
-            };
-            commands.entity(entity).remove::<ComputeNegotiateTask>();
-        }
+            },
+        };
     }
 }
 
@@ -234,8 +237,8 @@ pub fn start_compute_negotiation(
     anchors: Query<(Entity, &Anchor, &Transform)>,
     negotiation_request: EventReader<NegotiationRequest>,
     negotiation_params: Res<NegotiationParams>,
-    mut negotiation_data: ResMut<NegotiationData>,
     mut negotiation_debug_data: ResMut<NegotiationDebugData>,
+    mut compute_negotiation_task: Query<(Entity, &mut NegotiationTask)>,
     current_level: Res<CurrentLevel>,
     grids: Query<(Entity, &Grid)>,
     parents: Query<&Parent>,
@@ -243,9 +246,17 @@ pub fn start_compute_negotiation(
     if negotiation_request.len() == 0 {
         return;
     }
-    if let NegotiationData::InProgress { .. } = *negotiation_data {
-        warn!("Negotiation requested while another negotiation is in progress");
-        return;
+    if !compute_negotiation_task.is_empty() {
+        let (mut entity, mut negotiation_task) = compute_negotiation_task
+            .get_single_mut()
+            .expect("Error: Found multiple negotiation tasks!");
+
+        if let NegotiationTaskStatus::InProgress { .. } = negotiation_task.status {
+            warn!("Negotiation requested while another negotiation is in progress");
+            return;
+        }
+        // Computation is done, we can despawn the previous negotiation task
+        commands.entity(entity).despawn_recursive();
     }
     negotiation_debug_data.selected_negotiation_node = None;
 
@@ -287,12 +298,12 @@ pub fn start_compute_negotiation(
 
     // Agent
     let mut agents = BTreeMap::<String, Agent>::new();
-    for (robot_entity, _, robot_pose, differential_drive, tasks) in mobile_robots.iter() {
-        let Some(location_entity) = tasks
+    for (robot_entity, _, robot_pose, differential_drive, robot_tasks) in mobile_robots.iter() {
+        let Some(location_entity) = robot_tasks
             .0
             .iter()
-            .filter_map(|task| {
-                if let RobotTask::GoToPlace(go_to_place) = task {
+            .filter_map(|robot_task| {
+                if let RobotTask::GoToPlace(go_to_place) = robot_task {
                     if let Some(location) = go_to_place.location {
                         Some(location.0)
                     } else {
@@ -343,12 +354,12 @@ pub fn start_compute_negotiation(
 
     // Execute asynchronously
     let start_time = Instant::now();
-    *negotiation_data = NegotiationData::InProgress { start_time };
+    let mut status = NegotiationTaskStatus::InProgress { start_time };
 
     let thread_pool = AsyncComputeTaskPool::get();
     let task = thread_pool.spawn(async move { negotiate(&scenario, Some(queue_length_limit)) });
 
-    commands.spawn(ComputeNegotiateTask(task));
+    commands.spawn(NegotiationTask { task, status });
 }
 
 fn to_cell(x: f32, y: f32, cell_size: f32) -> [i64; 2] {

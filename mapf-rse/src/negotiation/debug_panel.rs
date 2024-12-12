@@ -46,8 +46,9 @@ impl Plugin for NegotiationDebugPlugin {
 #[derive(SystemParam)]
 pub struct NegotiationDebugWidget<'w, 's> {
     commands: Commands<'w, 's>,
-    negotiation_data: ResMut<'w, NegotiationData>,
+    negotiation_task: Query<'w, 's, &'static NegotiationTask>,
     negotiation_debug_data: ResMut<'w, NegotiationDebugData>,
+    negotiation_params: ResMut<'w, NegotiationParams>,
 }
 
 fn negotiation_debug_panel(In(input): In<PanelWidgetInput>, world: &mut World) {
@@ -57,7 +58,7 @@ fn negotiation_debug_panel(In(input): In<PanelWidgetInput>, world: &mut World) {
             .min_width(320.0)
             .show(&input.context, |ui| {
                 if let Err(err) = world.try_show(input.id, ui) {
-                    error!("Unable to display asset gallery: {err:?}");
+                    error!("Unable to display debug panel: {err:?}");
                 }
             });
     }
@@ -68,17 +69,21 @@ impl<'w, 's> WidgetSystem for NegotiationDebugWidget<'w, 's> {
         let mut params = state.get_mut(world);
 
         ui.heading("Negotiation Debugger");
-        match params.negotiation_data.as_ref() {
-            NegotiationData::Complete { .. } => {
+        match params
+            .negotiation_task
+            .get_single_mut()
+            .map(|task| &task.status)
+        {
+            Ok(NegotiationTaskStatus::Complete { .. }) => {
                 params.show_completed(ui);
             }
-            NegotiationData::InProgress { start_time } => {
+            Ok(NegotiationTaskStatus::InProgress { start_time }) => {
                 ui.label(format!(
                     "In Progress: {} s",
                     start_time.elapsed().as_secs_f32()
                 ));
             }
-            NegotiationData::NotStarted => {
+            _ => {
                 ui.label("No negotiation started");
             }
         }
@@ -87,14 +92,17 @@ impl<'w, 's> WidgetSystem for NegotiationDebugWidget<'w, 's> {
 
 impl<'w, 's> NegotiationDebugWidget<'w, 's> {
     pub fn show_completed(&mut self, ui: &mut Ui) {
-        let NegotiationData::Complete {
+        let Ok(negotiation_task) = self.negotiation_task.get_single_mut() else {
+            return;
+        };
+        let NegotiationTaskStatus::Complete {
             elapsed_time,
             solution,
             negotiation_history,
             entity_id_map,
             error_message,
             conflicting_endpoints,
-        } = self.negotiation_data.as_ref()
+        } = &negotiation_task.status
         else {
             return;
         };
