@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 mapf = { path="../mapf" }
-rmf_site_format = { path = "../../rmf_site/rmf_site_format", package = "rmf_site_format" }
-rmf_site_editor = { path = "../../rmf_site/rmf_site_editor", package = "rmf_site_editor" }
+rmf_site_format = { git = "https://github.com/open-rmf/rmf_site.git", branch = "xiyu/scenarios", package = "rmf_site_format" }
+rmf_site_editor = { git = "https://github.com/open-rmf/rmf_site.git", branch = "xiyu/scenarios", package = "rmf_site_editor" }
 bevy = { version = "0.12", features = ["pnm", "jpeg", "tga"] }
 bevy_egui = "0.23.0"
 futures-lite = "2.3.0"
