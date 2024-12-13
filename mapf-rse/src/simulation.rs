@@ -15,6 +15,7 @@
  *
 */
 
+use super::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{
     Button, CollapsingHeader, Color32, ComboBox, DragValue, Frame, ScrollArea, Slider, Stroke, Ui,
@@ -28,6 +29,29 @@ use rmf_site_editor::{
     widgets::prelude::*,
     widgets::{view_scenarios::ScenarioDisplay, Icons},
 };
+
+#[derive(Resource, Debug, Clone)]
+pub struct SimulationConfig {
+    pub is_playing: bool,
+    pub speed: f32,
+    pub current_time: f32,
+    pub end_time: f32,
+    pub current_step: u32,
+    pub end_step: u32,
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            is_playing: false,
+            speed: 1.0,
+            current_time: 0.0,
+            end_time: 0.0,
+            current_step: 0,
+            end_step: 0,
+        }
+    }
+}
 
 #[derive(SystemParam)]
 pub struct SimulationControlTile<'w> {
@@ -66,7 +90,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                             .speed(0.01),
                     );
                     ui.horizontal(|ui| match params.debug_mode.get() {
-                        DebugMode::Negotation => {
+                        DebugMode::Negotiation => {
                             let end_time = params.simulation_config.end_time.clone();
                             ui.add(
                                 DragValue::new(&mut params.simulation_config.current_time)
@@ -91,7 +115,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                 ui.scope(|ui| {
                     ui.spacing_mut().slider_width = ui.available_width();
                     ui.horizontal(|ui| match params.debug_mode.get() {
-                        DebugMode::Negotation => {
+                        DebugMode::Negotiation => {
                             let end_time = params.simulation_config.end_time.clone();
                             ui.add(
                                 Slider::new(

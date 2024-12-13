@@ -26,7 +26,6 @@ use rmf_site_editor::{
 
 #[derive(SystemParam)]
 pub struct MapfConfigWidget<'w, 's> {
-    simulation_config: ResMut<'w, SimulationConfig>,
     debug_mode: Res<'w, State<DebugMode>>,
     debug_mode_next: ResMut<'w, NextState<DebugMode>>,
     mobile_robots:

@@ -21,6 +21,9 @@ pub use negotiation::*;
 pub mod config_widget;
 pub use config_widget::*;
 
+pub mod simulation;
+pub use simulation::*;
+
 pub mod misc;
 pub use misc::*;
 
@@ -38,29 +41,6 @@ impl Plugin for MapfRsePlugin {
             .add_plugins(NegotiationPlugin)
             .add_plugins(PropertiesTilePlugin::<MapfConfigWidget>::new())
             .add_systems(Update, load_tiny_robot);
-    }
-}
-
-#[derive(Resource, Debug, Clone)]
-pub struct SimulationConfig {
-    pub is_playing: bool,
-    pub speed: f32,
-    pub current_time: f32,
-    pub end_time: f32,
-    pub current_step: u32,
-    pub end_step: u32,
-}
-
-impl Default for SimulationConfig {
-    fn default() -> Self {
-        Self {
-            is_playing: false,
-            speed: 1.0,
-            current_time: 0.0,
-            end_time: 0.0,
-            current_step: 0,
-            end_step: 0,
-        }
     }
 }
 
