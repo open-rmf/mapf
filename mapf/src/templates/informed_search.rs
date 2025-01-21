@@ -256,7 +256,8 @@ where
     I: Initializable<Start, Goal, A::State>,
 {
     type InitialError = I::InitialError;
-    type InitialStates<'a> = I::InitialStates<'a>
+    type InitialStates<'a>
+        = I::InitialStates<'a>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -294,7 +295,9 @@ where
 {
     type ActivityAction = A::ActivityAction;
     type ActivityError = A::ActivityError;
-    type Choices<'a> = impl IntoIterator<Item = Result<(Self::ActivityAction, A::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl IntoIterator<Item = Result<(Self::ActivityAction, A::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -380,7 +383,9 @@ where
     C::ConnectionError: Into<Anyhow>,
 {
     type ConnectionError = anyhow::Error;
-    type Connections<'a> = impl IntoIterator<Item=Result<(A::ActivityAction, A::State), Self::ConnectionError>> + 'a
+    type Connections<'a>
+        =
+        impl IntoIterator<Item = Result<(A::ActivityAction, A::State), Self::ConnectionError>> + 'a
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -414,7 +419,8 @@ impl<A, W, H, X, I, S, C> Keyring<A::State> for InformedSearch<A, W, H, X, I, S,
 where
     A: Domain + Keyring<A::State>,
 {
-    type KeyRef<'a> = A::KeyRef<'a>
+    type KeyRef<'a>
+        = A::KeyRef<'a>
     where
         Self: 'a,
         A::State: 'a;
@@ -435,7 +441,8 @@ where
     S: ArrivalKeyring<A::Key, Start, Goal>,
 {
     type ArrivalKeyError = S::ArrivalKeyError;
-    type ArrivalKeys<'a> = S::ArrivalKeys<'a>
+    type ArrivalKeys<'a>
+        = S::ArrivalKeys<'a>
     where
         Self: 'a,
         Start: 'a,

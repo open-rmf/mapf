@@ -81,7 +81,8 @@ where
     Key: Clone,
 {
     type ArrivalKeyError = NoError;
-    type ArrivalKeys<'a> = [Result<Key, NoError>; 1]
+    type ArrivalKeys<'a>
+        = [Result<Key, NoError>; 1]
     where
         Key: 'a,
         Start: 'a,

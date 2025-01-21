@@ -61,7 +61,8 @@ where
 {
     type ToAction = ToAction;
     type ActionMapError = NoError;
-    type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
+    type ToActions<'a>
+        = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
         S: 'a,
@@ -95,7 +96,8 @@ where
 {
     type ToAction = ToAction;
     type ActionMapError = NoError;
-    type ToActions<'a> = std::option::IntoIter<Result<ToAction, NoError>>
+    type ToActions<'a>
+        = std::option::IntoIter<Result<ToAction, NoError>>
     where
         ToAction: 'a,
         S: 'a,
@@ -116,7 +118,8 @@ pub struct NoActionMap;
 impl<State, Action> ActionMap<State, Action> for NoActionMap {
     type ActionMapError = NoError;
     type ToAction = Action;
-    type ToActions<'a> = Option<Result<Action, NoError>>
+    type ToActions<'a>
+        = Option<Result<Action, NoError>>
     where
         State: 'a,
         Action: 'a;

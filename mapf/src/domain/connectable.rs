@@ -48,7 +48,8 @@ pub trait Connectable<State, Action, Target> {
 // any connection.
 impl<State, Action, Target> Connectable<State, Action, Target> for () {
     type ConnectionError = NoError;
-    type Connections<'a> = [Result<(Action, State), NoError>; 0]
+    type Connections<'a>
+        = [Result<(Action, State), NoError>; 0]
     where
         Action: 'a,
         State: 'a,
@@ -74,7 +75,8 @@ where
     State: Clone,
 {
     type ConnectionError = Prop::ConnectionError;
-    type Connections<'a> = impl IntoIterator<Item = Result<(Action, State), Self::ConnectionError>> + 'a
+    type Connections<'a>
+        = impl IntoIterator<Item = Result<(Action, State), Self::ConnectionError>> + 'a
     where
         Self: 'a,
         Self::ConnectionError: 'a,

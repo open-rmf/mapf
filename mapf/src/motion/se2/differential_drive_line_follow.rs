@@ -219,7 +219,8 @@ where
 {
     type Extrapolation = DifferentialDriveLineFollowMotion;
     type ExtrapolationError = DifferentialDriveLineFollowError;
-    type ExtrapolationIter<'a> = Option<Result<(Self::Extrapolation, WaypointSE2), Self::ExtrapolationError>>
+    type ExtrapolationIter<'a>
+        = Option<Result<(Self::Extrapolation, WaypointSE2), Self::ExtrapolationError>>
     where
         Target: 'a,
         Guidance: 'a,
@@ -270,10 +271,17 @@ where
 {
     type IncrementalExtrapolation = ArrayVec<WaypointSE2, 1>;
     type IncrementalExtrapolationError = DifferentialDriveLineFollowError;
-    type IncrementalExtrapolationIter<'a> = Option<Result<
-        (Self::IncrementalExtrapolation, WaypointSE2, ExtrapolationProgress),
-        Self::IncrementalExtrapolationError
-    >>
+    type IncrementalExtrapolationIter<'a>
+        = Option<
+        Result<
+            (
+                Self::IncrementalExtrapolation,
+                WaypointSE2,
+                ExtrapolationProgress,
+            ),
+            Self::IncrementalExtrapolationError,
+        >,
+    >
     where
         Target: 'a,
         Guidance: 'a,
@@ -375,7 +383,9 @@ where
     G::Vertex: Positioned,
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointSE2), Self::AvoidanceError>> + 'a
+    type AvoidanceActionIter<'a>
+        = impl IntoIterator<Item = Result<(Self::AvoidanceAction, WaypointSE2), Self::AvoidanceError>>
+        + 'a
     where
         Target: 'a,
         Guidance: 'a,
@@ -548,7 +558,8 @@ where
     K: PartialEq + std::fmt::Debug,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
-    type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
+    type Connections<'a>
+        = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
     where
         K: 'a,
         Action: 'a,
@@ -647,7 +658,8 @@ where
     K: Clone + Key,
 {
     type ConnectionError = DifferentialDriveLineFollowError;
-    type Connections<'a> = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
+    type Connections<'a>
+        = Option<Result<(Action, StateSE2<K, R>), Self::ConnectionError>>
     where
         K: 'a,
         Action: 'a,

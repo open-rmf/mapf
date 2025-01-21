@@ -123,9 +123,18 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     type Vertex = Point;
     type EdgeAttributes = ();
 
-    type VertexRef<'a> = Self::Vertex where G: 'a;
-    type Edge<'a> = (Cell, Cell) where G: 'a;
-    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
+    type VertexRef<'a>
+        = Self::Vertex
+    where
+        G: 'a;
+    type Edge<'a>
+        = (Cell, Cell)
+    where
+        G: 'a;
+    type EdgeIter<'a>
+        = impl Iterator<Item = (Cell, Cell)> + 'a
+    where
+        Self: 'a;
 
     fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {
         // We don't bother to filter out occupied cells because those cells will
@@ -189,7 +198,10 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
             })
     }
 
-    type LazyEdgeIter<'a> = Option<(Cell, Cell)> where G: 'a;
+    type LazyEdgeIter<'a>
+        = Option<(Cell, Cell)>
+    where
+        G: 'a;
     fn lazy_edges_between<'a>(
         &'a self,
         from_key: &Self::Key,
@@ -291,9 +303,18 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     type Vertex = Point;
     type EdgeAttributes = ();
 
-    type VertexRef<'a> = Self::Vertex where G: 'a;
-    type Edge<'a> = (Cell, Cell) where G: 'a;
-    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
+    type VertexRef<'a>
+        = Self::Vertex
+    where
+        G: 'a;
+    type Edge<'a>
+        = (Cell, Cell)
+    where
+        G: 'a;
+    type EdgeIter<'a>
+        = impl Iterator<Item = (Cell, Cell)> + 'a
+    where
+        Self: 'a;
 
     fn vertex(&self, cell: &Self::Key) -> Option<Self::Vertex> {
         if self.visibility.grid().is_occupied(&cell) {
@@ -370,7 +391,10 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
             })
     }
 
-    type LazyEdgeIter<'a> = Option<(Cell, Cell)> where G: 'a;
+    type LazyEdgeIter<'a>
+        = Option<(Cell, Cell)>
+    where
+        G: 'a;
 
     fn lazy_edges_between<'a>(
         &'a self,

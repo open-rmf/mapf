@@ -92,7 +92,13 @@ where
 {
     type ActivityAction = E::IncrementalExtrapolation;
     type ActivityError = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
-    type Choices<'a> = impl IntoIterator<Item = Result<(Self::ActivityAction, IncrementalState<S::State, G>), Self::ActivityError>> + 'a
+    type Choices<'a>
+        = impl IntoIterator<
+            Item = Result<
+                (Self::ActivityAction, IncrementalState<S::State, G>),
+                Self::ActivityError,
+            >,
+        > + 'a
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -268,7 +274,8 @@ where
     S: KeyedSpace<G::Key>,
     G: Graph,
 {
-    type KeyRef<'a> = S::KeyRef<'a>
+    type KeyRef<'a>
+        = S::KeyRef<'a>
     where
         Self: 'a,
         S::State: 'a;
@@ -422,7 +429,11 @@ impl<BaseState: Keyed, G: Graph> Keyed for IncrementalState<BaseState, G> {
 }
 
 impl<BaseState: SelfKey, G: Graph> SelfKey for IncrementalState<BaseState, G> {
-    type KeyRef<'a> = BaseState::KeyRef<'a> where BaseState: 'a, G: 'a;
+    type KeyRef<'a>
+        = BaseState::KeyRef<'a>
+    where
+        BaseState: 'a,
+        G: 'a;
     fn key<'a>(&'a self) -> Self::KeyRef<'a>
     where
         Self: 'a,

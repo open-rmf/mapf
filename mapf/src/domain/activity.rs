@@ -59,7 +59,8 @@ pub struct NoActivity<A>(std::marker::PhantomData<A>);
 impl<State, A> Activity<State> for NoActivity<A> {
     type ActivityAction = A;
     type ActivityError = NoError;
-    type Choices<'a> = [Result<(A, State), NoError>; 0]
+    type Choices<'a>
+        = [Result<(A, State), NoError>; 0]
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -112,7 +113,8 @@ pub trait ActivityModifier<State, FromAction> {
 impl<State, FromAction> ActivityModifier<State, FromAction> for () {
     type ModifiedAction = FromAction;
     type ModifiedActionError = NoError;
-    type ModifiedChoices<'a> = [Result<(FromAction, State), NoError>; 1]
+    type ModifiedChoices<'a>
+        = [Result<(FromAction, State), NoError>; 1]
     where
         FromAction: 'a,
         State: 'a;
@@ -139,7 +141,9 @@ where
 {
     type ActivityAction = Prop::ActivityAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl Iterator<Item = Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
@@ -173,7 +177,9 @@ where
 {
     type ActivityAction = Prop::ActivityAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl Iterator<Item = Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
@@ -212,7 +218,9 @@ where
 {
     type ActivityAction = Prop::ModifiedAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl Iterator<Item = Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
@@ -262,7 +270,9 @@ where
 {
     type ActivityAction = Lifter::ToAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = impl Iterator<Item=Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl Iterator<Item = Result<(Self::ActivityAction, Base::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Base: 'a,
@@ -632,7 +642,10 @@ mod tests {
     impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustApples {
         type ActionMapError = NoError;
         type ToAction = Order;
-        type ToActions<'a> = Option<Result<Order, NoError>> where A: 'a;
+        type ToActions<'a>
+            = Option<Result<Order, NoError>>
+        where
+            A: 'a;
         fn map_action<'a>(&'a self, _: Inventory, from_action: A) -> Self::ToActions<'a>
         where
             Transaction: 'a,
@@ -676,7 +689,10 @@ mod tests {
     impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustBananas {
         type ActionMapError = NoError;
         type ToAction = Order;
-        type ToActions<'a> = Option<Result<Order, NoError>> where A: 'a;
+        type ToActions<'a>
+            = Option<Result<Order, NoError>>
+        where
+            A: 'a;
         fn map_action<'a>(&'a self, _: Inventory, from_action: A) -> Self::ToActions<'a>
         where
             Transaction: 'a,

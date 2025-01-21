@@ -95,19 +95,22 @@ impl<V, E> Graph for SimpleGraph<V, E> {
     type Vertex = V;
     type EdgeAttributes = E;
 
-    type VertexRef<'a> = &'a Self::Vertex
+    type VertexRef<'a>
+        = &'a Self::Vertex
     where
         Self::Vertex: 'a,
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type Edge<'a> = (usize, usize, &'a E)
+    type Edge<'a>
+        = (usize, usize, &'a E)
     where
         Self::Vertex: 'a,
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type EdgeIter<'a> = impl Iterator<Item=(usize, usize, &'a E)> + 'a
+    type EdgeIter<'a>
+        = impl Iterator<Item = (usize, usize, &'a E)> + 'a
     where
         V: 'a,
         E: 'a;
@@ -129,7 +132,8 @@ impl<V, E> Graph for SimpleGraph<V, E> {
             .map(move |(to_key, attr)| (from_key, *to_key, attr))
     }
 
-    type LazyEdgeIter<'a> = [(usize, usize, &'a E); 0]
+    type LazyEdgeIter<'a>
+        = [(usize, usize, &'a E); 0]
     where
         V: 'a,
         E: 'a;

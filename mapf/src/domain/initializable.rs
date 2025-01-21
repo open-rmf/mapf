@@ -42,7 +42,8 @@ pub trait Initializable<Start, Goal, State> {
 // An empty tuple implements Initializable by simply accepting an initial state.
 impl<Start: Into<State>, Goal, State> Initializable<Start, Goal, State> for () {
     type InitialError = NoError;
-    type InitialStates<'a> = [Result<State, NoError>; 1]
+    type InitialStates<'a>
+        = [Result<State, NoError>; 1]
     where
         Start: 'a,
         Goal: 'a,
@@ -63,7 +64,8 @@ pub struct InitFrom;
 
 impl<Start: Into<State>, Goal, State> Initializable<Start, Goal, State> for InitFrom {
     type InitialError = NoError;
-    type InitialStates<'a> = Option<Result<State, NoError>>
+    type InitialStates<'a>
+        = Option<Result<State, NoError>>
     where
         State: 'a,
         Goal: 'a,
@@ -84,7 +86,8 @@ pub struct MaybeInitFrom;
 
 impl<Start: Into<Option<State>>, Goal, State> Initializable<Start, Goal, State> for MaybeInitFrom {
     type InitialError = NoError;
-    type InitialStates<'a> = Option<Result<State, NoError>>
+    type InitialStates<'a>
+        = Option<Result<State, NoError>>
     where
         State: 'a,
         Goal: 'a,
@@ -111,7 +114,8 @@ where
     Goal: Clone,
 {
     type InitialError = Init::InitialError;
-    type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a>
+        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -143,7 +147,8 @@ where
     Init: Initializable<Start, Goal, State>,
 {
     type InitialError = Init::InitialError;
-    type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a>
+        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -173,7 +178,8 @@ where
     Prop::InitialError: Into<Base::Error>,
 {
     type InitialError = Base::Error;
-    type InitialStates<'a> = impl Iterator<Item=Result<Base::State, Base::Error>> + 'a
+    type InitialStates<'a>
+        = impl Iterator<Item = Result<Base::State, Base::Error>> + 'a
     where
         Self: 'a,
         Base::Error: 'a,

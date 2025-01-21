@@ -55,7 +55,8 @@ where
     R: ArrivalKeyring<G::Key, G::Key, Goal>,
     C: Connectable<State, Action, Goal>,
 {
-    type Connections<'a> = impl Iterator<Item=Result<(Action, State), Self::ConnectionError>> + 'a
+    type Connections<'a>
+        = impl Iterator<Item = Result<(Action, State), Self::ConnectionError>> + 'a
     where
         Self: 'a,
         Self::ConnectionError: 'a,

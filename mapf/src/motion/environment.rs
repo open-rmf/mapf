@@ -50,7 +50,8 @@ pub struct DynamicEnvironment<W: Waypoint> {
 impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for DynamicEnvironment<W>
 {
-    type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
+    type Obstacles<'a>
+        = impl Iterator<Item = &'a DynamicCircularObstacle<W>>
     where
         W: 'a;
 
@@ -318,7 +319,8 @@ impl<'a, W: Waypoint, K> Copy for CcbsEnvironmentView<'a, W, K> {}
 impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for CcbsEnvironmentView<'e, W, K>
 {
-    type Obstacles<'a> = impl Iterator<Item=&'a DynamicCircularObstacle<W>>
+    type Obstacles<'a>
+        = impl Iterator<Item = &'a DynamicCircularObstacle<W>>
     where
         W: 'a,
         K: 'a,
@@ -359,7 +361,8 @@ impl<Env, Profile, Obstacle> Environment<Profile, Obstacle> for Arc<Env>
 where
     Env: Environment<Profile, Obstacle>,
 {
-    type Obstacles<'a> = Env::Obstacles<'a>
+    type Obstacles<'a>
+        = Env::Obstacles<'a>
     where
         Env: 'a,
         Profile: 'a,

@@ -205,7 +205,8 @@ impl<W, const N: usize> IntegrateWaypoints<W> for ArrayVec<WaypointSE2, N>
 where
     WaypointSE2: Into<W>,
 {
-    type IntegratedWaypointIter<'a> = ArrayVec<Result<W, NoError>, N>
+    type IntegratedWaypointIter<'a>
+        = ArrayVec<Result<W, NoError>, N>
     where
         W: 'a;
 
