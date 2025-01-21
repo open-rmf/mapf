@@ -106,7 +106,8 @@ where
 {
     type Extrapolation = ArrayVec<WaypointR2, 1>;
     type ExtrapolationError = LineFollowError;
-    type ExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2), LineFollowError>>
+    type ExtrapolationIter<'a>
+        = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2), LineFollowError>>
     where
         Target: 'a,
         Guidance: 'a,
@@ -136,7 +137,10 @@ where
 {
     type IncrementalExtrapolation = ArrayVec<WaypointR2, 1>;
     type IncrementalExtrapolationError = LineFollowError;
-    type IncrementalExtrapolationIter<'a> = Option<Result<(ArrayVec<WaypointR2, 1>, WaypointR2, ExtrapolationProgress), LineFollowError>>
+    type IncrementalExtrapolationIter<'a>
+        = Option<
+        Result<(ArrayVec<WaypointR2, 1>, WaypointR2, ExtrapolationProgress), LineFollowError>,
+    >
     where
         Target: 'a,
         Guidance: 'a,
@@ -194,7 +198,9 @@ where
     K: Key + Clone,
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = impl IntoIterator<Item=Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>> + 'a
+    type AvoidanceActionIter<'a>
+        = impl IntoIterator<Item = Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>>
+        + 'a
     where
         Target: 'a,
         Guidance: 'a,

@@ -172,7 +172,8 @@ where
             .into()
     }
 
-    type ClosedSetIter<'a> = impl Iterator<Item=&'a T> + 'a
+    type ClosedSetIter<'a>
+        = impl Iterator<Item = &'a T> + 'a
     where
         Self: 'a,
         State: 'a,

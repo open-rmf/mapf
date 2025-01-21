@@ -53,7 +53,10 @@ impl<Key> Space for DiscreteSpaceTimeR2<Key> {
     type State = StateR2<Key>;
     type Waypoint = timed_position::WaypointR2;
 
-    type WaypointRef<'a> = &'a Self::Waypoint where Key: 'a;
+    type WaypointRef<'a>
+        = &'a Self::Waypoint
+    where
+        Key: 'a;
     fn waypoint<'a>(&'a self, state: &'a Self::State) -> &'a Self::Waypoint {
         &state.waypoint
     }
@@ -64,7 +67,8 @@ impl<K: Key> Keyed for DiscreteSpaceTimeR2<K> {
 }
 
 impl<K: Key + Clone> Keyring<StateR2<K>> for DiscreteSpaceTimeR2<K> {
-    type KeyRef<'a> = &'a Self::Key
+    type KeyRef<'a>
+        = &'a Self::Key
     where
         K: 'a;
 
@@ -124,7 +128,8 @@ impl<K> MaybeOriented for StateR2<K> {
 }
 
 impl<W: From<WaypointR2>, K> IntegrateWaypoints<W> for StateR2<K> {
-    type IntegratedWaypointIter<'a> = Option<Result<W, NoError>>
+    type IntegratedWaypointIter<'a>
+        = Option<Result<W, NoError>>
     where
         W: 'a,
         K: 'a;
@@ -174,7 +179,8 @@ impl<K: Key + Clone> Keyed for StateR2<K> {
 }
 
 impl<K: Key + Clone> SelfKey for StateR2<K> {
-    type KeyRef<'a> = &'a Self::Key
+    type KeyRef<'a>
+        = &'a Self::Key
     where
         K: 'a;
 
@@ -230,7 +236,8 @@ where
     Start: Into<StartR2<G::Key>>,
 {
     type InitialError = InitializeR2Error<G::Key>;
-    type InitialStates<'a> = [Result<StateR2<G::Key>, InitializeR2Error<G::Key>>; 1]
+    type InitialStates<'a>
+        = [Result<StateR2<G::Key>, InitializeR2Error<G::Key>>; 1]
     where
         Self: 'a,
         Start: 'a,

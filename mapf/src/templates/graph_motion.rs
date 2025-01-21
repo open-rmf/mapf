@@ -83,7 +83,9 @@ where
 {
     type ActivityAction = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;
-    type Choices<'a> = impl IntoIterator<Item = Result<(Self::ActivityAction, S::State), Self::ActivityError>> + 'a
+    type Choices<'a>
+        =
+        impl IntoIterator<Item = Result<(Self::ActivityAction, S::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Self::ActivityAction: 'a,
@@ -160,7 +162,8 @@ where
     S: KeyedSpace<G::Key>,
     G: Graph,
 {
-    type KeyRef<'a> = S::KeyRef<'a>
+    type KeyRef<'a>
+        = S::KeyRef<'a>
     where
         Self: 'a,
         S::State: 'a;

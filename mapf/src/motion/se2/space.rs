@@ -57,7 +57,10 @@ impl<K, const R: u32> Default for DiscreteSpaceTimeSE2<K, R> {
 impl<K, const R: u32> Space for DiscreteSpaceTimeSE2<K, R> {
     type State = StateSE2<K, R>;
     type Waypoint = WaypointSE2;
-    type WaypointRef<'a> = &'a WaypointSE2 where K: 'a;
+    type WaypointRef<'a>
+        = &'a WaypointSE2
+    where
+        K: 'a;
     fn waypoint<'a>(&'a self, state: &'a Self::State) -> Self::WaypointRef<'a> {
         &state.waypoint
     }
@@ -71,7 +74,11 @@ impl<K: Key + Clone, State, const R: u32> Keyring<State> for DiscreteSpaceTimeSE
 where
     State: Borrow<StateSE2<K, R>>,
 {
-    type KeyRef<'a> = &'a Self::Key where K: 'a, State: 'a;
+    type KeyRef<'a>
+        = &'a Self::Key
+    where
+        K: 'a,
+        State: 'a;
     fn key_for<'a>(&'a self, state: &'a State) -> &'a Self::Key
     where
         K: 'a,
@@ -132,7 +139,8 @@ impl<K, const R: u32> MaybeOriented for StateSE2<K, R> {
 }
 
 impl<W: From<WaypointSE2>, K, const R: u32> IntegrateWaypoints<W> for StateSE2<K, R> {
-    type IntegratedWaypointIter<'a> = Option<Result<W, NoError>>
+    type IntegratedWaypointIter<'a>
+        = Option<Result<W, NoError>>
     where
         W: 'a,
         K: 'a;
@@ -186,7 +194,10 @@ impl<K: Key + Clone, const R: u32> Keyed for StateSE2<K, R> {
 }
 
 impl<K: Key + Clone, const R: u32> SelfKey for StateSE2<K, R> {
-    type KeyRef<'a> = &'a Self::Key where K: 'a;
+    type KeyRef<'a>
+        = &'a Self::Key
+    where
+        K: 'a;
     fn key<'a>(&'a self) -> &'a Self::Key
     where
         K: 'a,
@@ -319,7 +330,8 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = [Result<State, InitializeSE2Error<G::Key>>; 1]
+    type InitialStates<'a>
+        = [Result<State, InitializeSE2Error<G::Key>>; 1]
     where
         Self: 'a,
         Start: 'a,
@@ -469,7 +481,8 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a>
+        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
         G: 'a,
@@ -510,7 +523,8 @@ where
     Goal: Borrow<G::Key>,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a> = impl Iterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    type ArrivalKeys<'a>
+        = impl Iterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
     where
         Self: 'a,
         G: 'a,
@@ -582,7 +596,8 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = impl IntoIterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a>
+        = impl IntoIterator<Item = Result<State, Self::InitialError>> + 'a
     where
         Self: 'a,
         G: 'a,
@@ -658,7 +673,8 @@ where
     G::Vertex: Positioned,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a> = impl IntoIterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    type ArrivalKeys<'a>
+        = impl IntoIterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
     where
         Self: 'a,
         G: 'a,

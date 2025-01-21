@@ -56,9 +56,18 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
     type Vertex = Point;
     type EdgeAttributes = ();
 
-    type VertexRef<'a> = Point where G: 'a;
-    type Edge<'a> = (Cell, Cell) where G: 'a;
-    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
+    type VertexRef<'a>
+        = Point
+    where
+        G: 'a;
+    type Edge<'a>
+        = (Cell, Cell)
+    where
+        G: 'a;
+    type EdgeIter<'a>
+        = impl Iterator<Item = (Cell, Cell)> + 'a
+    where
+        Self: 'a;
 
     fn vertex<'a>(&'a self, key: &Cell) -> Option<Point> {
         if self.accessibility.is_inaccessible(key) {
@@ -95,7 +104,10 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
         )
     }
 
-    type LazyEdgeIter<'a> = [(Cell, Cell); 0] where G: 'a;
+    type LazyEdgeIter<'a>
+        = [(Cell, Cell); 0]
+    where
+        G: 'a;
 
     fn lazy_edges_between<'a>(&'a self, _: &Self::Key, _: &Self::Key) -> Self::LazyEdgeIter<'a>
     where
