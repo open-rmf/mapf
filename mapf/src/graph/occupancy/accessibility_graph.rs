@@ -192,13 +192,14 @@ pub struct CellDirectionsIter {
 impl Iterator for CellDirectionsIter {
     type Item = [i64; 2];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next_dir > u8::MAX as u16 {
+        if self.next_dir > 7 {
+            // We have already iterated over all the directions
             return None;
         }
 
         while self.directions.bit(self.next_dir as usize) != self.accessibility {
             self.next_dir += 1;
-            if self.next_dir > u8::MAX as u16 {
+            if self.next_dir > 7 {
                 return None;
             }
         }
