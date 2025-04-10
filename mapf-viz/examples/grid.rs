@@ -1305,7 +1305,14 @@ impl App {
         let elapsed = start_time.elapsed();
         println!("Successful planning took {} seconds", elapsed.as_secs_f64());
         dbg!(node_history.len());
-
+        let mut total_length = 0.0;
+        for solution in solution_node.proposals.values() {
+            total_length += solution.meta.trajectory.windows(2).fold(0.0, |acc, w| {
+                (w[0].position.translation.vector - w[1].position.translation.vector).magnitude() + acc
+            });
+            
+        }
+        println!("Total length: {total_length}");
         assert!(self.canvas.program.layers.3.solutions.is_empty());
         for (i, proposal) in &solution_node.proposals {
             let name = name_map.get(i).unwrap();
