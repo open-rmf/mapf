@@ -782,6 +782,8 @@ struct App {
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
     next_robot_name_index: usize,
+    headless: bool,
+should_exit_now: bool
 }
 
 impl App {
@@ -1189,10 +1191,61 @@ impl App {
         dbg!(node_history.len());
 
         assert!(self.canvas.program.layers.3.solutions.is_empty());
+
+        let mut earliest = None;
+
+        let mut latest = None;
         for (i, proposal) in &solution_node.proposals {
             let name = name_map.get(i).unwrap();
             let r = scenario.agents.get(name).unwrap().radius;
             self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
+
+            let start_time = proposal.meta.trajectory.initial_time();
+            if let Some(start_time) = start_time
+            {
+                if let Some(curr_earliest) = earliest {
+                    if curr_earliest < start_time {
+                        earliest = Some(start_time);
+                    }
+                }
+                else {
+                    earliest = Some(start_time);
+                }
+            }
+
+            let end_time = proposal.meta.trajectory.finish_motion_time();
+
+            if let Some(curr_latest) = latest {
+                if curr_latest < end_time {
+                    latest = Some(end_time);
+                }
+            }
+            else {
+                latest = Some(end_time);
+            }
+
+        }
+
+        if self.headless{
+            if let Some(earliest) = earliest {
+                for (i, proposal) in &solution_node.proposals {
+                    let mut t = earliest;
+                    println!("{:?} ---------", i);
+                    while t < latest.unwrap()
+                    {
+                        let pos = proposal.meta.trajectory.motion().compute_position(&t);
+                        let vel = proposal.meta.trajectory.motion().compute_velocity(&t);
+                        println!("{:?} {:?}", pos, vel);
+                        t += Duration::from_secs_f64(0.1);
+                    }
+                }
+
+            }
+            else
+            {
+                println!("No earliest found");
+            }
+            self.should_exit_now = true;
         }
 
         if self.debug_negotiation_on {
@@ -1203,11 +1256,14 @@ impl App {
     }
 }
 
+
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Scenario to load on startup
     filename: Option<String>,
+    headless_mode: Option<bool>
 }
 
 fn load_file(filename: &String) -> Option<Scenario> {
@@ -1283,6 +1339,10 @@ impl Application for App {
     type Executor = executor::Default;
     type Flags = Args;
 
+    fn should_exit(&self) -> bool {
+        self.should_exit_now
+    }
+
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let cell_size = 1.0_f32;
         let (agents, obstacles, grid, mut zone, _) = load_scenario(flags.filename.as_ref());
@@ -1345,6 +1405,8 @@ impl Application for App {
             debug_node_selected: None,
             negotiation_node_selected: None,
             next_robot_name_index: 0,
+            headless: flags.headless_mode.unwrap_or(false),
+            should_exit_now: false
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
