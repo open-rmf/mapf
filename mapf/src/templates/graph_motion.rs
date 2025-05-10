@@ -81,14 +81,14 @@ where
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::ExtrapolationError: StdError,
 {
-    type ActivityAction = E::Extrapolation;
+    type Action = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;
     type Choices<'a>
         =
-        impl IntoIterator<Item = Result<(Self::ActivityAction, S::State), Self::ActivityError>> + 'a
+        impl IntoIterator<Item = Result<(Self::Action, S::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
-        Self::ActivityAction: 'a,
+        Self::Action: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
         G::EdgeAttributes: 'a,
@@ -98,7 +98,7 @@ where
     fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::ActivityAction: 'a,
+        Self::Action: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
         G::Key: 'a,

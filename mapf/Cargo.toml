@@ -1,6 +1,6 @@
 [package]
 name = "mapf"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "Base traits and utilities for multi-agent planning"
 license = "Apache-2.0"
@@ -11,6 +11,7 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
+mapf_derive = { path = "macros", version = "0.2.0" }
 nalgebra = "0.31.1"
 time-point = "0.1"
 sorted-vec = "0.8.2"

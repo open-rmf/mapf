@@ -36,7 +36,7 @@ where
     D: Domain
         + Keyed
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>,
 {
     backward: Dijkstra<D>,
@@ -47,7 +47,7 @@ where
     D: Domain
         + Keyed
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
@@ -66,7 +66,7 @@ where
     D: Domain
         + Keyed
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
@@ -77,7 +77,7 @@ where
     D: Domain
         + Keyed
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>,
 {
     backward: Memory<D>,
@@ -89,12 +89,12 @@ where
         + Keyring<D::State>
         + Initializable<Goal, Start, D::State>
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>
-        + Connectable<D::State, D::ActivityAction, D::Key>
+        + Connectable<D::State, D::Action, D::Key>
         + ArrivalKeyring<D::Key, Goal, Start>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
-    D::ActivityAction: Clone,
+    D::Action: Clone,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
     D::WeightedError: Into<D::Error>,
@@ -118,13 +118,13 @@ where
     D: Domain
         + Reversible
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Keyring<D::State>
         + Closable<D::State>
-        + Connectable<D::State, D::ActivityAction, D::Key>
-        + Backtrack<D::State, D::ActivityAction>,
+        + Connectable<D::State, D::Action, D::Key>
+        + Backtrack<D::State, D::Action>,
     D::State: Clone,
-    D::ActivityAction: Clone,
+    D::Action: Clone,
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
@@ -132,7 +132,7 @@ where
     D::ConnectionError: Into<D::Error>,
     D::BacktrackError: Into<D::Error>,
 {
-    type Solution = Path<D::State, D::ActivityAction, D::Cost>;
+    type Solution = Path<D::State, D::Action, D::Cost>;
     type StepError = DijkstraSearchError<D::Error>;
 
     fn step(
@@ -159,7 +159,7 @@ where
         + Reversible
         + Keyed
         + Activity<D::State>
-        + Weighted<D::State, D::ActivityAction>
+        + Weighted<D::State, D::Action>
         + Closable<D::State>,
     D::ReversalError: Into<Anyhow>,
 {

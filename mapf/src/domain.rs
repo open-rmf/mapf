@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Open Source Robotics Foundation
+ * Copyright (C) 2025 Open Source Robotics Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,53 +16,75 @@
 */
 
 /// A domain that is being planned over must, at a minimum, specify a type for
-/// its state representation and what kind of actions can be performed.
+/// its state representation and a type for errors that may occur while using
+/// the domain.
 ///
-/// Use DefineTrait<S, A> to construct the traits of a domain using the trait
-/// impls provided by mapf or by using your own custom defined trait impls.
+/// Domains may also implement various traits like [`Activity`], [`Weighted`],
+/// and [`Informed`] which can be used by planners to search the domain. You can
+/// easily gather implementations for these traits into a domain using the
+/// `#[derive(Domain)]` macro.
 ///
-/// Domain trait impls that are provided by mapf out-of-the-box can be found in
-/// the sub-modules of this domain module, such as Activity and Dynamics.
+///
 pub trait Domain {
+    /// Data structure that represents a state within this domain.
     type State;
+
+    /// The error type that this domain may produce from its various operations.
     type Error;
 }
 
-pub mod action_map;
-pub mod activity;
-pub mod closable;
-pub mod configurable;
-pub mod conflict;
-pub mod connectable;
-pub mod cost;
-pub mod define_trait;
-pub mod domain_map;
-pub mod extrapolator;
-pub mod informed;
-pub mod initializable;
-pub mod keyed;
-pub mod reversible;
-pub mod satisfiable;
-pub mod space;
-pub mod state_map;
-pub mod weighted;
+pub use mapf_derive::Domain;
 
+pub mod action_map;
 pub use action_map::*;
+
+pub mod activity;
 pub use activity::*;
+
+pub mod closable;
 pub use closable::*;
-pub use closable::*;
+
+pub mod configurable;
 pub use configurable::*;
+
+pub mod conflict;
 pub use conflict::*;
+
+pub mod connectable;
 pub use connectable::*;
+
+pub mod cost;
 pub use cost::Cost;
+
+pub mod define_trait;
 pub use define_trait::*;
+
+pub mod domain_map;
 pub use domain_map::*;
+
+pub mod extrapolator;
 pub use extrapolator::*;
+
+pub mod informed;
 pub use informed::*;
+
+pub mod initializable;
 pub use initializable::*;
+
+pub mod keyed;
 pub use keyed::*;
+
+pub mod reversible;
 pub use reversible::*;
+
+pub mod satisfiable;
 pub use satisfiable::*;
+
+pub mod space;
 pub use space::*;
+
+pub mod state_map;
 pub use state_map::*;
+
+pub mod weighted;
 pub use weighted::*;

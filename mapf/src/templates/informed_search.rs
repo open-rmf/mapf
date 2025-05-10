@@ -293,21 +293,21 @@ impl<A, W, H, X, I, S, C> Activity<A::State> for InformedSearch<A, W, H, X, I, S
 where
     A: Domain + Activity<A::State>,
 {
-    type ActivityAction = A::ActivityAction;
+    type Action = A::Action;
     type ActivityError = A::ActivityError;
     type Choices<'a>
         =
-        impl IntoIterator<Item = Result<(Self::ActivityAction, A::State), Self::ActivityError>> + 'a
+        impl IntoIterator<Item = Result<(Self::Action, A::State), Self::ActivityError>> + 'a
     where
         Self: 'a,
-        Self::ActivityAction: 'a,
+        Self::Action: 'a,
         Self::ActivityError: 'a,
         A::State: 'a;
 
     fn choices<'a>(&'a self, from_state: A::State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::ActivityAction: 'a,
+        Self::Action: 'a,
         Self::ActivityError: 'a,
         A::State: 'a,
     {
@@ -315,11 +315,11 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Weighted<A::State, A::ActivityAction>
+impl<A, W, H, X, I, S, C> Weighted<A::State, A::Action>
     for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
-    W: Weighted<A::State, A::ActivityAction>,
+    W: Weighted<A::State, A::Action>,
     W::WeightedError: Into<Anyhow>,
 {
     type Cost = W::Cost;
@@ -327,7 +327,7 @@ where
     fn cost(
         &self,
         from_state: &A::State,
-        action: &A::ActivityAction,
+        action: &A::Action,
         to_state: &A::State,
     ) -> Result<Option<Self::Cost>, Self::WeightedError> {
         self.weight.cost(from_state, action, to_state)
@@ -374,30 +374,30 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::ActivityAction, Goal>
+impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::Action, Goal>
     for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
     A::State: Clone,
-    C: Connectable<A::State, A::ActivityAction, Goal>,
+    C: Connectable<A::State, A::Action, Goal>,
     C::ConnectionError: Into<Anyhow>,
 {
     type ConnectionError = anyhow::Error;
     type Connections<'a>
         =
-        impl IntoIterator<Item = Result<(A::ActivityAction, A::State), Self::ConnectionError>> + 'a
+        impl IntoIterator<Item = Result<(A::Action, A::State), Self::ConnectionError>> + 'a
     where
         Self: 'a,
         Self::ConnectionError: 'a,
         A::State: 'a,
-        A::ActivityAction: 'a,
+        A::Action: 'a,
         Goal: 'a;
 
     fn connect<'a>(&'a self, from_state: A::State, to_target: &'a Goal) -> Self::Connections<'a>
     where
         Self::ConnectionError: 'a,
         A::State: 'a,
-        A::ActivityAction: 'a,
+        A::Action: 'a,
         Goal: 'a,
     {
         self.connector
@@ -516,10 +516,10 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Backtrack<A::State, A::ActivityAction>
+impl<A, W, H, X, I, S, C> Backtrack<A::State, A::Action>
     for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State> + Backtrack<A::State, A::ActivityAction>,
+    A: Domain + Activity<A::State> + Backtrack<A::State, A::Action>,
 {
     type BacktrackError = A::BacktrackError;
     fn flip_endpoints(
@@ -535,9 +535,9 @@ where
         &self,
         parent_forward_state: &A::State,
         parent_reverse_state: &A::State,
-        reverse_action: &A::ActivityAction,
+        reverse_action: &A::Action,
         child_reverse_state: &A::State,
-    ) -> Result<(A::ActivityAction, A::State), Self::BacktrackError> {
+    ) -> Result<(A::Action, A::State), Self::BacktrackError> {
         self.activity.backtrack(
             parent_forward_state,
             parent_reverse_state,
