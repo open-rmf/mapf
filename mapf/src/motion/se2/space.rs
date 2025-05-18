@@ -27,7 +27,7 @@ use crate::{
         se2::*,
         IntegrateWaypoints, MaybeTimed, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
     },
-    util::{wrap_to_pi, FlatResultMapTrait},
+    util::{wrap_to_pi, FlatResultMapTrait, ForkIter, IterError},
 };
 use smallvec::SmallVec;
 use std::borrow::Borrow;
@@ -219,6 +219,12 @@ pub struct KeySE2<K, const R: u32> {
     /// The key of the agent's orientation. This value should be in the range of
     /// +/- PI * R
     pub orientation: i32,
+}
+
+impl<K, const R: u32> From<StateSE2<K, R>> for KeySE2<K, R> {
+    fn from(value: StateSE2<K, R>) -> Self {
+        value.key
+    }
 }
 
 impl<K, const R: u32> KeySE2<K, R> {
@@ -481,8 +487,10 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a>
-        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a> = ForkIter<
+        StarburstInitialStates<'a, G, R, State>,
+        IterError<State, InitializeSE2Error<G::Key>>,
+    >
     where
         Self: 'a,
         G: 'a,
@@ -499,18 +507,120 @@ where
         Goal: 'a,
         State: 'a,
     {
-        let from_start = from_start.borrow().clone();
-        self.starburst(from_start.clone(), to_goal.borrow().clone())
-            .map(move |r| {
-                let from_start = from_start.clone();
-                r.map(move |(p, angle)| {
-                    StateSE2::new(
-                        from_start.clone(),
-                        WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
-                    )
-                })
-            })
-            .map(|r| r.map(Into::into))
+        let from_key: G::Key = from_start.borrow().clone();
+        let to_key: &G::Key = to_goal.borrow();
+        let Some(from_vertex_ref) = self.graph.vertex(&from_key) else {
+            return ForkIter::Right(
+                IterError::new(InitializeSE2Error::MissingVertex(from_key))
+            );
+        };
+
+        let explicit_edges = self.graph.edges_from_vertex(&from_key).into_iter();
+        let lazy_edges = self.graph.lazy_edges_between(&from_key, to_key).into_iter();
+        let explicit_reverse = self.reverse.as_ref().map(
+            |r| r.edges_from_vertex(&from_key).into_iter()
+        );
+        let lazy_reverse = self.reverse.as_ref().map(
+            |r| r.lazy_edges_between(&from_key, to_key).into_iter()
+        );
+
+        ForkIter::Left(StarburstInitialStates {
+            graph: &self.graph,
+            from_key,
+            from_vertex_ref,
+            explicit_edges,
+            lazy_edges,
+            explicit_reverse,
+            lazy_reverse,
+            direction: self.direction as f64,
+            _ignore: Default::default(),
+        })
+    }
+}
+
+impl<'a, G: Graph, const R: u32, State> Iterator for StarburstInitialStates<'a, G, R, State>
+where
+    G::Key: Clone,
+    G::Vertex: Positioned,
+    StateSE2<G::Key, R>: Into<State>,
+{
+    type Item = Result<State, InitializeSE2Error<G::Key>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let edge = self.next_edge()?;
+        Some(self.make_state(edge).map(Into::into))
+    }
+}
+
+pub struct StarburstInitialStates<'a, G: Graph + 'a, const R: u32, State> {
+    graph: &'a G,
+    from_key: G::Key,
+    from_vertex_ref: G::VertexRef<'a>,
+    explicit_edges: <G::EdgeIter<'a> as IntoIterator>::IntoIter,
+    lazy_edges: <G::LazyEdgeIter<'a> as IntoIterator>::IntoIter,
+    explicit_reverse: Option<<G::EdgeIter<'a> as IntoIterator>::IntoIter>,
+    lazy_reverse: Option<<G::LazyEdgeIter<'a> as IntoIterator>::IntoIter>,
+    direction: f64,
+    _ignore: std::marker::PhantomData<fn(State)>,
+}
+
+impl<'a, G: Graph, const R: u32, State> StarburstInitialStates<'a, G, R, State>
+where
+    G::Key: Clone,
+    G::Vertex: Positioned,
+{
+    fn make_waypoint(
+        &self,
+        to_vertex: G::VertexRef<'a>,
+    ) -> (Point, f64) {
+        let from_p: Point = self.from_vertex_ref.borrow().point();
+        let to_p: Point = to_vertex.borrow().point();
+        let angle = self.direction * (to_p - from_p)
+            .try_normalize(1e-8)
+            .map(|v| f64::atan2(v[1], v[0]))
+            .unwrap_or(0.0);
+        (from_p, angle)
+    }
+
+    fn make_state(
+        &self,
+        edge: G::Edge<'a>,
+    ) -> Result<StateSE2<G::Key, R>, InitializeSE2Error<G::Key>> {
+        let to_vertex = self.graph.vertex(edge.to_vertex())
+            .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))?;
+        let (point, angle) = self.make_waypoint(to_vertex);
+        Ok(StateSE2::new(
+            self.from_key.clone(),
+            WaypointSE2::new(TimePoint::zero(), point.x, point.y, angle),
+        ))
+    }
+
+    fn next_edge(
+        &mut self
+    ) -> Option<G::Edge<'a>> {
+        if let Some(edge) = self.explicit_edges.next() {
+            dbg!();
+            return Some(edge);
+        }
+
+        dbg!();
+        if let Some(edge) = self.lazy_edges.next() {
+            dbg!();
+            return Some(edge);
+        }
+
+        dbg!();
+        if let Some(edge) = self.explicit_reverse.as_mut().map(|r| r.next()).flatten() {
+            dbg!();
+            return Some(edge);
+        }
+
+        dbg!();
+        if let Some(edge) = self.lazy_reverse.as_mut().map(|r| r.next()).flatten() {
+            dbg!();
+            return Some(edge);
+        }
+
+        None
     }
 }
 
@@ -519,12 +629,14 @@ impl<G: Graph, const R: u32, Start, Goal> ArrivalKeyring<KeySE2<G::Key, R>, Star
 where
     G::Key: Clone,
     G::Vertex: Positioned,
-    Start: Borrow<G::Key>,
+    Start: Borrow<G::Key> + Clone,
     Goal: Borrow<G::Key>,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a>
-        = impl Iterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    type ArrivalKeys<'a> = ForkIter<
+        StarburstInitialStates<'a, G, R, KeySE2<G::Key, R>>,
+        IterError<KeySE2<G::Key, R>, InitializeSE2Error<G::Key>>,
+    >
     where
         Self: 'a,
         G: 'a,
@@ -536,14 +648,10 @@ where
     where
         Self: 'a,
         Self::ArrivalKeyError: 'a,
+        Start: 'a,
+        Goal: 'a,
     {
-        let goal = goal.borrow().clone();
-        self
-            // goal and start are intentionally swapped because Starburst::for_goal
-            // reverses the graph, allowing us to query for edges that lead into the
-            // goal.
-            .starburst(goal.clone(), start.borrow().clone())
-            .map(move |r| r.map(|(_, angle)| KeySE2::new(goal.clone(), angle)))
+        Initializable::<_, _, KeySE2<G::Key, R>>::initialize(self, start.clone(), goal)
     }
 }
 
@@ -596,8 +704,7 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a>
-        = impl IntoIterator<Item = Result<State, Self::InitialError>> + 'a
+    type InitialStates<'a> = SmallVec<[Result<State, Self::InitialError>; 16]>
     where
         Self: 'a,
         G: 'a,
@@ -616,18 +723,12 @@ where
         State: 'a,
     {
         let from_start_clone = from_start.clone();
-        let mut all_states: SmallVec<[Result<_, _>; 16]> = self
-            .starburst
-            .starburst(from_start.clone(), to_goal.vertex.clone())
-            .map(move |r| {
-                let from_start = from_start.clone();
-                r.map(move |(p, angle)| {
-                    StateSE2::new(
-                        from_start.clone(),
-                        WaypointSE2::new(TimePoint::zero(), p.x, p.y, angle),
-                    )
-                })
-            })
+        let mut all_states: SmallVec<[Result<_, _>; 16]> =
+            Initializable::<_, _, StateSE2<G::Key, R>>::initialize(
+                &self.starburst,
+                from_start,
+                to_goal
+            )
             .collect();
 
         let from_start = from_start_clone;
@@ -662,9 +763,11 @@ where
             }
         }
 
-        all_states.into_iter().map(|r| r.map(Into::into))
+        all_states.into_iter().map(|r| r.map(Into::into)).collect()
     }
 }
+
+
 
 impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, KeySE2<G::Key, R>>
     for PreferentialStarburstSE2<G, R>
@@ -673,8 +776,7 @@ where
     G::Vertex: Positioned,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a>
-        = impl IntoIterator<Item = Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>> + 'a
+    type ArrivalKeys<'a> = SmallVec<[Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>; 16]>
     where
         Self: 'a,
         G: 'a,

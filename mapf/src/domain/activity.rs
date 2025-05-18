@@ -16,7 +16,7 @@
 */
 
 use super::*;
-use crate::{error::NoError, util::FlatResultMapTrait};
+use crate::error::NoError;
 
 /// The Activity trait describes an activity that can be performed within a
 /// domain. An activity yields action choices for an agent where those choices
@@ -515,7 +515,7 @@ mod tests {
     impl Activity<u64> for Count {
         type Action = Interval;
         type ActivityError = NoError;
-        type Choices<'a> = impl Iterator<Item = Result<(Interval, u64), NoError>> + 'a;
+        type Choices<'a> = Vec<Result<(Interval, u64), NoError>>;
 
         fn choices<'a>(&'a self, s: u64) -> Self::Choices<'a>
         where
@@ -527,6 +527,7 @@ mod tests {
             self.by_interval
                 .iter()
                 .map(move |interval| Ok((Interval(*interval), s + *interval)))
+                .collect()
         }
     }
 
@@ -534,8 +535,7 @@ mod tests {
     impl ActivityModifier<u64, Interval> for Multiplier {
         type ModifiedAction = Interval;
         type ModifiedActionError = NoError;
-        type ModifiedChoices<'a> =
-            impl IntoIterator<Item = Result<(Interval, u64), Self::ModifiedActionError>> + 'a;
+        type ModifiedChoices<'a> = [Result<(Interval, u64), Self::ModifiedActionError>; 1];
         fn modify_action<'a>(
             &'a self,
             from_state: u64,
@@ -555,8 +555,7 @@ mod tests {
     impl ActivityModifier<u64, Interval> for DoubleTheOdds {
         type ModifiedAction = Interval;
         type ModifiedActionError = NoError;
-        type ModifiedChoices<'a> =
-            impl IntoIterator<Item = Result<(Interval, u64), Self::ModifiedActionError>> + 'a;
+        type ModifiedChoices<'a> = [Result<(Interval, u64), Self::ModifiedActionError>; 1];
         fn modify_action<'a>(
             &'a self,
             from_state: u64,
@@ -587,8 +586,7 @@ mod tests {
     impl ActivityModifier<u64, Interval> for MapToTestError {
         type ModifiedAction = Interval;
         type ModifiedActionError = TestError;
-        type ModifiedChoices<'a> =
-            impl IntoIterator<Item = Result<(Interval, u64), Self::ModifiedActionError>> + 'a;
+        type ModifiedChoices<'a> = [Result<(Interval, u64), Self::ModifiedActionError>; 1];
         fn modify_action<'a>(&'a self, _: u64, _: Interval, _: u64) -> Self::ModifiedChoices<'a>
         where
             Interval: 'a,

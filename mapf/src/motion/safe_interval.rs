@@ -235,20 +235,53 @@ where
         }
     }
 
-    type ClosedSetIter<'a>
-        = impl Iterator<Item = &'a T> + 'a
+    type ClosedSetIter<'a> = SafeIntervalClosedSetIter<'a, Ring::Key, T>
     where
         Self: 'a,
         State: 'a,
         T: 'a;
 
-    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
+    fn iter_closed<'a>(&'a self) -> SafeIntervalClosedSetIter<'a, Ring::Key, T>
     where
         Self: 'a,
         State: 'a,
         T: 'a,
     {
-        self.container.values().flat_map(|c| c.iter())
+        // self.container.values().flat_map(|c| c.iter())
+        SafeIntervalClosedSetIter {
+            values: self.container.values(),
+            current_iter: None,
+        }
+    }
+}
+
+pub struct SafeIntervalClosedSetIter<'a, Key, T> {
+    values: std::collections::hash_map::Values<'a, Key, ClosedIntervals<T>>,
+    current_iter: Option<ClosedIntervalsValuesIter<'a, T>>,
+}
+
+impl<'a, Key, T> Iterator for SafeIntervalClosedSetIter<'a, Key, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(current_iter) = &mut self.current_iter {
+                if let Some(next) = current_iter.next() {
+                    return Some(next);
+                }
+            }
+
+            // The current iter ran out of values. Try getting a new one.
+            match self.values.next() {
+                Some(next_intervals) => {
+                    self.current_iter = Some(next_intervals.values());
+                }
+                None => {
+                    // There are no more intervals left.
+                    return None;
+                }
+            }
+        }
     }
 }
 
@@ -344,12 +377,40 @@ impl<T> ClosedIntervals<T> {
         prior.into()
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T> + 'a {
-        self.indefinite_start.iter().chain(
-            self.intervals
-                .iter()
-                .filter_map(|(_, value)| value.as_ref()),
-        )
+    fn values<'a>(&'a self) -> ClosedIntervalsValuesIter<'a, T> {
+        ClosedIntervalsValuesIter {
+            indefinite_start: self.indefinite_start.as_ref(),
+            intervals: self.intervals.iter(),
+        }
+    }
+}
+
+pub struct ClosedIntervalsValuesIter<'a, T> {
+    indefinite_start: Option<&'a T>,
+    intervals: std::slice::Iter<'a, (TimePoint, Option<T>)>,
+}
+
+impl<'a, T> Iterator for ClosedIntervalsValuesIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(indefinite_start) = self.indefinite_start.take() {
+                return Some(indefinite_start);
+            }
+
+            match self.intervals.next() {
+                Some((_, value)) => {
+                    if let Some(value) = value {
+                        return Some(value);
+                    }
+                    // If there was no value, then move onto the next iteration
+                    // of the loop.
+                }
+                // The values have been exhausted, so return None
+                None => return None,
+            }
+        }
     }
 }
 

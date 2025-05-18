@@ -33,7 +33,7 @@ pub trait Domain {
     type Error;
 }
 
-pub use mapf_derive::Domain;
+// pub use mapf_derive::Domain;
 
 pub mod action_map;
 pub use action_map::*;

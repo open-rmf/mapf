@@ -153,3 +153,24 @@ pub fn wrap_to_pi(mut value: f64) -> f64 {
 
     value
 }
+
+pub struct IterError<T, E> {
+    error: Option<E>,
+    _ignore: std::marker::PhantomData<fn(T)>,
+}
+
+impl<T, E> IterError<T, E> {
+    pub fn new(error: E) -> Self {
+        Self {
+            error: Some(error),
+            _ignore: Default::default(),
+        }
+    }
+}
+
+impl<T, E> Iterator for IterError<T, E> {
+    type Item = Result<T, E>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.error.take().map(Err)
+    }
+}
