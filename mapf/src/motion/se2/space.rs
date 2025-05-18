@@ -27,7 +27,7 @@ use crate::{
         se2::*,
         IntegrateWaypoints, MaybeTimed, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
     },
-    util::{wrap_to_pi, FlatResultMapTrait, ForkIter, IterError},
+    util::{wrap_to_pi, ForkIter, IterError},
 };
 use smallvec::SmallVec;
 use std::borrow::Borrow;
@@ -408,73 +408,6 @@ impl<G, const R: u32> StarburstSE2<G, R> {
             direction: 1.0,
         })
     }
-
-    fn starburst_impl<'a>(
-        from_vertex: G::Key,
-        to_vertex: G::Key,
-        graph: &'a G,
-        direction: f32,
-    ) -> impl Iterator<Item = Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
-    where
-        G: Graph,
-        G::Key: Clone,
-        G::Vertex: Positioned,
-    {
-        let from_start_clone = from_vertex.clone();
-        graph
-            .vertex(&from_vertex)
-            .ok_or_else(move || InitializeSE2Error::MissingVertex(from_start_clone))
-            .flat_result_map(move |from_p_ref| {
-                let from_p: Point = from_p_ref.borrow().point();
-                let from_start = from_vertex.clone();
-                graph
-                    .edges_from_vertex(&from_start)
-                    .into_iter()
-                    .chain(graph.lazy_edges_between(&from_vertex, &to_vertex))
-                    .map(move |edge| {
-                        graph
-                            .vertex(edge.to_vertex())
-                            .ok_or_else(|| {
-                                InitializeSE2Error::MissingVertex(edge.to_vertex().clone())
-                            })
-                            .map(move |to_p_ref| {
-                                let to_p: Point = to_p_ref.borrow().point();
-                                (direction as f64 * (to_p - from_p))
-                                    .try_normalize(1e-6)
-                                    .map(|v| f64::atan2(v[1], v[0]))
-                                    .unwrap_or(0.0)
-                            })
-                            .map(move |angle| (from_p, angle))
-                    })
-            })
-            .map(|r| r.flatten())
-    }
-
-    fn starburst<'a>(
-        &'a self,
-        from_vertex: G::Key,
-        to_vertex: G::Key,
-    ) -> impl Iterator<Item = Result<(Point, f64), InitializeSE2Error<G::Key>>> + 'a
-    where
-        G: Graph,
-        G::Key: Clone,
-        G::Vertex: Positioned,
-    {
-        Self::starburst_impl(
-            from_vertex.clone(),
-            to_vertex.clone(),
-            &self.graph,
-            self.direction,
-        )
-        .chain(self.reverse.as_ref().into_iter().flat_map(move |r_graph| {
-            Self::starburst_impl(
-                from_vertex.clone(),
-                to_vertex.clone(),
-                &r_graph,
-                -1.0 * self.direction,
-            )
-        }))
-    }
 }
 
 impl<G, const R: u32, Start, Goal, State> Initializable<Start, Goal, State> for StarburstSE2<G, R>
@@ -598,25 +531,18 @@ where
         &mut self
     ) -> Option<G::Edge<'a>> {
         if let Some(edge) = self.explicit_edges.next() {
-            dbg!();
             return Some(edge);
         }
 
-        dbg!();
         if let Some(edge) = self.lazy_edges.next() {
-            dbg!();
             return Some(edge);
         }
 
-        dbg!();
         if let Some(edge) = self.explicit_reverse.as_mut().map(|r| r.next()).flatten() {
-            dbg!();
             return Some(edge);
         }
 
-        dbg!();
         if let Some(edge) = self.lazy_reverse.as_mut().map(|r| r.next()).flatten() {
-            dbg!();
             return Some(edge);
         }
 
@@ -629,8 +555,8 @@ impl<G: Graph, const R: u32, Start, Goal> ArrivalKeyring<KeySE2<G::Key, R>, Star
 where
     G::Key: Clone,
     G::Vertex: Positioned,
-    Start: Borrow<G::Key> + Clone,
-    Goal: Borrow<G::Key>,
+    Start: Borrow<G::Key>,
+    Goal: Borrow<G::Key> + Clone,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
     type ArrivalKeys<'a> = ForkIter<
@@ -651,7 +577,7 @@ where
         Start: 'a,
         Goal: 'a,
     {
-        Initializable::<_, _, KeySE2<G::Key, R>>::initialize(self, start.clone(), goal)
+        Initializable::<_, _, KeySE2<G::Key, R>>::initialize(self, goal.clone(), start)
     }
 }
 

@@ -141,8 +141,7 @@ where
         self.container.get(key).into()
     }
 
-    type ClosedSetIter<'a>
-        = impl Iterator<Item = &'a T> + 'a
+    type ClosedSetIter<'a> = std::collections::hash_map::Values<'a, Ring::PartialKey, T>
     where
         Self: 'a,
         State: 'a,
