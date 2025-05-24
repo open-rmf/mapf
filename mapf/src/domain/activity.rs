@@ -195,12 +195,12 @@ impl<Base, Prop> Activity<Base::State> for Chained<Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
+    Base::Action: Into<Prop::Action>,
     Base::ActivityError: Into<Base::Error>,
     Prop: Activity<Base::State>,
-    Prop::Action: Into<Base::Action>,
     Prop::ActivityError: Into<Base::Error>,
 {
-    type Action = Base::Action;
+    type Action = Prop::Action;
     type ActivityError = Base::Error;
     type Choices<'a> = ChainedChoices<'a, Base, Prop>
     where
@@ -219,7 +219,7 @@ where
         Base::State: 'a,
     {
         ChainedChoices {
-            base_choices: Some(self.base.choices(from_state.clone()).into_iter()),
+            base_choices: self.base.choices(from_state.clone()).into_iter(),
             prop_choices: self.prop.choices(from_state).into_iter(),
         }
     }
@@ -229,12 +229,12 @@ pub struct ChainedChoices<'a, Base, Prop>
 where
     Base: Domain + Activity<Base::State> + 'a,
     Base::State: Clone,
+    Base::Action: Into<Prop::Action>,
     Base::ActivityError: Into<Base::Error> + 'a,
     Prop: Activity<Base::State> + 'a,
-    Prop::Action: Into<Base::Action>,
     Prop::ActivityError: Into<Base::Error>,
 {
-    base_choices: Option<<Base::Choices<'a> as IntoIterator>::IntoIter>,
+    base_choices: <Base::Choices<'a> as IntoIterator>::IntoIter,
     prop_choices: <Prop::Choices<'a> as IntoIterator>::IntoIter,
 }
 
@@ -242,27 +242,28 @@ impl<'a, Base, Prop> Iterator for ChainedChoices<'a, Base, Prop>
 where
     Base: Domain + Activity<Base::State>,
     Base::State: Clone,
+    Base::Action: Into<Prop::Action>,
     Base::ActivityError: Into<Base::Error>,
     Prop: Activity<Base::State>,
-    Prop::Action: Into<Base::Action>,
     Prop::ActivityError: Into<Base::Error>,
 {
-    type Item = Result<(Base::Action, Base::State), Base::Error>;
+    type Item = Result<(Prop::Action, Base::State), Base::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(base_choices) = &mut self.base_choices {
-                if let Some(next) = base_choices.next() {
-                    return Some(next.map_err(Into::into));
-                }
+            if let Some(next) = self.base_choices.next() {
+                return Some(
+                    next
+                    .map(|(a, s)| (a.into(), s))
+                    .map_err(Into::into)
+                );
             }
-            self.base_choices = None;
 
             return self.prop_choices
                 .next()
                 .map(|r|
                     r
-                    .map(|(a, s)| (a.into(), s.into()))
+                    .map(|(a, s)| (a, s.into()))
                     .map_err(Into::into)
                 );
         }

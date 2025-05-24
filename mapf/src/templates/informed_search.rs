@@ -295,9 +295,7 @@ where
 {
     type Action = A::Action;
     type ActivityError = A::ActivityError;
-    type Choices<'a>
-        =
-        impl IntoIterator<Item = Result<(Self::Action, A::State), Self::ActivityError>> + 'a
+    type Choices<'a> = A::Choices<'a>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -382,10 +380,8 @@ where
     C: Connectable<A::State, A::Action, Goal>,
     C::ConnectionError: Into<Anyhow>,
 {
-    type ConnectionError = anyhow::Error;
-    type Connections<'a>
-        =
-        impl IntoIterator<Item = Result<(A::Action, A::State), Self::ConnectionError>> + 'a
+    type ConnectionError = C::ConnectionError;
+    type Connections<'a> = C::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -400,10 +396,7 @@ where
         A::Action: 'a,
         Goal: 'a,
     {
-        self.connector
-            .connect(from_state.clone(), to_target)
-            .into_iter()
-            .map(|r| r.map_err(Into::into))
+        self.connector.connect(from_state.clone(), to_target)
     }
 }
 
@@ -441,8 +434,7 @@ where
     S: ArrivalKeyring<A::Key, Start, Goal>,
 {
     type ArrivalKeyError = S::ArrivalKeyError;
-    type ArrivalKeys<'a>
-        = S::ArrivalKeys<'a>
+    type ArrivalKeys<'a> = S::ArrivalKeys<'a>
     where
         Self: 'a,
         Start: 'a,

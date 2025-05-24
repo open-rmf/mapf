@@ -234,55 +234,6 @@ where
             None => ClosedStatus::Open,
         }
     }
-
-    type ClosedSetIter<'a> = SafeIntervalClosedSetIter<'a, Ring::Key, T>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a;
-
-    fn iter_closed<'a>(&'a self) -> SafeIntervalClosedSetIter<'a, Ring::Key, T>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a,
-    {
-        // self.container.values().flat_map(|c| c.iter())
-        SafeIntervalClosedSetIter {
-            values: self.container.values(),
-            current_iter: None,
-        }
-    }
-}
-
-pub struct SafeIntervalClosedSetIter<'a, Key, T> {
-    values: std::collections::hash_map::Values<'a, Key, ClosedIntervals<T>>,
-    current_iter: Option<ClosedIntervalsValuesIter<'a, T>>,
-}
-
-impl<'a, Key, T> Iterator for SafeIntervalClosedSetIter<'a, Key, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(current_iter) = &mut self.current_iter {
-                if let Some(next) = current_iter.next() {
-                    return Some(next);
-                }
-            }
-
-            // The current iter ran out of values. Try getting a new one.
-            match self.values.next() {
-                Some(next_intervals) => {
-                    self.current_iter = Some(next_intervals.values());
-                }
-                None => {
-                    // There are no more intervals left.
-                    return None;
-                }
-            }
-        }
-    }
 }
 
 struct ClosedIntervals<T> {

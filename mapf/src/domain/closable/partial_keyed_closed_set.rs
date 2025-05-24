@@ -140,21 +140,6 @@ where
         };
         self.container.get(key).into()
     }
-
-    type ClosedSetIter<'a> = std::collections::hash_map::Values<'a, Ring::PartialKey, T>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a;
-
-    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a,
-    {
-        self.container.values()
-    }
 }
 
 impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T> for PartialKeyedClosedSet<Ring, T>
