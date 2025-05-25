@@ -24,7 +24,6 @@ use crate::{
     graph::{Edge, Graph},
     motion::{MaybeTimed, TimePoint, Timed},
     templates::graph_motion::{GraphMotionError, GraphMotionReversalError},
-    util::{FlatResultMapTrait, ForkIter},
 };
 use std::{borrow::Borrow, fmt::Debug};
 
@@ -92,13 +91,7 @@ where
 {
     type Action = E::IncrementalExtrapolation;
     type ActivityError = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
-    type Choices<'a>
-        = impl IntoIterator<
-            Item = Result<
-                (Self::Action, IncrementalState<S::State, G>),
-                Self::ActivityError,
-            >,
-        > + 'a
+    type Choices<'a> = IncrementalGraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -113,145 +106,34 @@ where
         Self::ActivityError: 'a,
         IncrementalState<S::State, G>: 'a,
     {
-        if let Some((to_key, with_guidance)) = from_state.target.clone() {
-            return ForkIter::Left(
-                [self
-                    .graph
-                    .vertex(&to_key)
-                    .ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))]
-                .into_iter()
-                .flat_map(move |r| {
-                    let from_state = from_state.clone();
-                    let to_key = to_key.clone();
-                    let with_guidance = with_guidance.clone();
-                    r.flat_result_map(move |to_v_ref| {
-                        let extrapolation = self.extrapolator.incremental_extrapolate(
-                            self.space.waypoint(&from_state.base_state).borrow(),
-                            to_v_ref.borrow(),
-                            &with_guidance,
-                            (
-                                Some(self.space.key_for(&from_state.base_state).borrow().borrow()),
-                                Some(&to_key),
-                            ),
-                        );
+        if let Some(target) = from_state.target {
+            // Just keep moving this state towards its target.
+            IncrementalGraphMotionChoices {
+                current_iter: None,
+                next_target: Some(target),
+                edges_from_vertex: None,
+                motion: &self,
+                from_base_state: from_state.base_state,
+            }
+        } else {
+            // No specific target, so we want to expand in every direction from
+            // this vertex.
+            let edges_from_vertex = self.graph.edges_from_vertex(
+                self.space
+                    .key_for(&from_state.base_state)
+                    .borrow()
+                    .borrow()
+            )
+            .into_iter();
 
-                        let from_state = from_state.clone();
-                        let to_key = to_key.clone();
-                        let with_guidance = with_guidance.clone();
-                        extrapolation.into_iter().map(move |r| {
-                            let from_state = from_state.clone();
-                            let to_key = to_key.clone();
-                            let with_guidance = with_guidance.clone();
-                            r.map_err(GraphMotionError::Extrapolator).map(
-                                move |(action, waypoint, progress)| {
-                                    let to_key = to_key.clone();
-                                    let with_guidance = with_guidance.clone();
-                                    if progress.incomplete() {
-                                        let key = self
-                                            .space
-                                            .key_for(&from_state.base_state)
-                                            .borrow()
-                                            .borrow()
-                                            .clone();
-                                        let state = self.space.make_keyed_state(key, waypoint);
-                                        let state = IncrementalState {
-                                            target: Some((to_key, with_guidance)),
-                                            base_state: state,
-                                        };
-                                        (action, state)
-                                    } else {
-                                        let state = self.space.make_keyed_state(to_key, waypoint);
-                                        let state = IncrementalState {
-                                            target: None,
-                                            base_state: state,
-                                        };
-                                        (action, state)
-                                    }
-                                },
-                            )
-                        })
-                    })
-                })
-                .map(|x| x.flatten()),
-            );
+            IncrementalGraphMotionChoices {
+                current_iter: None,
+                next_target: None,
+                edges_from_vertex: Some(edges_from_vertex),
+                motion: &self,
+                from_base_state: from_state.base_state,
+            }
         }
-
-        // TODO(@mxgrey): Consider ways to reduce code duplication between the
-        // left and right forks.
-        ForkIter::Right(
-            self.graph
-                .edges_from_vertex(
-                    self.space
-                        .key_for(&from_state.base_state.clone())
-                        .borrow()
-                        .borrow(),
-                )
-                .into_iter()
-                .flat_map(move |edge| {
-                    let from_state = from_state.clone();
-                    let to_key = edge.to_vertex().clone();
-                    let with_guidance = edge.attributes().clone();
-                    self.graph
-                        .vertex(&to_key)
-                        .ok_or_else(|| GraphMotionError::MissingVertex(to_key.clone()))
-                        .flat_result_map(move |v| {
-                            let extrapolation = self.extrapolator.incremental_extrapolate(
-                                self.space.waypoint(&from_state.base_state).borrow(),
-                                v.borrow(),
-                                &with_guidance,
-                                (
-                                    Some(
-                                        self.space
-                                            .key_for(&from_state.base_state)
-                                            .borrow()
-                                            .borrow(),
-                                    ),
-                                    Some(&to_key),
-                                ),
-                            );
-
-                            let from_state = from_state.clone();
-                            let to_key = to_key.clone();
-                            let with_guidance = with_guidance.clone();
-                            extrapolation.into_iter().map(move |r| {
-                                let from_state = from_state.clone();
-                                let to_key = to_key.clone();
-                                let with_guidance = with_guidance.clone();
-                                r.map_err(GraphMotionError::Extrapolator).map(
-                                    move |(action, waypoint, progress)| {
-                                        if progress.incomplete() {
-                                            let key = self
-                                                .space
-                                                .key_for(&from_state.base_state)
-                                                .borrow()
-                                                .borrow()
-                                                .clone();
-                                            let state = self.space.make_keyed_state(key, waypoint);
-                                            let state = IncrementalState {
-                                                target: Some((
-                                                    to_key.clone(),
-                                                    with_guidance.clone(),
-                                                )),
-                                                base_state: state,
-                                            };
-                                            (action, state)
-                                        } else {
-                                            let state = self
-                                                .space
-                                                .make_keyed_state(to_key.clone(), waypoint);
-                                            let state = IncrementalState {
-                                                target: None,
-                                                base_state: state,
-                                            };
-                                            (action, state)
-                                        }
-                                    },
-                                )
-                            })
-                        })
-                        .map(|x| x.flatten())
-                }),
-        )
     }
 }
 
@@ -375,6 +257,119 @@ where
                 (action, state)
             })
     }
+}
+
+pub struct IncrementalGraphMotionChoices<'a, S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    G: Graph,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
+{
+    current_iter: Option<Extrapolations<G::Key, G::EdgeAttributes, <E::IncrementalExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
+    next_target: Option<(G::Key, G::EdgeAttributes)>,
+    edges_from_vertex: Option<<G::EdgeIter<'a> as IntoIterator>::IntoIter>,
+    motion: &'a IncrementalGraphMotion<S, G, E>,
+    from_base_state: S::State,
+}
+
+impl<'a, S, G, E> Iterator for IncrementalGraphMotionChoices<'a, S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    S::Key: Borrow<G::Key>,
+    S::State: Clone,
+    G: Graph,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
+    E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
+    E::IncrementalExtrapolationError: StdError,
+{
+    type Item = Result<
+        (E::IncrementalExtrapolation, IncrementalState<S::State, G>),
+        GraphMotionError<G::Key, E::IncrementalExtrapolationError>,
+    >;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(current_iter) = self.current_iter.as_mut() {
+                if let Some(result) = current_iter.extrapolations.next() {
+                    match result {
+                        Ok((action, waypoint, progress)) => {
+                            let target = &current_iter.target;
+                            if progress.incomplete() {
+                                let key = self
+                                    .motion
+                                    .space
+                                    .key_for(&self.from_base_state)
+                                    .borrow()
+                                    .borrow()
+                                    .clone();
+                                let state = IncrementalState {
+                                    target: Some(current_iter.target.clone()),
+                                    base_state: self.motion.space.make_keyed_state(key, waypoint),
+                                };
+                                return Some(Ok((action, state)));
+                            } else {
+                                let key = target.0.clone();
+                                let state = IncrementalState {
+                                    target: None,
+                                    base_state: self.motion.space.make_keyed_state(key, waypoint),
+                                };
+                                return Some(Ok((action, state)));
+                            }
+                        }
+                        Err(err) => {
+                            return Some(Err(GraphMotionError::Extrapolator(err)));
+                        }
+                    }
+                }
+            }
+            self.current_iter = None;
+
+            if let Some((to_key, with_guidance)) = Option::take(&mut self.next_target) {
+                let Some(to_v_ref) = self.motion.graph.vertex(&to_key) else {
+                    return Some(Err(GraphMotionError::MissingVertex(to_key)));
+                };
+
+                let from_waypoint_ref = self.motion.space.waypoint(&self.from_base_state);
+                let from_waypoint = from_waypoint_ref.borrow();
+                let extrapolations = self.motion.extrapolator.incremental_extrapolate(
+                    from_waypoint,
+                    to_v_ref.borrow(),
+                    &with_guidance,
+                    (
+                        Some(self.motion.space.key_for(&self.from_base_state).borrow().borrow()),
+                        Some(&to_key),
+                    ),
+                );
+
+                self.current_iter = Some(Extrapolations {
+                    target: (to_key, with_guidance),
+                    extrapolations: extrapolations.into_iter(),
+                });
+                // Return to the start of the loop to begin pulling items out
+                // of the extrapolation iterator.
+                continue;
+            }
+
+            if let Some(edges_from_vertex) = self.edges_from_vertex.as_mut() {
+                if let Some(edge) = edges_from_vertex.next() {
+                    let to_vertex = edge.to_vertex().clone();
+                    let with_guidance = edge.attributes().clone();
+                    self.next_target = Some((to_vertex, with_guidance));
+                    // Return to the start of the loop to extrapolate toward
+                    // this new target.
+                    continue;
+                }
+            }
+
+            return None;
+        }
+    }
+}
+
+struct Extrapolations<Key, Guidance, E> {
+    target: (Key, Guidance),
+    extrapolations: E,
 }
 
 pub struct IncrementalState<BaseState, G: Graph> {

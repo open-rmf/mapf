@@ -131,8 +131,7 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         = (Cell, Cell)
     where
         G: 'a;
-    type EdgeIter<'a>
-        = impl Iterator<Item = (Cell, Cell)> + 'a
+    type EdgeIter<'a> = VisibilityGraphEdges<'a, G>
     where
         Self: 'a;
 
@@ -147,55 +146,12 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
     where
         Cell: 'a,
     {
-        let from_cell = *from_cell;
-        [from_cell]
-            .into_iter()
-            .filter(|from_cell| {
-                self.visibility
-                    .grid()
-                    .is_square_occupied(
-                        from_cell.center_point(self.visibility.grid().cell_size()),
-                        2.0 * self.visibility.agent_radius(),
-                    )
-                    .is_none()
-            })
-            .flat_map(|from_cell| {
-                self.visibility
-                    .calculate_visibility(from_cell)
-                    .map(move |to_cell| (from_cell, to_cell))
-                    .filter(|(from_cell, to_cell)| from_cell != to_cell)
-            })
-            .chain({
-                let interest = self.visibility_of_interest.get(&from_cell);
-                interest
-                    .into_iter()
-                    .flat_map(|x| x)
-                    .map(move |point_of_interest| (from_cell, *point_of_interest))
-                    .chain(
-                        [interest]
-                            .into_iter()
-                            .filter(|x| x.is_none())
-                            .flat_map(move |_| {
-                                self.points_of_interest
-                                    .iter()
-                                    .filter(move |poi| {
-                                        let to_p =
-                                            poi.center_point(self.visibility.grid().cell_size());
-                                        let from_p = from_cell
-                                            .center_point(self.visibility.grid().cell_size());
-                                        self.visibility
-                                            .grid()
-                                            .is_sweep_occupied(
-                                                from_p,
-                                                to_p,
-                                                2.0 * self.visibility.agent_radius(),
-                                            )
-                                            .is_none()
-                                    })
-                                    .map(move |poi| (from_cell, *poi))
-                            }),
-                    )
-            })
+        VisibilityGraphEdges::new(
+            *from_cell,
+            &self.visibility_of_interest,
+            &self.points_of_interest,
+            &self.visibility,
+        )
     }
 
     type LazyEdgeIter<'a>
@@ -311,7 +267,7 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         = (Cell, Cell)
     where
         G: 'a;
-    type EdgeIter<'a> = NeighborhoodGraphEdges<'a, G>
+    type EdgeIter<'a> = VisibilityGraphEdges<'a, G>
     where
         Self: 'a;
 
@@ -327,101 +283,13 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
     where
         Cell: 'a,
     {
-        // dbg!("neighborhood graph");
-        let from_cell = *from_cell;
-        let from_point = from_cell.center_point(self.visibility.grid().cell_size());
-        let agent_diameter = 2.0 * self.visibility.agent_radius;
-
-        let neighborhood = match self.visibility.grid.is_square_occupied(from_point,  agent_diameter) {
-            Some(_) => {
-                // The initial cell is blocked, so it is cut off from its neighborhood
-                None
-            }
-            None => {
-                let (visibility_of_interest, points_of_interest) = match self.visibility_of_interest.get(&from_cell) {
-                    Some(visibility_of_interest) => {
-                        (Some(visibility_of_interest.iter()), None)
-                    }
-                    None => {
-                        (None, Some(self.points_of_interest.iter()))
-                    }
-                };
-
-                Some(NeighborhoodGraphEdgesIters {
-                    visible_cells: self.visibility.calculate_visibility(from_cell),
-                    neighbors: self.visibility.neighbors(from_cell),
-                    visibility_of_interest,
-                    points_of_interest,
-                })
-            }
-        };
-
-        NeighborhoodGraphEdges {
-            grid: &self.visibility.grid,
-            agent_diameter,
-            from_cell,
-            from_point,
-            neighborhood,
-        }
-
-        // [from_cell]
-        //     .into_iter()
-        //     .filter(move |_| {
-        //         // dbg!(from_cell);
-        //         self.visibility
-        //             .grid()
-        //             .is_square_occupied(from_p, 2.0 * self.visibility.agent_radius())
-        //             .is_none()
-        //     })
-        //     .flat_map(move |_| {
-        //         // dbg!(from_cell);
-        //         self.visibility
-        //             .calculate_visibility(from_cell)
-        //             .filter(move |to_cell| {
-        //                 // dbg!(to_cell);
-        //                 // Ignore adjacent cells because those will be given by the
-        //                 // neighbors iterator below. If we repeat the same cell twice,
-        //                 // we force the search queue to do unnecessary work.
-        //                 (to_cell.x - from_cell.x).abs() > 1 || (to_cell.y - from_cell.y).abs() > 1
-        //             })
-        //             .map(move |to_cell| (from_cell, to_cell))
-        //             .chain(
-        //                 self.visibility
-        //                     .neighbors(from_cell)
-        //                     .map(move |to_cell| (from_cell, to_cell))
-        //                     .filter(|(from_cell, to_cell)| {
-        //                         // dbg!((from_cell, to_cell));
-        //                         // dbg!(from_cell != to_cell)
-        //                         from_cell != to_cell
-        //                     }),
-        //             )
-        //             .chain({
-        //                 let interest = self.visibility_of_interest.get(&from_cell);
-        //                 interest
-        //                     .into_iter()
-        //                     .flat_map(|x| x)
-        //                     .map(move |point_of_interest| (from_cell, *point_of_interest))
-        //                     .chain([interest].into_iter().filter(|x| x.is_none()).flat_map(
-        //                         move |_| {
-        //                             self.points_of_interest
-        //                                 .iter()
-        //                                 .filter(move |poi| {
-        //                                     let to_p = poi
-        //                                         .center_point(self.visibility.grid().cell_size());
-        //                                     self.visibility
-        //                                         .grid()
-        //                                         .is_sweep_occupied(
-        //                                             from_p,
-        //                                             to_p,
-        //                                             2.0 * self.visibility.agent_radius(),
-        //                                         )
-        //                                         .is_none()
-        //                                 })
-        //                                 .map(move |poi| (from_cell.clone(), *poi))
-        //                         },
-        //                     ))
-        //             })
-        //     })
+        VisibilityGraphEdges::new(
+            *from_cell,
+            &self.visibility_of_interest,
+            &self.points_of_interest,
+            &self.visibility,
+        )
+        .with_neighbors(self.visibility.neighbors(*from_cell))
     }
 
     type LazyEdgeIter<'a> = Option<(Cell, Cell)>
@@ -484,7 +352,7 @@ impl<G: Grid> Reversible for NeighborhoodGraph<G> {
     }
 }
 
-pub struct NeighborhoodGraphEdges<'a, G: Grid> {
+pub struct VisibilityGraphEdges<'a, G: Grid> {
     grid: &'a G,
     agent_diameter: f64,
     from_cell: Cell,
@@ -492,14 +360,61 @@ pub struct NeighborhoodGraphEdges<'a, G: Grid> {
     neighborhood: Option<NeighborhoodGraphEdgesIters<'a, G>>,
 }
 
+impl<'a, G: Grid> VisibilityGraphEdges<'a, G> {
+    fn new(
+        from_cell: Cell,
+        visibility_of_interest: &'a HashMap<Cell, HashSet<Cell>>,
+        points_of_interest: &'a HashSet<Cell>,
+        visibility: &'a Visibility<G>,
+    ) -> Self {
+        let grid = &visibility.grid;
+        let from_point = from_cell.center_point(grid.cell_size());
+        let agent_diameter = 2.0 * visibility.agent_radius;
+
+        let neighborhood = match grid.is_square_occupied(from_point,  agent_diameter) {
+            Some(_) => {
+                // The initial cell is blocked, so it is cut off from its neighborhood
+                None
+            }
+            None => {
+                let (visibility_of_interest, points_of_interest) = match visibility_of_interest.get(&from_cell) {
+                    Some(visibility_of_interest) => {
+                        (Some(visibility_of_interest.iter()), None)
+                    }
+                    None => {
+                        (None, Some(points_of_interest.iter()))
+                    }
+                };
+
+                Some(NeighborhoodGraphEdgesIters {
+                    visible_cells: visibility.calculate_visibility(from_cell),
+                    neighbors: None,
+                    visibility_of_interest,
+                    points_of_interest,
+                })
+            }
+        };
+
+        Self { grid, agent_diameter, from_cell, from_point, neighborhood }
+    }
+
+    fn with_neighbors(mut self, neighbors: NeighborsIter<'a, G>) -> Self {
+        if let Some(neighborhood) = self.neighborhood.as_mut() {
+            neighborhood.neighbors = Some(neighbors);
+        }
+
+        self
+    }
+}
+
 struct NeighborhoodGraphEdgesIters<'a, G: Grid> {
     visible_cells: VisibleCells<'a, G>,
-    neighbors: NeighborsIter<'a, G>,
+    neighbors: Option<NeighborsIter<'a, G>>,
     visibility_of_interest: Option<HashSetIter<'a, Cell>>,
     points_of_interest: Option<HashSetIter<'a, Cell>>,
 }
 
-impl<'a, G: Grid> Iterator for NeighborhoodGraphEdges<'a, G> {
+impl<'a, G: Grid> Iterator for VisibilityGraphEdges<'a, G> {
     type Item = (Cell, Cell);
     fn next(&mut self) -> Option<Self::Item> {
         let Some(neighborhood) = self.neighborhood.as_mut() else {
@@ -510,23 +425,27 @@ impl<'a, G: Grid> Iterator for NeighborhoodGraphEdges<'a, G> {
 
         loop {
             if let Some(to_cell) = neighborhood.visible_cells.next() {
-                if (to_cell.x - from_cell.x).abs() <= 1 && (to_cell.y - from_cell.y).abs() <= 1 {
-                    // Ignore adjacent cells because those will be given by the
-                    // neighbors iterator below. If we repeat the same cell twice,
-                    // we force the search queue to do unnecessary work.
-                    continue;
+                if neighborhood.neighbors.is_some() {
+                    if (to_cell.x - from_cell.x).abs() <= 1 && (to_cell.y - from_cell.y).abs() <= 1 {
+                        // Ignore adjacent cells because those will be given by the
+                        // neighbors iterator below. If we repeat the same cell twice,
+                        // we force the search queue to do unnecessary work.
+                        continue;
+                    }
                 }
 
                 return Some((from_cell, to_cell));
             }
 
-            if let Some(to_cell) = neighborhood.neighbors.next() {
-                if from_cell == to_cell {
-                    // Skip if it's the same cell that we started from
-                    continue;
-                }
+            if let Some(neighbors) = neighborhood.neighbors.as_mut() {
+                if let Some(to_cell) = neighbors.next() {
+                    if from_cell == to_cell {
+                        // Skip if it's the same cell that we started from
+                        continue;
+                    }
 
-                return Some((from_cell, to_cell));
+                    return Some((from_cell, to_cell));
+                }
             }
 
             if let Some(visibility_of_interest) = neighborhood.visibility_of_interest.as_mut() {

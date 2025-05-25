@@ -23,7 +23,6 @@ use crate::{
         Graph,
     },
     motion::r2::Point,
-    util::ForkIter,
 };
 use bitfield::{bitfield, Bit};
 use std::{

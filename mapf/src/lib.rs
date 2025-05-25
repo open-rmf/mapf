@@ -14,11 +14,6 @@
  * limitations under the License.
  *
 */
-#![feature(
-    type_alias_impl_trait,
-    impl_trait_in_assoc_type,
-    result_flattening
-)]
 
 extern crate self as mapf;
 

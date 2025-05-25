@@ -22,7 +22,6 @@ use crate::{
     },
     error::{StdError, ThisError},
     graph::{Edge, Graph},
-    util::FlatResultMapTrait,
 };
 use std::borrow::Borrow;
 
@@ -83,9 +82,7 @@ where
 {
     type Action = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;
-    type Choices<'a>
-        =
-        impl IntoIterator<Item = Result<(Self::Action, S::State), Self::ActivityError>> + 'a
+    type Choices<'a> = GraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -103,43 +100,14 @@ where
         S::State: 'a,
         G::Key: 'a,
     {
-        self.graph
-            .edges_from_vertex(self.space.key_for(&from_state.clone()).borrow().borrow())
-            .into_iter()
-            .flat_map(move |edge| {
-                let from_state = from_state.clone();
-                let to_vertex = edge.to_vertex().clone();
-                let edge = edge.attributes().clone();
-                self.graph
-                    .vertex(&to_vertex)
-                    .ok_or_else(|| GraphMotionError::MissingVertex(to_vertex.clone()))
-                    .flat_result_map(move |v| {
-                        let from_state = from_state.clone();
-                        let to_vertex = to_vertex.clone();
-                        let extrapolations = self.extrapolator.extrapolate(
-                            self.space.waypoint(&from_state).borrow(),
-                            v.borrow(),
-                            &edge,
-                            (
-                                Some(self.space.key_for(&from_state).borrow().borrow()),
-                                Some(&to_vertex),
-                            ),
-                        );
-
-                        extrapolations.into_iter().map(move |r| {
-                            let to_vertex = to_vertex.clone();
-                            r.map_err(GraphMotionError::Extrapolator).map(
-                                move |(action, waypoint)| {
-                                    let to_vertex = to_vertex.clone();
-                                    let state =
-                                        self.space.make_keyed_state(to_vertex.clone(), waypoint);
-                                    (action, state)
-                                },
-                            )
-                        })
-                    })
-                    .map(|x| x.flatten())
-            })
+        let from_vertex = self.space.key_for(&from_state).borrow().borrow().clone();
+        let edges_from_vertex = self.graph.edges_from_vertex(&from_vertex).into_iter();
+        GraphMotionChoices {
+            current_iter: None,
+            edges_from_vertex,
+            motion: &self,
+            from_state,
+        }
     }
 }
 
@@ -250,6 +218,89 @@ where
                 (action, state)
             })
     }
+}
+
+pub struct GraphMotionChoices<'a, S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    S::Key: Borrow<G::Key>,
+    S::State: Clone,
+    G: Graph,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
+    E::ExtrapolationError: StdError,
+{
+    current_iter: Option<Extrapolations<G::Key, <E::ExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
+    edges_from_vertex: <G::EdgeIter<'a> as IntoIterator>::IntoIter,
+    motion: &'a GraphMotion<S, G, E>,
+    from_state: S::State,
+}
+
+impl<'a, S, G, E> Iterator for GraphMotionChoices<'a, S, G, E>
+where
+    S: KeyedSpace<G::Key>,
+    S::Key: Borrow<G::Key>,
+    S::State: Clone,
+    G: Graph,
+    G::Key: Clone,
+    G::EdgeAttributes: Clone,
+    E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
+    E::ExtrapolationError: StdError,
+{
+    type Item = Result<(E::Extrapolation, S::State), GraphMotionError<G::Key, E::ExtrapolationError>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(current_iter) = self.current_iter.as_mut() {
+                if let Some(result) = current_iter.extrapolations.next() {
+                    match result {
+                        Ok((action, waypoint)) => {
+                            let to_vertex = current_iter.to_vertex.clone();
+                            let state = self.motion.space.make_keyed_state(to_vertex, waypoint);
+                            return Some(Ok((action, state)));
+                        }
+                        Err(err) => {
+                            return Some(Err(GraphMotionError::Extrapolator(err)));
+                        }
+                    }
+                }
+            }
+            self.current_iter = None;
+
+            if let Some(edge) = self.edges_from_vertex.next() {
+                let to_vertex = edge.to_vertex();
+                let Some(v) = self.motion.graph.vertex(to_vertex) else {
+                    return Some(Err(GraphMotionError::MissingVertex(to_vertex.clone())));
+                };
+
+                let extrapolations = self.motion.extrapolator.extrapolate(
+                    self.motion.space.waypoint(&self.from_state).borrow(),
+                    v.borrow(),
+                    &edge.attributes(),
+                    (
+                        Some(self.motion.space.key_for(&self.from_state).borrow().borrow()),
+                        Some(&to_vertex),
+                    ),
+                );
+
+                self.current_iter = Some(Extrapolations {
+                    to_vertex: to_vertex.clone(),
+                    extrapolations: extrapolations.into_iter(),
+                });
+                // Move back to the start of this loop to immediately iterate
+                // over the new set of extrapolations.
+                continue;
+            }
+
+            return None;
+        }
+
+    }
+}
+
+struct Extrapolations<K, E> {
+    to_vertex: K,
+    extrapolations: E,
 }
 
 #[derive(ThisError, Debug)]
