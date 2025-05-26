@@ -14,7 +14,7 @@ serde = { version="1.0", features = ["derive"] }
 serde_yaml = "*"
 async-std = "1.0"
 directories-next = "2.0"
-native-dialog = "*"
+rfd = "0.12"
 derivative = "*"
 lyon = "*"
 nalgebra = "*"

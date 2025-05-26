@@ -328,6 +328,11 @@ impl<T> ClosedIntervals<T> {
         prior.into()
     }
 
+    // This had been used for a method in the ClosedSet trait that allows
+    // debuggers to iterate over all items in the closed set. That method was
+    // removed to ease the migration to the stable toolchain, but we might
+    // bring it back in the future, so we leave this as unused for now.
+    #[allow(unused)]
     fn values<'a>(&'a self) -> ClosedIntervalsValuesIter<'a, T> {
         ClosedIntervalsValuesIter {
             indefinite_start: self.indefinite_start.as_ref(),

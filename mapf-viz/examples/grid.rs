@@ -14,7 +14,6 @@
  * limitations under the License.
  *
 */
-#![feature(array_windows, binary_heap_into_iter_sorted)]
 
 use clap::Parser;
 use iced::{
@@ -29,7 +28,7 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    algorithm::{tree::NodeContainer, AStarConnect, QueueLength, SearchStatus},
+    algorithm::{tree::{NodeContainer, IntoIterSorted}, AStarConnect, QueueLength, SearchStatus},
     graph::{
         occupancy::{Accessibility, AccessibilityGraph, Cell, Grid, SparseGrid},
         SharedGraph,
@@ -53,7 +52,7 @@ use mapf_viz::{
     toggle::{KeyToggler, Toggle, Toggler},
     InfiniteGrid, SparseGridAccessibilityVisual,
 };
-use native_dialog::FileDialog;
+use rfd::FileDialog;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -189,7 +188,7 @@ fn draw_trajectory(
     color: iced::Color,
     width: Option<f32>,
 ) {
-    for [wp0, wp1] in trajectory.array_windows() {
+    for [wp0, wp1] in trajectory.iter().pairs() {
         let p0 = wp0.position.translation;
         let p1 = wp1.position.translation;
         frame.stroke(
@@ -976,7 +975,7 @@ impl App {
                 .0
                 .queue
                 .clone()
-                .into_iter_sorted()
+                .binary_heap_into_iter_sorted()
                 .map(|n| n.0.clone())
                 .collect();
 
@@ -1257,7 +1256,7 @@ impl App {
                     .0
                     .queue
                     .clone()
-                    .into_iter_sorted()
+                    .binary_heap_into_iter_sorted()
                     .map(|n| n.0.clone())
                     .collect();
                 self.search = Some((r, search));
@@ -1512,36 +1511,22 @@ impl Application for App {
             }
             Message::SaveFile | Message::SaveFileAs => {
                 if matches!(message, Message::SaveFileAs) {
-                    match FileDialog::new().show_save_single_file() {
-                        Ok(f) => match f {
-                            Some(f) => {
-                                self.file_text_input_value =
-                                    f.as_path().as_os_str().to_str().unwrap().to_owned()
-                            }
-                            None => return Command::none(),
-                        },
-                        Err(err) => {
-                            println!("Unable to select file: {err:?}");
-                            return Command::none();
-                        }
+                    if let Some(f) = FileDialog::new().save_file() {
+                        self.file_text_input_value =
+                            f.as_path().as_os_str().to_str().unwrap().to_owned();
+                    } else {
+                        return Command::none();
                     }
                 }
 
                 self.save_file(&self.file_text_input_value);
             }
             Message::LoadFile => {
-                match FileDialog::new().show_open_single_file() {
-                    Ok(f) => match f {
-                        Some(value) => {
-                            self.file_text_input_value =
-                                value.as_path().as_os_str().to_str().unwrap().to_owned()
-                        }
-                        None => return Command::none(),
-                    },
-                    Err(err) => {
-                        println!("Unable to load selected file: {err:?}");
-                        return Command::none();
-                    }
+                if let Some(f) = FileDialog::new().pick_file() {
+                    self.file_text_input_value =
+                        f.as_path().as_os_str().to_str().unwrap().to_owned();
+                } else {
+                    return Command::none();
                 }
 
                 let (agents, obstacles, grid, zone, success) =
