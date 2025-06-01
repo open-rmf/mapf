@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use arrayvec::ArrayVec;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 use std::{borrow::Borrow, sync::Arc};
 use time_point::TimePoint;
 
@@ -382,7 +382,8 @@ where
     G::Vertex: Positioned,
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointSE2, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = SmallVec<[Result<(Self::AvoidanceAction, WaypointSE2), Self::AvoidanceError>; 8]>
+    type AvoidanceActionIter<'a>
+        = SmallVec<[Result<(Self::AvoidanceAction, WaypointSE2), Self::AvoidanceError>; 8]>
     where
         Target: 'a,
         Guidance: 'a,

@@ -33,22 +33,14 @@ use std::ops::Add;
 
 pub struct BackwardDijkstra<D: Reversible>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     backward: Dijkstra<D>,
 }
 
 impl<D: Reversible> BackwardDijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
         Ok(Self {
@@ -63,22 +55,14 @@ where
 
 impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
 }
 
 pub struct BackwardMemory<D: Reversible>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     backward: Memory<D>,
 }

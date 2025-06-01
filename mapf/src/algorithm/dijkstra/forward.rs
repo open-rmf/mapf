@@ -33,11 +33,7 @@ use std::{
 
 pub struct Dijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     domain: D,
     cache: Arc<Mutex<Cache<D>>>,
@@ -45,22 +41,14 @@ where
 
 impl<D> Algorithm for Dijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     type Memory = Memory<D>;
 }
 
 impl<D> Dijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     pub fn new(domain: D) -> Self {
         Self {
@@ -283,8 +271,7 @@ where
                     if Some(closed_set_len) != mt.last_known_closed_len {
                         // The tree was grown by another search, so let's check
                         // if we already found a solution.
-                        let mut best_solution: Option<Path<D::State, D::Action, D::Cost>> =
-                            None;
+                        let mut best_solution: Option<Path<D::State, D::Action, D::Cost>> = None;
                         for goal_key in &memory.goal_keys {
                             match tree.closed_set.status_for_key(goal_key) {
                                 ClosedStatus::Open => {
@@ -476,11 +463,7 @@ where
 /// previous search remains valid.
 impl<D: Configurable> Configurable for Dijkstra<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     type Configuration = D::Configuration;
     fn configure<F>(self, f: F) -> Result<Self, Anyhow>
@@ -520,22 +503,14 @@ impl From<TreeError> for DijkstraImplError {
 #[derive(Clone)]
 struct Cache<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     trees: HashMap<D::Key, SharedCachedTree<D>>,
 }
 
 impl<D> Default for Cache<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     fn default() -> Self {
         Self {
@@ -573,20 +548,14 @@ where
         }
     }
 
-    pub fn tree(
-        &self,
-    ) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::Action, D::Cost>, D::Cost> {
+    pub fn tree(&self) -> &Tree<D::ClosedSet<usize>, Node<D::State, D::Action, D::Cost>, D::Cost> {
         &self.tree
     }
 }
 
 pub struct Memory<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     /// Trees that are being grown for this search.
     // TODO(@mxgrey): Consider using a SmallVec here to avoid heap allocation
@@ -606,11 +575,7 @@ where
 
 impl<D> Memory<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     fn new(trees: Vec<TreeMemory<D>>, goal_keys: Vec<D::Key>) -> Self {
         Self {
@@ -625,11 +590,7 @@ where
 
 pub struct TreeMemory<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     /// A reference to the cache entry that is being searched.
     tree: SharedCachedTree<D>,
@@ -643,11 +604,7 @@ where
 
 impl<D> TreeMemory<D>
 where
-    D: Domain
-        + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
 {
     fn new(tree: SharedCachedTree<D>) -> Self {
         Self {

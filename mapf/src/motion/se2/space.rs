@@ -420,7 +420,8 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = ForkIter<
+    type InitialStates<'a>
+        = ForkIter<
         StarburstInitialStates<'a, G, R, State>,
         IterError<State, InitializeSE2Error<G::Key>>,
     >
@@ -443,19 +444,19 @@ where
         let from_key: G::Key = from_start.borrow().clone();
         let to_key: &G::Key = to_goal.borrow();
         let Some(from_vertex_ref) = self.graph.vertex(&from_key) else {
-            return ForkIter::Right(
-                IterError::new(InitializeSE2Error::MissingVertex(from_key))
-            );
+            return ForkIter::Right(IterError::new(InitializeSE2Error::MissingVertex(from_key)));
         };
 
         let explicit_edges = self.graph.edges_from_vertex(&from_key).into_iter();
         let lazy_edges = self.graph.lazy_edges_between(&from_key, to_key).into_iter();
-        let explicit_reverse = self.reverse.as_ref().map(
-            |r| r.edges_from_vertex(&from_key).into_iter()
-        );
-        let lazy_reverse = self.reverse.as_ref().map(
-            |r| r.lazy_edges_between(&from_key, to_key).into_iter()
-        );
+        let explicit_reverse = self
+            .reverse
+            .as_ref()
+            .map(|r| r.edges_from_vertex(&from_key).into_iter());
+        let lazy_reverse = self
+            .reverse
+            .as_ref()
+            .map(|r| r.lazy_edges_between(&from_key, to_key).into_iter());
 
         ForkIter::Left(StarburstInitialStates {
             graph: &self.graph,
@@ -501,16 +502,14 @@ where
     G::Key: Clone,
     G::Vertex: Positioned,
 {
-    fn make_waypoint(
-        &self,
-        to_vertex: G::VertexRef<'a>,
-    ) -> (Point, f64) {
+    fn make_waypoint(&self, to_vertex: G::VertexRef<'a>) -> (Point, f64) {
         let from_p: Point = self.from_vertex_ref.borrow().point();
         let to_p: Point = to_vertex.borrow().point();
-        let angle = self.direction * (to_p - from_p)
-            .try_normalize(1e-8)
-            .map(|v| f64::atan2(v[1], v[0]))
-            .unwrap_or(0.0);
+        let angle = self.direction
+            * (to_p - from_p)
+                .try_normalize(1e-8)
+                .map(|v| f64::atan2(v[1], v[0]))
+                .unwrap_or(0.0);
         (from_p, angle)
     }
 
@@ -518,7 +517,9 @@ where
         &self,
         edge: G::Edge<'a>,
     ) -> Result<StateSE2<G::Key, R>, InitializeSE2Error<G::Key>> {
-        let to_vertex = self.graph.vertex(edge.to_vertex())
+        let to_vertex = self
+            .graph
+            .vertex(edge.to_vertex())
             .ok_or_else(|| InitializeSE2Error::MissingVertex(edge.to_vertex().clone()))?;
         let (point, angle) = self.make_waypoint(to_vertex);
         Ok(StateSE2::new(
@@ -527,9 +528,7 @@ where
         ))
     }
 
-    fn next_edge(
-        &mut self
-    ) -> Option<G::Edge<'a>> {
+    fn next_edge(&mut self) -> Option<G::Edge<'a>> {
         if let Some(edge) = self.explicit_edges.next() {
             return Some(edge);
         }
@@ -559,7 +558,8 @@ where
     Goal: Borrow<G::Key> + Clone,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a> = ForkIter<
+    type ArrivalKeys<'a>
+        = ForkIter<
         StarburstInitialStates<'a, G, R, KeySE2<G::Key, R>>,
         IterError<KeySE2<G::Key, R>, InitializeSE2Error<G::Key>>,
     >
@@ -630,7 +630,8 @@ where
     StateSE2<G::Key, R>: Into<State>,
 {
     type InitialError = InitializeSE2Error<G::Key>;
-    type InitialStates<'a> = SmallVec<[Result<State, Self::InitialError>; 16]>
+    type InitialStates<'a>
+        = SmallVec<[Result<State, Self::InitialError>; 16]>
     where
         Self: 'a,
         G: 'a,
@@ -653,7 +654,7 @@ where
             Initializable::<_, _, StateSE2<G::Key, R>>::initialize(
                 &self.starburst,
                 from_start,
-                to_goal
+                to_goal,
             )
             .collect();
 
@@ -693,8 +694,6 @@ where
     }
 }
 
-
-
 impl<G: Graph, const R: u32> ArrivalKeyring<KeySE2<G::Key, R>, G::Key, KeySE2<G::Key, R>>
     for PreferentialStarburstSE2<G, R>
 where
@@ -702,7 +701,8 @@ where
     G::Vertex: Positioned,
 {
     type ArrivalKeyError = InitializeSE2Error<G::Key>;
-    type ArrivalKeys<'a> = SmallVec<[Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>; 16]>
+    type ArrivalKeys<'a>
+        = SmallVec<[Result<KeySE2<G::Key, R>, Self::ArrivalKeyError>; 16]>
     where
         Self: 'a,
         G: 'a,

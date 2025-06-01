@@ -63,7 +63,8 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
         = (Cell, Cell)
     where
         G: 'a;
-    type EdgeIter<'a> = AccessibilityGraphEdges
+    type EdgeIter<'a>
+        = AccessibilityGraphEdges
     where
         Self: 'a;
 
@@ -96,7 +97,10 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
 
         let from_cell = *key;
         let directions = directions.into_iter();
-        AccessibilityGraphEdges::Edges { from_cell, directions }
+        AccessibilityGraphEdges::Edges {
+            from_cell,
+            directions,
+        }
     }
 
     type LazyEdgeIter<'a>
@@ -126,7 +130,11 @@ pub enum AccessibilityGraphEdges {
 impl Iterator for AccessibilityGraphEdges {
     type Item = (Cell, Cell);
     fn next(&mut self) -> Option<Self::Item> {
-        let Self::Edges { from_cell, directions } = self else {
+        let Self::Edges {
+            from_cell,
+            directions,
+        } = self
+        else {
             return None;
         };
 

@@ -75,7 +75,8 @@ where
     State: Clone,
 {
     type ConnectionError = Prop::ConnectionError;
-    type Connections<'a> = ChainedConnections<'a, Base, Prop, State, Action, Target>
+    type Connections<'a>
+        = ChainedConnections<'a, Base, Prop, State, Action, Target>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -111,7 +112,8 @@ where
     prop_connections: <Prop::Connections<'a> as IntoIterator>::IntoIter,
 }
 
-impl<'a, Base, Prop, State, Action, Target> Iterator for ChainedConnections<'a, Base, Prop, State, Action, Target>
+impl<'a, Base, Prop, State, Action, Target> Iterator
+    for ChainedConnections<'a, Base, Prop, State, Action, Target>
 where
     Base: Connectable<State, Action, Target> + 'a,
     Prop: Connectable<State, Action, Target> + 'a,

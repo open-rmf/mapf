@@ -35,8 +35,7 @@ pub trait Activity<State> {
     type ActivityError;
 
     /// Concrete type for the returned container of choices
-    type Choices<'a>: IntoIterator<Item = Result<(Self::Action, State), Self::ActivityError>>
-        + 'a
+    type Choices<'a>: IntoIterator<Item = Result<(Self::Action, State), Self::ActivityError>> + 'a
     where
         Self: 'a,
         Self::Action: 'a,
@@ -141,7 +140,8 @@ where
 {
     type Action = Prop::Action;
     type ActivityError = Base::Error;
-    type Choices<'a> = IncorporatedChoices<'a, Base, Prop>
+    type Choices<'a>
+        = IncorporatedChoices<'a, Base, Prop>
     where
         Self: 'a,
         Base: 'a,
@@ -184,9 +184,9 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         Some(
             self.choices
-            .next()?
-            .map(|(a, s)| (a.into(), s.into()))
-            .map_err(Into::into)
+                .next()?
+                .map(|(a, s)| (a.into(), s.into()))
+                .map_err(Into::into),
         )
     }
 }
@@ -202,7 +202,8 @@ where
 {
     type Action = Prop::Action;
     type ActivityError = Base::Error;
-    type Choices<'a> = ChainedChoices<'a, Base, Prop>
+    type Choices<'a>
+        = ChainedChoices<'a, Base, Prop>
     where
         Self: 'a,
         Base: 'a,
@@ -252,24 +253,16 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(next) = self.base_choices.next() {
-                return Some(
-                    next
-                    .map(|(a, s)| (a.into(), s))
-                    .map_err(Into::into)
-                );
+                return Some(next.map(|(a, s)| (a.into(), s)).map_err(Into::into));
             }
 
-            return self.prop_choices
+            return self
+                .prop_choices
                 .next()
-                .map(|r|
-                    r
-                    .map(|(a, s)| (a, s.into()))
-                    .map_err(Into::into)
-                );
+                .map(|r| r.map(|(a, s)| (a, s.into())).map_err(Into::into));
         }
     }
 }
-
 
 impl<Base, Prop> Activity<Base::State> for Mapped<Base, Prop>
 where
@@ -281,7 +274,8 @@ where
 {
     type Action = Prop::ModifiedAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = MappedChoices<'a, Base, Prop>
+    type Choices<'a>
+        = MappedChoices<'a, Base, Prop>
     where
         Self: 'a,
         Base: 'a,
@@ -335,8 +329,7 @@ where
         loop {
             if let Some(modified_choices) = &mut self.modified_choices {
                 if let Some(next_modified_action) = modified_choices.next() {
-                    let next = next_modified_action
-                        .map_err(Into::into);
+                    let next = next_modified_action.map_err(Into::into);
                     return Some(next);
                 }
             }
@@ -347,11 +340,11 @@ where
                 Err(err) => return Some(Err(err.into())),
             };
 
-            self.modified_choices = Some(self.prop.modify_action(
-                self.from_state.clone(),
-                from_action,
-                to_state,
-            ).into_iter());
+            self.modified_choices = Some(
+                self.prop
+                    .modify_action(self.from_state.clone(), from_action, to_state)
+                    .into_iter(),
+            );
         }
     }
 }
@@ -359,9 +352,8 @@ where
 impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: ProjectState<Base::State>
-        + LiftState<Base::State>
-        + ActionMap<Base::State, Prop::Action>,
+    Lifter:
+        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::LiftError: Into<Base::Error>,
@@ -372,7 +364,8 @@ where
 {
     type Action = Lifter::ToAction;
     type ActivityError = Base::Error;
-    type Choices<'a> = LiftedActivityChoices<'a, Base, Lifter, Prop>
+    type Choices<'a>
+        = LiftedActivityChoices<'a, Base, Lifter, Prop>
     where
         Self: 'a,
         Base: 'a,
@@ -397,7 +390,7 @@ where
                     // lifted_actions will be filled in while iterating
                     lifted_actions: None,
                     lifter: &self.lifter,
-                }
+                };
             }
             Ok(None) => {
                 // This is not actually an error, but we can piggyback on the
@@ -415,9 +408,8 @@ where
 pub enum LiftedActivityChoices<'a, Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: ProjectState<Base::State>
-        + LiftState<Base::State>
-        + ActionMap<Base::State, Prop::Action>,
+    Lifter:
+        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
     Lifter::ActionMapError: Into<Base::Error> + 'a,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::ProjectedState: 'a,
@@ -431,7 +423,10 @@ where
     Choices {
         from_state: Base::State,
         choices: <Prop::Choices<'a> as IntoIterator>::IntoIter,
-        lifted_actions: Option<(Base::State, <Lifter::ToActions<'a> as IntoIterator>::IntoIter)>,
+        lifted_actions: Option<(
+            Base::State,
+            <Lifter::ToActions<'a> as IntoIterator>::IntoIter,
+        )>,
         lifter: &'a Lifter,
     },
 }
@@ -439,9 +434,8 @@ where
 impl<'a, Base, Lifter, Prop> Iterator for LiftedActivityChoices<'a, Base, Lifter, Prop>
 where
     Base: Domain,
-    Lifter: ProjectState<Base::State>
-        + LiftState<Base::State>
-        + ActionMap<Base::State, Prop::Action>,
+    Lifter:
+        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::ProjectedState: 'a,
@@ -460,9 +454,12 @@ where
                 Self::ProjectionError(error) => {
                     return error.take().map(Into::into).map(Err);
                 }
-                Self::Choices { from_state, lifted_actions, choices, lifter } => {
-                    (from_state, lifted_actions, choices, lifter)
-                }
+                Self::Choices {
+                    from_state,
+                    lifted_actions,
+                    choices,
+                    lifter,
+                } => (from_state, lifted_actions, choices, lifter),
             };
 
             if let Some((state, lifted_actions)) = lifted_actions {
@@ -475,7 +472,8 @@ where
             }
             *lifted_actions = None;
 
-            let next: Result<(Prop::Action, Lifter::ProjectedState), Prop::ActivityError> = choices.next()?;
+            let next: Result<(Prop::Action, Lifter::ProjectedState), Prop::ActivityError> =
+                choices.next()?;
 
             let (action, state) = match next {
                 Ok(ok) => ok,
@@ -484,7 +482,7 @@ where
 
             let lifted_state = match lifter.lift(&from_state, state).map_err(Into::into) {
                 Ok(lifted_state) => lifted_state,
-                Err(err) => return Some(Err(err.into()))
+                Err(err) => return Some(Err(err.into())),
             };
 
             let Some(lifted_state) = lifted_state else {

@@ -91,7 +91,8 @@ where
 {
     type Action = E::IncrementalExtrapolation;
     type ActivityError = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
-    type Choices<'a> = IncrementalGraphMotionChoices<'a, S, G, E>
+    type Choices<'a>
+        = IncrementalGraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -118,13 +119,10 @@ where
         } else {
             // No specific target, so we want to expand in every direction from
             // this vertex.
-            let edges_from_vertex = self.graph.edges_from_vertex(
-                self.space
-                    .key_for(&from_state.base_state)
-                    .borrow()
-                    .borrow()
-            )
-            .into_iter();
+            let edges_from_vertex = self
+                .graph
+                .edges_from_vertex(self.space.key_for(&from_state.base_state).borrow().borrow())
+                .into_iter();
 
             IncrementalGraphMotionChoices {
                 current_iter: None,
@@ -265,7 +263,13 @@ where
     G: Graph,
     E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
-    current_iter: Option<Extrapolations<G::Key, G::EdgeAttributes, <E::IncrementalExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
+    current_iter: Option<
+        Extrapolations<
+            G::Key,
+            G::EdgeAttributes,
+            <E::IncrementalExtrapolationIter<'a> as IntoIterator>::IntoIter,
+        >,
+    >,
     next_target: Option<(G::Key, G::EdgeAttributes)>,
     edges_from_vertex: Option<<G::EdgeIter<'a> as IntoIterator>::IntoIter>,
     motion: &'a IncrementalGraphMotion<S, G, E>,
@@ -337,7 +341,13 @@ where
                     to_v_ref.borrow(),
                     &with_guidance,
                     (
-                        Some(self.motion.space.key_for(&self.from_base_state).borrow().borrow()),
+                        Some(
+                            self.motion
+                                .space
+                                .key_for(&self.from_base_state)
+                                .borrow()
+                                .borrow(),
+                        ),
                         Some(&to_key),
                     ),
                 );

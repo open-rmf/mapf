@@ -19,13 +19,13 @@ use crate::{
     domain::Reversible,
     error::NoError,
     graph::{
-        occupancy::{Cell, Grid, Point, Visibility, VisibleCells, NeighborsIter},
+        occupancy::{Cell, Grid, NeighborsIter, Point, Visibility, VisibleCells},
         Edge, Graph,
     },
     util::triangular_for,
 };
 use std::{
-    collections::{HashMap, HashSet, hash_set::Iter as HashSetIter},
+    collections::{hash_set::Iter as HashSetIter, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -131,7 +131,8 @@ impl<G: Grid> Graph for VisibilityGraph<G> {
         = (Cell, Cell)
     where
         G: 'a;
-    type EdgeIter<'a> = VisibilityGraphEdges<'a, G>
+    type EdgeIter<'a>
+        = VisibilityGraphEdges<'a, G>
     where
         Self: 'a;
 
@@ -267,7 +268,8 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         = (Cell, Cell)
     where
         G: 'a;
-    type EdgeIter<'a> = VisibilityGraphEdges<'a, G>
+    type EdgeIter<'a>
+        = VisibilityGraphEdges<'a, G>
     where
         Self: 'a;
 
@@ -292,7 +294,8 @@ impl<G: Grid> Graph for NeighborhoodGraph<G> {
         .with_neighbors(self.visibility.neighbors(*from_cell))
     }
 
-    type LazyEdgeIter<'a> = Option<(Cell, Cell)>
+    type LazyEdgeIter<'a>
+        = Option<(Cell, Cell)>
     where
         G: 'a;
 
@@ -371,20 +374,17 @@ impl<'a, G: Grid> VisibilityGraphEdges<'a, G> {
         let from_point = from_cell.center_point(grid.cell_size());
         let agent_diameter = 2.0 * visibility.agent_radius;
 
-        let neighborhood = match grid.is_square_occupied(from_point,  agent_diameter) {
+        let neighborhood = match grid.is_square_occupied(from_point, agent_diameter) {
             Some(_) => {
                 // The initial cell is blocked, so it is cut off from its neighborhood
                 None
             }
             None => {
-                let (visibility_of_interest, points_of_interest) = match visibility_of_interest.get(&from_cell) {
-                    Some(visibility_of_interest) => {
-                        (Some(visibility_of_interest.iter()), None)
-                    }
-                    None => {
-                        (None, Some(points_of_interest.iter()))
-                    }
-                };
+                let (visibility_of_interest, points_of_interest) =
+                    match visibility_of_interest.get(&from_cell) {
+                        Some(visibility_of_interest) => (Some(visibility_of_interest.iter()), None),
+                        None => (None, Some(points_of_interest.iter())),
+                    };
 
                 Some(NeighborhoodGraphEdgesIters {
                     visible_cells: visibility.calculate_visibility(from_cell),
@@ -395,7 +395,13 @@ impl<'a, G: Grid> VisibilityGraphEdges<'a, G> {
             }
         };
 
-        Self { grid, agent_diameter, from_cell, from_point, neighborhood }
+        Self {
+            grid,
+            agent_diameter,
+            from_cell,
+            from_point,
+            neighborhood,
+        }
     }
 
     fn with_neighbors(mut self, neighbors: NeighborsIter<'a, G>) -> Self {
@@ -426,7 +432,8 @@ impl<'a, G: Grid> Iterator for VisibilityGraphEdges<'a, G> {
         loop {
             if let Some(to_cell) = neighborhood.visible_cells.next() {
                 if neighborhood.neighbors.is_some() {
-                    if (to_cell.x - from_cell.x).abs() <= 1 && (to_cell.y - from_cell.y).abs() <= 1 {
+                    if (to_cell.x - from_cell.x).abs() <= 1 && (to_cell.y - from_cell.y).abs() <= 1
+                    {
                         // Ignore adjacent cells because those will be given by the
                         // neighbors iterator below. If we repeat the same cell twice,
                         // we force the search queue to do unnecessary work.
@@ -457,7 +464,11 @@ impl<'a, G: Grid> Iterator for VisibilityGraphEdges<'a, G> {
             if let Some(points_of_interest) = neighborhood.points_of_interest.as_mut() {
                 if let Some(point_of_interest) = points_of_interest.next() {
                     let to_point = point_of_interest.center_point(self.grid.cell_size());
-                    if self.grid.is_sweep_occupied(self.from_point, to_point, self.agent_diameter).is_some() {
+                    if self
+                        .grid
+                        .is_sweep_occupied(self.from_point, to_point, self.agent_diameter)
+                        .is_some()
+                    {
                         // Ignore this point since it does not have visibility
                         continue;
                     }

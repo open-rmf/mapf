@@ -24,9 +24,9 @@ use crate::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
-    sync::Arc,
     iter::Enumerate,
     slice::Iter as SliceIter,
+    sync::Arc,
 };
 
 type Vector2 = nalgebra::Vector2<f64>;
@@ -52,7 +52,8 @@ pub struct DynamicEnvironment<W: Waypoint> {
 impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for DynamicEnvironment<W>
 {
-    type Obstacles<'a> = SliceIter<'a, DynamicCircularObstacle<W>>
+    type Obstacles<'a>
+        = SliceIter<'a, DynamicCircularObstacle<W>>
     where
         W: 'a;
 
@@ -320,7 +321,8 @@ impl<'a, W: Waypoint, K> Copy for CcbsEnvironmentView<'a, W, K> {}
 impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for CcbsEnvironmentView<'e, W, K>
 {
-    type Obstacles<'a> = CcbsEnvironmentObstaclesIter<'a, W>
+    type Obstacles<'a>
+        = CcbsEnvironmentObstaclesIter<'a, W>
     where
         W: 'a,
         K: 'a,

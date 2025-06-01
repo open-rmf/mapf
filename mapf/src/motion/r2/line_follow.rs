@@ -33,7 +33,7 @@ use crate::{
     },
 };
 use arrayvec::ArrayVec;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineFollow {
@@ -197,7 +197,8 @@ where
     K: Key + Clone,
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>;
-    type AvoidanceActionIter<'a> = SmallVec<[Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>; 8]>
+    type AvoidanceActionIter<'a>
+        = SmallVec<[Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>; 8]>
     where
         Target: 'a,
         Guidance: 'a,
@@ -231,20 +232,14 @@ where
         ) {
             Ok(extrapolation) => extrapolation.1,
             Err(err) => {
-                return smallvec![
-                    Err(SafeIntervalMotionError::Extrapolator(err))
-                ];
+                return smallvec![Err(SafeIntervalMotionError::Extrapolator(err))];
             }
         };
 
         let mut safe_arrival_times = match target_key {
             Some(target_key) => match safe_intervals.safe_intervals_for(&target_key) {
                 Ok(r) => r,
-                Err(err) => {
-                    return smallvec![
-                        Err(SafeIntervalMotionError::Cache(err))
-                    ]
-                }
+                Err(err) => return smallvec![Err(SafeIntervalMotionError::Cache(err))],
             },
             None => SafeArrivalTimes::new(),
         };

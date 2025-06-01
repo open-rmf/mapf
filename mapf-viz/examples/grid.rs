@@ -28,7 +28,10 @@ use iced::{
 };
 use iced_native;
 use mapf::{
-    algorithm::{tree::{NodeContainer, IntoIterSorted}, AStarConnect, QueueLength, SearchStatus},
+    algorithm::{
+        tree::{IntoIterSorted, NodeContainer},
+        AStarConnect, QueueLength, SearchStatus,
+    },
     graph::{
         occupancy::{Accessibility, AccessibilityGraph, Cell, Grid, SparseGrid},
         SharedGraph,

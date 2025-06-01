@@ -149,10 +149,7 @@ where
         queue: &mut TreeFrontierQueue<D::Cost>,
         arena: &Vec<Node<D::State, D::Action, D::Cost>>,
         goal: &Goal,
-    ) -> Result<
-        Flow<(usize, Node<D::State, D::Action, D::Cost>), D>,
-        AStarSearchError<D::Error>,
-    >
+    ) -> Result<Flow<(usize, Node<D::State, D::Action, D::Cost>), D>, AStarSearchError<D::Error>>
     where
         D: Satisfiable<D::State, Goal> + Activity<D::State>,
         D::SatisfactionError: Into<D::Error>,

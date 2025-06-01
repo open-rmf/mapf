@@ -114,7 +114,8 @@ where
     Goal: Clone,
 {
     type InitialError = Init::InitialError;
-    type InitialStates<'a> = ManyInitIter<'a, StartIter, Goal, State, Init>
+    type InitialStates<'a>
+        = ManyInitIter<'a, StartIter, Goal, State, Init>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -189,7 +190,8 @@ where
     Init: Initializable<Start, Goal, Init::State>,
 {
     type InitialError = Init::InitialError;
-    type InitialStates<'a> = LiftInitIter<
+    type InitialStates<'a>
+        = LiftInitIter<
         <Init::InitialStates<'a> as IntoIterator>::IntoIter,
         Init::State,
         State,
@@ -224,14 +226,12 @@ pub struct LiftInitIter<InitIter, IterState, State, Error> {
 
 impl<InitIter, IterState, State, Error> Iterator for LiftInitIter<InitIter, IterState, State, Error>
 where
-    InitIter: Iterator<Item=Result<IterState, Error>>,
+    InitIter: Iterator<Item = Result<IterState, Error>>,
     IterState: Into<State>,
 {
     type Item = Result<State, Error>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|r| r.map(Into::into))
+        self.iter.next().map(|r| r.map(Into::into))
     }
 }
 
@@ -242,7 +242,8 @@ where
     Prop::InitialError: Into<Base::Error>,
 {
     type InitialError = Base::Error;
-    type InitialStates<'a> = IntoInitialStatesIter<'a, Base, Prop, Start, Goal>
+    type InitialStates<'a>
+        = IntoInitialStatesIter<'a, Base, Prop, Start, Goal>
     where
         Self: 'a,
         Base::Error: 'a,
@@ -259,7 +260,7 @@ where
         Goal: 'a,
     {
         IntoInitialStatesIter {
-            iter: self.prop.initialize(from_start, to_goal).into_iter()
+            iter: self.prop.initialize(from_start, to_goal).into_iter(),
         }
     }
 }
@@ -285,9 +286,7 @@ where
 {
     type Item = Result<Base::State, Base::Error>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|r| r.map_err(Into::into))
+        self.iter.next().map(|r| r.map_err(Into::into))
     }
 }
 

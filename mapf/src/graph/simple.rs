@@ -111,7 +111,8 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type EdgeIter<'a> = SimpleGraphEdges<'a, E>
+    type EdgeIter<'a>
+        = SimpleGraphEdges<'a, E>
     where
         V: 'a,
         E: 'a;
@@ -157,11 +158,7 @@ impl<'a, E> Iterator for SimpleGraphEdges<'a, E> {
         let from_key = self.from_key;
         self.edges
             .as_mut()
-            .map(|edges| {
-                edges
-                    .next()
-                    .map(|(to_key, attr)| (from_key, *to_key, attr))
-            })
+            .map(|edges| edges.next().map(|(to_key, attr)| (from_key, *to_key, attr)))
             .flatten()
     }
 }

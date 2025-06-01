@@ -82,7 +82,8 @@ where
 {
     type Action = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;
-    type Choices<'a> = GraphMotionChoices<'a, S, G, E>
+    type Choices<'a>
+        = GraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -231,7 +232,8 @@ where
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::ExtrapolationError: StdError,
 {
-    current_iter: Option<Extrapolations<G::Key, <E::ExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
+    current_iter:
+        Option<Extrapolations<G::Key, <E::ExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
     edges_from_vertex: <G::EdgeIter<'a> as IntoIterator>::IntoIter,
     motion: &'a GraphMotion<S, G, E>,
     from_state: S::State,
@@ -248,7 +250,8 @@ where
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::ExtrapolationError: StdError,
 {
-    type Item = Result<(E::Extrapolation, S::State), GraphMotionError<G::Key, E::ExtrapolationError>>;
+    type Item =
+        Result<(E::Extrapolation, S::State), GraphMotionError<G::Key, E::ExtrapolationError>>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(current_iter) = self.current_iter.as_mut() {
@@ -278,7 +281,13 @@ where
                     v.borrow(),
                     &edge.attributes(),
                     (
-                        Some(self.motion.space.key_for(&self.from_state).borrow().borrow()),
+                        Some(
+                            self.motion
+                                .space
+                                .key_for(&self.from_state)
+                                .borrow()
+                                .borrow(),
+                        ),
                         Some(&to_vertex),
                     ),
                 );
@@ -294,7 +303,6 @@ where
 
             return None;
         }
-
     }
 }
 

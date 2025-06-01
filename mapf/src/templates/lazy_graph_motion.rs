@@ -54,7 +54,8 @@ where
     R: ArrivalKeyring<G::Key, G::Key, Goal>,
     C: Connectable<State, Action, Goal>,
 {
-    type Connections<'a> = LazyGraphMotionConnections<'a, S, G, E, R, C, State, Action, Goal>
+    type Connections<'a>
+        = LazyGraphMotionConnections<'a, S, G, E, R, C, State, Action, Goal>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -75,13 +76,19 @@ where
         let from_spatial_state = from_state.borrow().clone();
         let from_key_ref = self.motion.space.key_for(&from_spatial_state);
         let from_key = from_key_ref.borrow().borrow();
-        let arrival_keys = self.keyring.get_arrival_keys(&from_key, to_target).into_iter();
+        let arrival_keys = self
+            .keyring
+            .get_arrival_keys(&from_key, to_target)
+            .into_iter();
 
         LazyGraphMotionConnections::<'a, S, G, E, R, C, State, Action, Goal> {
             current_iter: None,
             lazy_edges: None,
             arrival_keys,
-            chained_connections: self.chain.connect(from_state.clone(), to_target).into_iter(),
+            chained_connections: self
+                .chain
+                .connect(from_state.clone(), to_target)
+                .into_iter(),
             motion: &self.motion,
             from_state: from_spatial_state.clone(),
             _ignore: Default::default(),
@@ -143,7 +150,8 @@ where
     Action: 'a,
     Goal: 'a,
 {
-    current_iter: Option<Extrapolations<G::Key, <E::ExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
+    current_iter:
+        Option<Extrapolations<G::Key, <E::ExtrapolationIter<'a> as IntoIterator>::IntoIter>>,
     lazy_edges: Option<<G::LazyEdgeIter<'a> as IntoIterator>::IntoIter>,
     arrival_keys: <R::ArrivalKeys<'a> as IntoIterator>::IntoIter,
     chained_connections: <C::Connections<'a> as IntoIterator>::IntoIter,
@@ -152,7 +160,8 @@ where
     _ignore: std::marker::PhantomData<fn(State, Action)>,
 }
 
-impl<'a, S, G, E, R, C, State, Action, Goal> Iterator for LazyGraphMotionConnections<'a, S, G, E, R, C, State, Action, Goal>
+impl<'a, S, G, E, R, C, State, Action, Goal> Iterator
+    for LazyGraphMotionConnections<'a, S, G, E, R, C, State, Action, Goal>
 where
     S: 'a + KeyedSpace<G::Key>,
     S::Key: 'a + Borrow<G::Key>,
@@ -171,7 +180,10 @@ where
     Action: 'a,
     Goal: 'a,
 {
-    type Item = Result<(Action, State), LazyGraphMotionError<G::Key, R::ArrivalKeyError, E::ExtrapolationError, C::ConnectionError>>;
+    type Item = Result<
+        (Action, State),
+        LazyGraphMotionError<G::Key, R::ArrivalKeyError, E::ExtrapolationError, C::ConnectionError>,
+    >;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(current_iter) = self.current_iter.as_mut() {
@@ -202,7 +214,13 @@ where
                         v.borrow(),
                         &edge.attributes(),
                         (
-                            Some(self.motion.space.key_for(&self.from_state).borrow().borrow()),
+                            Some(
+                                self.motion
+                                    .space
+                                    .key_for(&self.from_state)
+                                    .borrow()
+                                    .borrow(),
+                            ),
                             Some(&to_vertex),
                         ),
                     );

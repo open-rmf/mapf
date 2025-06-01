@@ -295,7 +295,8 @@ where
 {
     type Action = A::Action;
     type ActivityError = A::ActivityError;
-    type Choices<'a> = A::Choices<'a>
+    type Choices<'a>
+        = A::Choices<'a>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -313,8 +314,7 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Weighted<A::State, A::Action>
-    for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Weighted<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
     W: Weighted<A::State, A::Action>,
@@ -381,7 +381,8 @@ where
     C::ConnectionError: Into<Anyhow>,
 {
     type ConnectionError = C::ConnectionError;
-    type Connections<'a> = C::Connections<'a>
+    type Connections<'a>
+        = C::Connections<'a>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -434,7 +435,8 @@ where
     S: ArrivalKeyring<A::Key, Start, Goal>,
 {
     type ArrivalKeyError = S::ArrivalKeyError;
-    type ArrivalKeys<'a> = S::ArrivalKeys<'a>
+    type ArrivalKeys<'a>
+        = S::ArrivalKeys<'a>
     where
         Self: 'a,
         Start: 'a,
@@ -508,8 +510,7 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Backtrack<A::State, A::Action>
-    for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Backtrack<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State> + Backtrack<A::State, A::Action>,
 {

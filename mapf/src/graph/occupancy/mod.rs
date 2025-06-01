@@ -21,8 +21,11 @@ use crate::{
 };
 use bitfield::{bitfield, Bit, BitMut};
 use std::{
+    collections::{
+        hash_map::{Entry, Iter as HashMapIter},
+        HashMap, HashSet,
+    },
     ops::Sub,
-    collections::{hash_map::{Entry, Iter as HashMapIter}, HashMap, HashSet}
 };
 use util::LineSegment;
 
@@ -394,12 +397,8 @@ impl<G: Grid> Visibility<G> {
 
     pub fn calculate_visibility(&self, cell: Cell) -> VisibleCells<'_, G> {
         let visibility_edges = match self.edges.get(&cell) {
-            Some(visibility_edges) => {
-                VisibilityEdges::Precalculated(visibility_edges.into_iter())
-            }
-            None => {
-                VisibilityEdges::Unknown(self.iter_points())
-            }
+            Some(visibility_edges) => VisibilityEdges::Precalculated(visibility_edges.into_iter()),
+            None => VisibilityEdges::Unknown(self.iter_points()),
         };
 
         VisibleCells {
@@ -419,9 +418,7 @@ impl<G: Grid> Visibility<G> {
                 // direction.
                 None
             }
-            None => {
-                Some(secondary_cardinal_directions().into_iter())
-            }
+            None => Some(secondary_cardinal_directions().into_iter()),
         };
 
         NeighborsIter {
@@ -739,7 +736,11 @@ impl<'a, G: Grid> Iterator for VisibleCells<'a, G> {
                         let cell_size = self.grid.cell_size();
                         let p0 = self.from_cell.center_point(cell_size);
                         let p1 = to_cell.center_point(cell_size);
-                        if self.grid.is_sweep_occupied(p0, p1, 2.0 * self.agent_radius).is_some() {
+                        if self
+                            .grid
+                            .is_sweep_occupied(p0, p1, 2.0 * self.agent_radius)
+                            .is_some()
+                        {
                             continue;
                         }
 
@@ -772,7 +773,7 @@ impl<'a> Iterator for VisiblePointsIter<'a> {
                     continue;
                 }
 
-                return Some((cell, status))
+                return Some((cell, status));
             } else {
                 return None;
             }
@@ -798,7 +799,9 @@ impl<'a, G: Grid> Iterator for NeighborsIter<'a, G> {
         loop {
             if let Some([i, j]) = directions.next() {
                 let neighbor = self.of_cell.shifted(i, j);
-                if self.grid.is_sweep_occupied(
+                if self
+                    .grid
+                    .is_sweep_occupied(
                         self.from_point,
                         neighbor.center_point(self.grid.cell_size()),
                         self.agent_diameter,
