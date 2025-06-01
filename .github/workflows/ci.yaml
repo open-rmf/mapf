@@ -41,6 +41,13 @@ jobs:
         cargo -V
         rustup target add x86_64-pc-windows-msvc
 
+    - name: Add ubuntu dependencies
+      if: matrix.runs-on == 'ubuntu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install libglib2.0-dev
+
+
     - name: Cache Cargo
       uses: actions/cache@v4
       with:
