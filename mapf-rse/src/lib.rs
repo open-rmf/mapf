@@ -36,7 +36,7 @@ pub struct MapfRsePlugin;
 
 impl Plugin for MapfRsePlugin {
     fn build(&self, app: &mut App) {
-        app.add_state::<DebugMode>()
+        app.init_state::<DebugMode>()
             .init_resource::<SimulationConfig>()
             .add_plugins(NegotiationPlugin)
             .add_plugins(PropertiesTilePlugin::<MapfConfigWidget>::new())

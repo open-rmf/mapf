@@ -16,7 +16,8 @@
 */
 
 use super::*;
-use bevy::render::mesh::{shape::Quad, Mesh};
+use bevy::ecs::hierarchy::ChildOf;
+use bevy::math::prelude::Rectangle;
 use rmf_site_editor::site::line_stroke_transform;
 
 pub const DEFAULT_PATH_WIDTH: f32 = 0.2;
@@ -31,11 +32,12 @@ pub fn visualise_selected_node(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut path_visuals: Query<Entity, With<PathVisualMarker>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mobile_robots: Query<(Entity, &DifferentialDrive), (With<ModelMarker>, Without<Group>)>,
+    robots: Query<&Affiliation<Entity>, With<Robot>>,
+    robot_descriptions: Query<&CircleCollision, (With<ModelMarker>, With<Group>)>,
     current_level: Res<CurrentLevel>,
 ) {
     // Return unless complete
-    let Ok(negotiation_task) = negotiation_task.get_single() else {
+    let Ok(negotiation_task) = negotiation_task.single() else {
         return;
     };
     let NegotiationTaskStatus::Complete {
@@ -54,7 +56,7 @@ pub fn visualise_selected_node(
     }
     // Despawn visuals from previous negotiation task
     for path_visual in path_visuals.iter() {
-        commands.entity(path_visual).despawn_recursive();
+        commands.entity(path_visual).despawn();
     }
 
     let Some(selected_node) = debug_data
@@ -79,14 +81,14 @@ pub fn visualise_selected_node(
 
     let mut spawn_path_mesh = |lane_tf, lane_material: Handle<StandardMaterial>, lane_mesh| {
         commands
-            .spawn(PbrBundle {
-                mesh: lane_mesh,
-                material: lane_material.clone(),
-                transform: lane_tf,
-                ..default()
-            })
+            .spawn((
+                Mesh3d(lane_mesh),
+                MeshMaterial3d(lane_material.clone()),
+                lane_tf,
+                Visibility::default(),
+            ))
             .insert(PathVisualMarker)
-            .set_parent(level_entity);
+            .insert(ChildOf(level_entity));
     };
 
     if debug_data.visualize_trajectories {
@@ -94,10 +96,12 @@ pub fn visualise_selected_node(
             let collision_radius = entity_id_map
                 .get(&proposal.0)
                 .and_then(|e| {
-                    mobile_robots
+                    robots
                         .get(*e)
-                        .map(|(_, dd)| dd.collision_radius)
                         .ok()
+                        .and_then(|affiliation| affiliation.0)
+                        .and_then(|desc| robot_descriptions.get(desc).ok())
+                        .map(|cc| cc.radius)
                 })
                 .unwrap_or(DEFAULT_PATH_WIDTH / 2.0);
 
@@ -110,14 +114,14 @@ pub fn visualise_selected_node(
                 spawn_path_mesh(
                     line_stroke_transform(&start_pos, &end_pos, collision_radius * 2.0),
                     materials.add(StandardMaterial {
-                        base_color: Color::rgb(0.0, 1.0, 0.0),
+                        base_color: Color::srgb(0.0, 1.0, 0.0),
                         unlit: true,
                         ..Default::default()
                     }),
-                    meshes.add(Mesh::from(shape::Quad {
-                        size: Vec2::new(collision_radius * 10.0, collision_radius * 2.0),
-                        flip: false,
-                    })),
+                    meshes.add(Mesh::from(Rectangle::new(
+                        collision_radius * 10.0,
+                        collision_radius * 2.0,
+                    ))),
                 );
             }
         }

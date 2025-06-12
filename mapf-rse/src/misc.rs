@@ -15,17 +15,28 @@
  *
 */
 
-use bevy::prelude::*;
-use rmf_site_editor::{site::site, workspace::CurrentWorkspace};
+use bevy::{ecs::hierarchy::ChildOf, prelude::*};
+use rmf_site_editor::{
+    widgets::{
+        // TODO(@xiyuoh) retrieve from rmf_site_format after SDF PR is merged
+        CircleCollision,
+        Collision,
+        DifferentialDrive,
+        Mobility,
+        RobotProperty,
+        RobotPropertyKind,
+    },
+    workspace::CurrentWorkspace,
+};
 use rmf_site_format::{
-    AssetSource, Category, DifferentialDrive, Group, IsStatic, MobileRobotMarker,
-    ModelDescriptionBundle, ModelMarker, ModelProperty, NameInSite, Scale,
+    AssetSource, Category, Group, IsStatic, ModelDescriptionBundle, ModelMarker, ModelProperty,
+    NameInSite, Robot, Scale,
 };
 
 /// Loads the TinyRobot model into the scene with differential drive and a mobile robot marker for convenience
 pub fn load_tiny_robot(
     mut commands: Commands,
-    mobile_robots: Query<&NameInSite, (With<Group>, With<MobileRobotMarker>)>,
+    robots: Query<&NameInSite, (With<Group>, With<Robot>)>,
     current_workspace: Res<CurrentWorkspace>,
 ) {
     if !current_workspace.is_changed() {
@@ -34,36 +45,53 @@ pub fn load_tiny_robot(
     let Some(site_entity) = current_workspace.root else {
         return;
     };
-    if mobile_robots
-        .iter()
-        .find(|name| name.0 == "TinyRobot")
-        .is_some()
-    {
+    if robots.iter().find(|name| name.0 == "TinyRobot").is_some() {
         return;
     }
 
     let description = ModelDescriptionBundle {
         name: NameInSite("TinyRobot".to_string()),
-        source: ModelProperty(AssetSource::Remote("Luca/TinyRobot/model.sdf".to_string())),
+        source: ModelProperty(AssetSource::Remote(
+            "Open-RMF/TinyRobot/model.sdf".to_string(),
+        )),
         is_static: ModelProperty(IsStatic(false)),
         scale: ModelProperty(Scale::default()),
         marker: ModelMarker,
         group: Group,
     };
-    // Wrapping differential_drive and mobile_robot_marker in ModelProperty allows us
-    // to apply the same properties to its instances
-    let differential_drive = ModelProperty(DifferentialDrive {
+
+    let mut robot = Robot::default();
+    let differential_drive = DifferentialDrive {
+        bidirectional: false,
+        rotation_center_offset: [0.0, 0.0],
         translational_speed: 1.0,
         rotational_speed: 1.0,
-        bidirectional: false,
-        collision_radius: 0.3,
-        rotation_center_offset: [0.0, 0.0],
-    });
-    let mobile_robot_marker = ModelProperty::<MobileRobotMarker>::default();
+    };
+    if let Ok(serialized_mobility) = serde_json::to_value(differential_drive)
+        .map(|diff_drive| Mobility::new(DifferentialDrive::label(), diff_drive))
+        .and_then(|mobility| serde_json::to_value(mobility))
+    {
+        robot
+            .properties
+            .insert(Mobility::label(), serialized_mobility);
+    }
+
+    let circle_collision = CircleCollision {
+        radius: 0.3,
+        offset: [0.0, 0.0],
+    };
+    if let Ok(serialized_collision) = serde_json::to_value(circle_collision)
+        .map(|circle| Mobility::new(CircleCollision::label(), circle))
+        .and_then(|collision| serde_json::to_value(collision))
+    {
+        robot
+            .properties
+            .insert(Collision::label(), serialized_collision);
+    }
+
     commands
         .spawn(description)
-        .insert(differential_drive)
         .insert(Category::ModelDescription)
-        .insert(mobile_robot_marker)
-        .set_parent(site_entity);
+        .insert(robot)
+        .insert(ChildOf(site_entity));
 }

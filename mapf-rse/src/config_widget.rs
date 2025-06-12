@@ -16,29 +16,32 @@
 */
 
 use super::*;
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{
+    ecs::{hierarchy::ChildOf, system::SystemParam},
+    prelude::*,
+};
 use bevy_egui::egui::{CollapsingHeader, ComboBox, DragValue, Grid as EguiGrid, Ui};
 use rmf_site_editor::{
     occupancy::{CalculateGrid, Grid},
-    site::{CurrentLevel, Group, MobileRobotMarker, Task, Tasks},
+    site::{CurrentLevel, GoToPlace, Robot, Task, TaskKind},
     widgets::{prelude::*, view_occupancy::OccupancyDisplay},
 };
 
 #[derive(SystemParam)]
 pub struct MapfConfigWidget<'w, 's> {
+    child_of: Query<'w, 's, &'static ChildOf>,
     debug_mode: Res<'w, State<DebugMode>>,
     debug_mode_next: ResMut<'w, NextState<DebugMode>>,
-    mobile_robots:
-        Query<'w, 's, (Entity, &'static Tasks<Entity>), (With<MobileRobotMarker>, Without<Group>)>,
     current_level: Res<'w, CurrentLevel>,
     grids: Query<'w, 's, (Entity, &'static Grid)>,
     calculate_grid: EventWriter<'w, CalculateGrid>,
-    parents: Query<'w, 's, &'static Parent>,
     negotiation_request: EventWriter<'w, NegotiationRequest>,
     negotiation_params: ResMut<'w, NegotiationParams>,
     negotiation_debug: ResMut<'w, NegotiationDebugData>,
     negotiation_task: Query<'w, 's, &'static NegotiationTask>,
     occupancy_display: ResMut<'w, OccupancyDisplay>,
+    robots: Query<'w, 's, Entity, With<Robot>>,
+    tasks: Query<'w, 's, &'static Task>,
 }
 
 impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
@@ -51,7 +54,7 @@ impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Mode");
-                    ComboBox::from_id_source("mapf_debug_mode")
+                    ComboBox::from_id_salt("mapf_debug_mode")
                         .selected_text(params.debug_mode.get().label())
                         .show_ui(ui, |ui| {
                             for label in DebugMode::labels() {
@@ -79,7 +82,7 @@ impl<'w, 's> WidgetSystem<Tile> for MapfConfigWidget<'w, 's> {
 impl<'w, 's> MapfConfigWidget<'w, 's> {
     pub fn show_negotiation(&mut self, ui: &mut Ui) {
         // Debug Parameters
-        let negotiation_task = self.negotiation_task.get_single_mut().ok();
+        let negotiation_task = self.negotiation_task.single_mut().ok();
         // Visualize
         ui.horizontal(|ui| {
             ui.label("Visualize");
@@ -100,16 +103,14 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
         // Agent tasks
         ui.separator();
         let num_tasks = self
-            .mobile_robots
+            .tasks
             .iter()
-            .filter(|(_, tasks)| {
-                tasks.0.iter().any(|task| {
-                    if let Task::GoToPlace(_) = task {
-                        true
-                    } else {
-                        false
-                    }
-                })
+            .filter(|task| {
+                if task.request().category() == GoToPlace::label() {
+                    true
+                } else {
+                    false
+                }
             })
             .count();
         ui.label(format!("Tasks:    {}", num_tasks));
@@ -120,9 +121,9 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             .filter_map(|(grid_entity, grid)| {
                 if let Some(level_entity) = self.current_level.0 {
                     if self
-                        .parents
+                        .child_of
                         .get(grid_entity)
-                        .is_ok_and(|parent_entity| parent_entity.get() == level_entity)
+                        .is_ok_and(|co| co.parent() == level_entity)
                     {
                         Some(grid)
                     } else {
@@ -143,23 +144,18 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             if ui
                 .add(
                     DragValue::new(&mut self.occupancy_display.cell_size)
-                        .clamp_range(0.1..=1.0)
+                        .range(0.1..=1.0)
                         .suffix(" m")
                         .speed(0.01),
                 )
                 .on_hover_text("Slide to calculate occupancy without robots")
                 .changed()
             {
-                self.calculate_grid.send(CalculateGrid {
+                self.calculate_grid.write(CalculateGrid {
                     cell_size: self.occupancy_display.cell_size,
                     floor: 0.01,
                     ceiling: 1.5,
-                    ignore: Some(
-                        self.mobile_robots
-                            .iter()
-                            .map(|(entity, _)| entity)
-                            .collect(),
-                    ),
+                    ignore: self.robots.iter().collect(),
                 });
             }
             if ui
@@ -167,16 +163,11 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
                 .on_hover_text("Click to calculate occupancy without robots")
                 .clicked()
             {
-                self.calculate_grid.send(CalculateGrid {
+                self.calculate_grid.write(CalculateGrid {
                     cell_size: self.occupancy_display.cell_size,
                     floor: 0.01,
                     ceiling: 1.5,
-                    ignore: Some(
-                        self.mobile_robots
-                            .iter()
-                            .map(|(entity, _)| entity)
-                            .collect(),
-                    ),
+                    ignore: self.robots.iter().collect(),
                 });
             }
         });
@@ -184,7 +175,7 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
             ui.label("Queue Length Limit: ");
             ui.add(
                 DragValue::new(&mut self.negotiation_params.queue_length_limit)
-                    .clamp_range(0..=std::usize::MAX)
+                    .range(0..=std::usize::MAX)
                     .speed(1000),
             );
         });
@@ -220,7 +211,7 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
 
             ui.add_enabled_ui(allow_generate_plan, |ui| {
                 if ui.button("Generate Plan").clicked() {
-                    self.negotiation_request.send(NegotiationRequest);
+                    self.negotiation_request.write(NegotiationRequest);
                 }
             });
         });

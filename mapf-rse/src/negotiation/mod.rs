@@ -16,7 +16,7 @@
 */
 
 use bevy::{
-    ecs::query::QueryEntityError,
+    ecs::hierarchy::ChildOf,
     prelude::*,
     tasks::{block_on, AsyncComputeTaskPool, Task},
 };
@@ -31,9 +31,10 @@ use mapf::negotiation::*;
 use rmf_site_editor::{
     occupancy::{Cell, Grid},
     site::{
-        Anchor, CurrentLevel, DifferentialDrive, Group, LocationTags, ModelMarker, NameInSite,
-        Point, Pose, Task as RobotTask, Tasks as RobotTasks,
+        Affiliation, Anchor, CurrentLevel, GoToPlace, Group, LocationTags, ModelMarker, NameInSite,
+        Point, Pose, Robot, Task as RobotTask, TaskKind,
     },
+    widgets::{CircleCollision, DifferentialDrive}, // TODO(@xiyuoh) retrieve from rmf_site_format after SDF PR is merged
 };
 
 use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};
@@ -102,7 +103,7 @@ impl NegotiationTaskStatus {
     }
 }
 
-#[derive(Component)]
+#[derive(Debug, Component)]
 pub struct NegotiationTask {
     task: Task<
         Result<
@@ -153,9 +154,8 @@ pub fn handle_compute_negotiation_complete(
     }
 
     let (mut entity, mut negotiation_task) = compute_negotiation_task
-        .get_single_mut()
+        .single_mut()
         .expect("Error: Found multiple negotiation tasks!");
-
     // We only accept in-progress negotiation task computations
     let NegotiationTaskStatus::InProgress { start_time } = negotiation_task.status else {
         return;
@@ -223,17 +223,7 @@ pub fn handle_compute_negotiation_complete(
 
 pub fn start_compute_negotiation(
     mut commands: Commands,
-    mobile_robots: Query<
-        (
-            Entity,
-            &NameInSite,
-            &Pose,
-            &DifferentialDrive,
-            &RobotTasks<Entity>,
-        ),
-        (With<ModelMarker>, Without<Group>),
-    >,
-    locations: Query<(Entity, &Point<Entity>), With<LocationTags>>,
+    locations: Query<(Entity, &NameInSite, &Point<Entity>), With<LocationTags>>,
     anchors: Query<(Entity, &Anchor, &Transform)>,
     negotiation_request: EventReader<NegotiationRequest>,
     negotiation_params: Res<NegotiationParams>,
@@ -241,14 +231,17 @@ pub fn start_compute_negotiation(
     mut compute_negotiation_task: Query<(Entity, &mut NegotiationTask)>,
     current_level: Res<CurrentLevel>,
     grids: Query<(Entity, &Grid)>,
-    parents: Query<&Parent>,
+    child_of: Query<&ChildOf>,
+    robots: Query<(Entity, &NameInSite, &Pose, &Affiliation<Entity>), With<Robot>>,
+    robot_descriptions: Query<(&DifferentialDrive, &CircleCollision)>,
+    tasks: Query<(&RobotTask, &GoToPlace)>,
 ) {
     if negotiation_request.len() == 0 {
         return;
     }
     if !compute_negotiation_task.is_empty() {
         let (mut entity, mut negotiation_task) = compute_negotiation_task
-            .get_single_mut()
+            .single_mut()
             .expect("Error: Found multiple negotiation tasks!");
 
         if let NegotiationTaskStatus::InProgress { .. } = negotiation_task.status {
@@ -256,7 +249,7 @@ pub fn start_compute_negotiation(
             return;
         }
         // Computation is done, we can despawn the previous negotiation task
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
     negotiation_debug_data.selected_negotiation_node = None;
 
@@ -267,9 +260,9 @@ pub fn start_compute_negotiation(
         .iter()
         .filter_map(|(grid_entity, grid)| {
             if let Some(level_entity) = current_level.0 {
-                if parents
+                if child_of
                     .get(grid_entity)
-                    .is_ok_and(|parent_entity| parent_entity.get() == level_entity)
+                    .is_ok_and(|co| co.parent() == level_entity)
                 {
                     Some(grid)
                 } else {
@@ -298,46 +291,45 @@ pub fn start_compute_negotiation(
 
     // Agent
     let mut agents = BTreeMap::<String, Agent>::new();
-    for (robot_entity, _, robot_pose, differential_drive, robot_tasks) in mobile_robots.iter() {
-        let Some(location_entity) = robot_tasks
-            .0
-            .iter()
-            .filter_map(|robot_task| {
-                if let RobotTask::GoToPlace(go_to_place) = robot_task {
-                    if let Some(location) = go_to_place.location {
-                        Some(location.0)
-                    } else {
-                        None
+    // Only loop tasks that have specified a valid robot
+    for (task, go_to_place) in tasks.iter() {
+        // Identify robot
+        let robot_name = task.robot();
+        for (robot_entity, robot_site_name, robot_pose, robot_group) in robots.iter() {
+            if robot_name == robot_site_name.0 {
+                // Match location to entity
+                for (_, location_name, Point(anchor_entity)) in locations.iter() {
+                    if location_name.0 == go_to_place.location {
+                        let Ok((_, _, goal_transform)) = anchors.get(*anchor_entity) else {
+                            continue;
+                        };
+                        let Some((differential_drive, circle_collision)) =
+                            robot_group.0.and_then(|e| robot_descriptions.get(e).ok())
+                        else {
+                            continue;
+                        };
+                        let agent = Agent {
+                            start: to_cell(robot_pose.trans[0], robot_pose.trans[1], cell_size),
+                            yaw: f64::from(robot_pose.rot.yaw().radians()),
+                            goal: to_cell(
+                                goal_transform.translation.x,
+                                goal_transform.translation.y,
+                                cell_size,
+                            ),
+                            radius: f64::from(circle_collision.radius),
+                            speed: f64::from(differential_drive.translational_speed),
+                            spin: f64::from(differential_drive.rotational_speed),
+                        };
+                        let agent_id = robot_entity.to_bits().to_string();
+                        agents.insert(agent_id, agent);
+                        break;
                     }
-                } else {
-                    None
                 }
-            })
-            .next()
-        else {
-            continue;
-        };
-        let Ok((_, Point(anchor_entity))) = locations.get(location_entity) else {
-            continue;
-        };
-        let Ok((_, _, goal_transform)) = anchors.get(*anchor_entity) else {
-            continue;
-        };
-        let agent = Agent {
-            start: to_cell(robot_pose.trans[0], robot_pose.trans[1], cell_size),
-            yaw: f64::from(robot_pose.rot.yaw().radians()),
-            goal: to_cell(
-                goal_transform.translation.x,
-                goal_transform.translation.y,
-                cell_size,
-            ),
-            radius: f64::from(differential_drive.collision_radius),
-            speed: f64::from(differential_drive.translational_speed),
-            spin: f64::from(differential_drive.rotational_speed),
-        };
-        let agent_id = robot_entity.to_bits().to_string();
-        agents.insert(agent_id, agent);
+                break;
+            }
+        }
     }
+
     if agents.len() == 0 {
         warn!("No agents with valid GoToPlace task");
         return;

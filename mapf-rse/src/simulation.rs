@@ -18,13 +18,14 @@
 use super::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{
-    Button, CollapsingHeader, Color32, ComboBox, DragValue, Frame, ScrollArea, Slider, Stroke, Ui,
+    Button, CollapsingHeader, Color32, ComboBox, DragValue, Frame, ScrollArea, Slider,
+    SliderClamping, Stroke, Ui,
 };
 use rmf_site_editor::{
     interaction::{Select, Selection},
     site::{
-        Category, Change, ChangeCurrentScenario, CurrentScenario, Delete, Group, MobileRobotMarker,
-        NameInSite, Scenario, ScenarioMarker, Tasks,
+        Category, Change, ChangeCurrentScenario, CurrentScenario, Delete, Group, NameInSite,
+        Scenario, ScenarioMarker,
     },
     widgets::prelude::*,
     widgets::{view_scenarios::ScenarioDisplay, Icons},
@@ -85,7 +86,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
 
                     ui.add(
                         DragValue::new(&mut params.simulation_config.speed)
-                            .clamp_range(0_f32..=10.0)
+                            .range(0_f32..=10.0)
                             .suffix(" ×")
                             .speed(0.01),
                     );
@@ -94,7 +95,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                             let end_time = params.simulation_config.end_time.clone();
                             ui.add(
                                 DragValue::new(&mut params.simulation_config.current_time)
-                                    .clamp_range(0_f32..=end_time)
+                                    .range(0_f32..=end_time)
                                     .suffix(format!(" / {} s", end_time.to_string()))
                                     .speed(0.01),
                             );
@@ -103,7 +104,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                             let end_step = params.simulation_config.end_step.clone();
                             ui.add(
                                 DragValue::new(&mut params.simulation_config.current_step)
-                                    .clamp_range(0_u32..=end_step)
+                                    .range(0_u32..=end_step)
                                     .suffix(format!(" / {} steps", end_step.to_string()))
                                     .speed(0.01),
                             );
@@ -123,7 +124,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                                     0.0..=end_time,
                                 )
                                 .show_value(false)
-                                .clamp_to_range(true),
+                                .clamping(SliderClamping::Always),
                             );
                         }
                         DebugMode::Planner => {
@@ -135,7 +136,7 @@ impl<'w> WidgetSystem<Tile> for SimulationControlTile<'w> {
                                 )
                                 .show_value(false)
                                 .step_by(1.0)
-                                .clamp_to_range(true),
+                                .clamping(SliderClamping::Always),
                             );
                         }
                     });

@@ -37,9 +37,9 @@ pub struct NegotiationDebugPlugin;
 impl Plugin for NegotiationDebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NegotiationDebugData>();
-        let panel = PanelWidget::new(negotiation_debug_panel, &mut app.world);
-        let widget = Widget::new::<NegotiationDebugWidget>(&mut app.world);
-        app.world.spawn((panel, widget));
+        let panel = PanelWidget::new(negotiation_debug_panel, &mut app.world_mut());
+        let widget = Widget::new::<NegotiationDebugWidget>(&mut app.world_mut());
+        app.world_mut().spawn((panel, widget));
     }
 }
 
@@ -71,7 +71,7 @@ impl<'w, 's> WidgetSystem for NegotiationDebugWidget<'w, 's> {
         ui.heading("Negotiation Debugger");
         match params
             .negotiation_task
-            .get_single_mut()
+            .single_mut()
             .map(|task| &task.status)
         {
             Ok(NegotiationTaskStatus::Complete { .. }) => {
@@ -92,7 +92,7 @@ impl<'w, 's> WidgetSystem for NegotiationDebugWidget<'w, 's> {
 
 impl<'w, 's> NegotiationDebugWidget<'w, 's> {
     pub fn show_completed(&mut self, ui: &mut Ui) {
-        let Ok(negotiation_task) = self.negotiation_task.get_single_mut() else {
+        let Ok(negotiation_task) = self.negotiation_task.single_mut() else {
             return;
         };
         let NegotiationTaskStatus::Complete {
@@ -170,7 +170,7 @@ fn show_negotiation_node(
     Frame::default()
         .inner_margin(4.0)
         .fill(Color32::DARK_GRAY)
-        .rounding(2.0)
+        .corner_radius(2.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
 
@@ -201,7 +201,7 @@ fn show_negotiation_node(
             });
 
             CollapsingHeader::new("Information")
-                .id_source(id.to_string() + "node_info")
+                .id_salt(id.to_string() + "node_info")
                 .default_open(false)
                 .show(ui, |ui| {
                     ui.label("Keys");
@@ -217,7 +217,7 @@ fn outline_frame<R>(ui: &mut Ui, add_body: impl FnOnce(&mut Ui) -> R) -> Respons
     Frame::default()
         .inner_margin(4.0)
         .stroke(Stroke::new(1.0, Color32::GRAY))
-        .rounding(2.0)
+        .corner_radius(2.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.add_enabled_ui(true, add_body);
