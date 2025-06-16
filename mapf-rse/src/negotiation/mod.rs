@@ -18,7 +18,7 @@
 use bevy::{
     ecs::hierarchy::ChildOf,
     prelude::*,
-    tasks::{block_on, AsyncComputeTaskPool, Task},
+    tasks::{block_on, futures::check_ready, Task, TaskPool},
 };
 use futures_lite::future;
 use std::{
@@ -160,7 +160,7 @@ pub fn handle_compute_negotiation_complete(
         return;
     };
 
-    if let Some(result) = block_on(future::poll_once(&mut negotiation_task.task)) {
+    if let Some(result) = check_ready(&mut negotiation_task.task) {
         let elapsed_time = start_time.elapsed();
 
         match result {
@@ -346,9 +346,8 @@ pub fn start_compute_negotiation(
     // Execute asynchronously
     let start_time = Instant::now();
     let mut status = NegotiationTaskStatus::InProgress { start_time };
-
-    let thread_pool = AsyncComputeTaskPool::get();
-    let task = thread_pool.spawn(async move { negotiate(&scenario, Some(queue_length_limit)) });
+    let task =
+        TaskPool::new().spawn_local(async move { negotiate(&scenario, Some(queue_length_limit)) });
 
     commands.spawn(NegotiationTask { task, status });
 }

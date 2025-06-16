@@ -211,6 +211,12 @@ impl<'w, 's> MapfConfigWidget<'w, 's> {
 
             ui.add_enabled_ui(allow_generate_plan, |ui| {
                 if ui.button("Generate Plan").clicked() {
+                    self.calculate_grid.write(CalculateGrid {
+                        cell_size: self.occupancy_display.cell_size,
+                        floor: 0.01,
+                        ceiling: 1.5,
+                        ignore: self.robots.iter().collect(),
+                    });
                     self.negotiation_request.write(NegotiationRequest);
                 }
             });
