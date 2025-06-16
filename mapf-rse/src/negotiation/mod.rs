@@ -31,10 +31,9 @@ use mapf::negotiation::*;
 use rmf_site_editor::{
     occupancy::{Cell, Grid},
     site::{
-        Affiliation, Anchor, CurrentLevel, GoToPlace, Group, LocationTags, ModelMarker, NameInSite,
-        Point, Pose, Robot, Task as RobotTask, TaskKind,
+        Affiliation, Anchor, CircleCollision, CurrentLevel, DifferentialDrive, GoToPlace, Group,
+        LocationTags, ModelMarker, NameInSite, Point, Pose, Robot, Task as RobotTask, TaskKind,
     },
-    widgets::{CircleCollision, DifferentialDrive}, // TODO(@xiyuoh) retrieve from rmf_site_format after SDF PR is merged
 };
 
 use mapf::negotiation::{Agent, Obstacle, Scenario as MapfScenario};

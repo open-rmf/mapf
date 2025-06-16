@@ -17,14 +17,8 @@
 
 use bevy::{ecs::hierarchy::ChildOf, prelude::*};
 use rmf_site_editor::{
-    widgets::{
-        // TODO(@xiyuoh) retrieve from rmf_site_format after SDF PR is merged
-        CircleCollision,
-        Collision,
-        DifferentialDrive,
-        Mobility,
-        RobotProperty,
-        RobotPropertyKind,
+    site::{
+        CircleCollision, Collision, DifferentialDrive, Mobility, RobotProperty, RobotPropertyKind,
     },
     workspace::CurrentWorkspace,
 };
@@ -55,9 +49,7 @@ pub fn load_tiny_robot(
             "Open-RMF/TinyRobot/model.sdf".to_string(),
         )),
         is_static: ModelProperty(IsStatic(false)),
-        scale: ModelProperty(Scale::default()),
-        marker: ModelMarker,
-        group: Group,
+        ..default()
     };
 
     let mut robot = Robot::default();
