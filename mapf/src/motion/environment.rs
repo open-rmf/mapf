@@ -24,6 +24,8 @@ use crate::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
+    iter::Enumerate,
+    slice::Iter as SliceIter,
     sync::Arc,
 };
 
@@ -51,7 +53,7 @@ impl<W: Waypoint> Environment<CircularProfile, DynamicCircularObstacle<W>>
     for DynamicEnvironment<W>
 {
     type Obstacles<'a>
-        = impl Iterator<Item = &'a DynamicCircularObstacle<W>>
+        = SliceIter<'a, DynamicCircularObstacle<W>>
     where
         W: 'a;
 
@@ -320,7 +322,7 @@ impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstac
     for CcbsEnvironmentView<'e, W, K>
 {
     type Obstacles<'a>
-        = impl Iterator<Item = &'a DynamicCircularObstacle<W>>
+        = CcbsEnvironmentObstaclesIter<'a, W>
     where
         W: 'a,
         K: 'a,
@@ -335,25 +337,43 @@ impl<'e, W: Waypoint, K: Key> Environment<CircularProfile, DynamicCircularObstac
     }
 
     fn obstacles<'a>(&'a self) -> Self::Obstacles<'a> {
-        self.view
-            .base
-            .obstacles
-            .iter()
-            .enumerate()
-            .map(|(i, obs)| self.view.overlay.obstacles.get(&i).unwrap_or(obs))
-            .chain(
-                self.constraints
-                    .iter()
-                    .flat_map(|x| *x)
-                    .filter_map(|constraint| {
-                        if let Some(mask) = self.view.mask {
-                            if constraint.mask == mask {
-                                return None;
-                            }
-                        }
-                        Some(&constraint.obstacle)
-                    }),
-            )
+        CcbsEnvironmentObstaclesIter {
+            obstacle_overlay: &self.view.overlay.obstacles,
+            mask: self.view.mask,
+            obstacles: self.view.base.obstacles.iter().enumerate(),
+            constraints: self.constraints.as_ref().map(|obs| obs.iter()),
+        }
+    }
+}
+
+pub struct CcbsEnvironmentObstaclesIter<'a, W: Waypoint> {
+    obstacle_overlay: &'a HashMap<usize, DynamicCircularObstacle<W>>,
+    mask: Option<usize>,
+    obstacles: Enumerate<SliceIter<'a, DynamicCircularObstacle<W>>>,
+    constraints: Option<SliceIter<'a, CcbsConstraint<W>>>,
+}
+
+impl<'a, W: Waypoint> Iterator for CcbsEnvironmentObstaclesIter<'a, W> {
+    type Item = &'a DynamicCircularObstacle<W>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((i, obs)) = self.obstacles.next() {
+            return Some(self.obstacle_overlay.get(&i).unwrap_or(obs));
+        }
+
+        loop {
+            if let Some(constraint) = self.constraints.as_mut().map(|c| c.next()).flatten() {
+                if let Some(mask) = self.mask {
+                    if constraint.mask == mask {
+                        // Skip this one since it's masked
+                        continue;
+                    }
+                }
+
+                return Some(&constraint.obstacle);
+            }
+
+            return None;
+        }
     }
 }
 

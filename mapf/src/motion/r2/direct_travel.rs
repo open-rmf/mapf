@@ -78,7 +78,7 @@ where
                     .transpose()
                     .map(|x| x.flatten())
             })
-            .flatten()
+            .and_then(|x| x)
     }
 }
 

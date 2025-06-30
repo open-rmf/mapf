@@ -41,8 +41,7 @@ where
     type Extrapolation = Avoider::AvoidanceAction;
     type ExtrapolationError = Avoider::AvoidanceError;
     type ExtrapolationIter<'a>
-        = impl Iterator<Item = Result<(Avoider::AvoidanceAction, State), Self::ExtrapolationError>>
-        + 'a
+        = Avoider::AvoidanceActionIter<'a>
     where
         Self: 'a,
         Self::Extrapolation: 'a,
@@ -68,14 +67,12 @@ where
         Guidance: 'a,
         Key: 'a,
     {
-        self.avoider
-            .avoid_conflicts(
-                from_state,
-                to_target,
-                with_guidance,
-                for_keys,
-                &*self.environment,
-            )
-            .into_iter()
+        self.avoider.avoid_conflicts(
+            from_state,
+            to_target,
+            with_guidance,
+            for_keys,
+            &*self.environment,
+        )
     }
 }
