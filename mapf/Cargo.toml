@@ -32,3 +32,6 @@ slotmap = "1.0"
 
 [dev-dependencies]
 approx = "*"
+
+[features]
+serde = ["nalgebra/serde-serialize", "time-point/serde"]
