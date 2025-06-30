@@ -234,22 +234,6 @@ where
             None => ClosedStatus::Open,
         }
     }
-
-    type ClosedSetIter<'a>
-        = impl Iterator<Item = &'a T> + 'a
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a;
-
-    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a,
-    {
-        self.container.values().flat_map(|c| c.iter())
-    }
 }
 
 struct ClosedIntervals<T> {
@@ -344,12 +328,45 @@ impl<T> ClosedIntervals<T> {
         prior.into()
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T> + 'a {
-        self.indefinite_start.iter().chain(
-            self.intervals
-                .iter()
-                .filter_map(|(_, value)| value.as_ref()),
-        )
+    // This had been used for a method in the ClosedSet trait that allows
+    // debuggers to iterate over all items in the closed set. That method was
+    // removed to ease the migration to the stable toolchain, but we might
+    // bring it back in the future, so we leave this as unused for now.
+    #[allow(unused)]
+    fn values<'a>(&'a self) -> ClosedIntervalsValuesIter<'a, T> {
+        ClosedIntervalsValuesIter {
+            indefinite_start: self.indefinite_start.as_ref(),
+            intervals: self.intervals.iter(),
+        }
+    }
+}
+
+pub struct ClosedIntervalsValuesIter<'a, T> {
+    indefinite_start: Option<&'a T>,
+    intervals: std::slice::Iter<'a, (TimePoint, Option<T>)>,
+}
+
+impl<'a, T> Iterator for ClosedIntervalsValuesIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(indefinite_start) = self.indefinite_start.take() {
+                return Some(indefinite_start);
+            }
+
+            match self.intervals.next() {
+                Some((_, value)) => {
+                    if let Some(value) = value {
+                        return Some(value);
+                    }
+                    // If there was no value, then move onto the next iteration
+                    // of the loop.
+                }
+                // The values have been exhausted, so return None
+                None => return None,
+            }
+        }
     }
 }
 

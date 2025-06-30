@@ -236,3 +236,32 @@ where
         self.queue.peek().map(|n| n.0.evaluation.clone())
     }
 }
+
+/// This is implemented based off of
+/// `std::collections::binary_head::IntoIterSorted` which is an unstable feature
+/// of the standard library.
+pub struct BinaryHeapIntoIterSorted<T> {
+    inner: BinaryHeap<T>,
+}
+
+impl<T: Ord> Iterator for BinaryHeapIntoIterSorted<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.pop()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let exact = self.inner.len();
+        (exact, Some(exact))
+    }
+}
+
+pub trait IntoIterSorted<T> {
+    fn binary_heap_into_iter_sorted(self) -> BinaryHeapIntoIterSorted<T>;
+}
+
+impl<T: Ord> IntoIterSorted<T> for BinaryHeap<T> {
+    fn binary_heap_into_iter_sorted(self) -> BinaryHeapIntoIterSorted<T> {
+        BinaryHeapIntoIterSorted { inner: self }
+    }
+}

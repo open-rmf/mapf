@@ -115,7 +115,7 @@ where
 {
     type InitialError = Init::InitialError;
     type InitialStates<'a>
-        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+        = ManyInitIter<'a, StartIter, Goal, State, Init>
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -128,13 +128,56 @@ where
         Self: 'a,
         Self::InitialError: 'a,
         StartIter: 'a,
-        Goal: 'a,
+        Goal: 'a + Clone,
         State: 'a,
     {
-        let to_goal = to_goal.clone();
-        from_start
-            .into_iter()
-            .flat_map(move |start| self.0.initialize(start, &to_goal))
+        ManyInitIter {
+            current_iter: None,
+            remaining_iters: from_start.into_iter(),
+            init: &self.0,
+            goal: to_goal.clone(),
+        }
+    }
+}
+
+pub struct ManyInitIter<'a, StartIter, Goal, State, Init>
+where
+    StartIter: 'a + IntoIterator,
+    Init: 'a + Initializable<StartIter::Item, Goal, State>,
+    Goal: 'a,
+    State: 'a,
+    Init::InitialError: 'a,
+{
+    current_iter: Option<<Init::InitialStates<'a> as IntoIterator>::IntoIter>,
+    remaining_iters: StartIter::IntoIter,
+    init: &'a Init,
+    goal: Goal,
+}
+
+impl<'a, StartIter, Goal, State, Init> Iterator for ManyInitIter<'a, StartIter, Goal, State, Init>
+where
+    StartIter: 'a + IntoIterator,
+    Init: 'a + Initializable<StartIter::Item, Goal, State>,
+    Goal: 'a + Clone,
+    State: 'a,
+    Init::InitialError: 'a,
+{
+    type Item = Result<State, Init::InitialError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(iter) = &mut self.current_iter {
+                if let Some(next) = iter.next() {
+                    return Some(next);
+                }
+            }
+            self.current_iter = None;
+
+            if let Some(next_start) = self.remaining_iters.next() {
+                self.current_iter = Some(self.init.initialize(next_start, &self.goal).into_iter());
+            } else {
+                return None;
+            }
+        }
     }
 }
 
@@ -144,11 +187,16 @@ impl<Start, Goal, State, Init> Initializable<Start, Goal, State> for LiftInit<In
 where
     Init: Domain,
     Init::State: Into<State>,
-    Init: Initializable<Start, Goal, State>,
+    Init: Initializable<Start, Goal, Init::State>,
 {
     type InitialError = Init::InitialError;
     type InitialStates<'a>
-        = impl Iterator<Item = Result<State, Self::InitialError>> + 'a
+        = LiftInitIter<
+        <Init::InitialStates<'a> as IntoIterator>::IntoIter,
+        Init::State,
+        State,
+        Init::InitialError,
+    >
     where
         Self: 'a,
         Self::InitialError: 'a,
@@ -164,10 +212,26 @@ where
         Goal: 'a,
         State: 'a,
     {
-        self.0
-            .initialize(from_start, to_goal)
-            .into_iter()
-            .map(|s| s.into())
+        LiftInitIter::<_, Init::State, State, Init::InitialError> {
+            iter: self.0.initialize(from_start, to_goal).into_iter(),
+            _ignore: Default::default(),
+        }
+    }
+}
+
+pub struct LiftInitIter<InitIter, IterState, State, Error> {
+    iter: InitIter,
+    _ignore: std::marker::PhantomData<fn(IterState, State, Error)>,
+}
+
+impl<InitIter, IterState, State, Error> Iterator for LiftInitIter<InitIter, IterState, State, Error>
+where
+    InitIter: Iterator<Item = Result<IterState, Error>>,
+    IterState: Into<State>,
+{
+    type Item = Result<State, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|r| r.map(Into::into))
     }
 }
 
@@ -179,7 +243,7 @@ where
 {
     type InitialError = Base::Error;
     type InitialStates<'a>
-        = impl Iterator<Item = Result<Base::State, Base::Error>> + 'a
+        = IntoInitialStatesIter<'a, Base, Prop, Start, Goal>
     where
         Self: 'a,
         Base::Error: 'a,
@@ -195,10 +259,34 @@ where
         Start: 'a,
         Goal: 'a,
     {
-        self.prop
-            .initialize(from_start, to_goal)
-            .into_iter()
-            .map(|r| r.map(Into::into).map_err(Into::into))
+        IntoInitialStatesIter {
+            iter: self.prop.initialize(from_start, to_goal).into_iter(),
+        }
+    }
+}
+
+pub struct IntoInitialStatesIter<'a, Base, Prop, Start, Goal>
+where
+    Base: 'a + Domain,
+    Prop: 'a + Initializable<Start, Goal, Base::State>,
+    Prop::InitialError: 'a + Into<Base::Error>,
+    Start: 'a,
+    Goal: 'a,
+{
+    iter: <Prop::InitialStates<'a> as IntoIterator>::IntoIter,
+}
+
+impl<'a, Base, Prop, Start, Goal> Iterator for IntoInitialStatesIter<'a, Base, Prop, Start, Goal>
+where
+    Base: 'a + Domain,
+    Prop: 'a + Initializable<Start, Goal, Base::State>,
+    Prop::InitialError: 'a + Into<Base::Error>,
+    Start: 'a,
+    Goal: 'a,
+{
+    type Item = Result<Base::State, Base::Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|r| r.map_err(Into::into))
     }
 }
 

@@ -93,7 +93,7 @@ pub trait Graph {
         Self::EdgeAttributes: 'a;
 
     /// Get the "lazy" edges that exist between from_key and to_key. Lazy Graphs
-    /// ("lazy" in the sense of lazy evaluation) can cover more space with less
+    /// ("lazy" in the sense of "lazy evaluation") can cover more space with less
     /// branching by not returning all possible edges in the `edges_from_vertex`
     /// function and instead only returning edges that lead to critical vertices.
     /// Then those critical vertices can be supplemented with this

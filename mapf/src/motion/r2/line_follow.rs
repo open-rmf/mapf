@@ -31,10 +31,9 @@ use crate::{
         },
         se2, Duration, SafeArrivalTimes, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
     },
-    util::ForkIter,
 };
 use arrayvec::ArrayVec;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineFollow {
@@ -199,8 +198,7 @@ where
 {
     type AvoidanceAction = SmallVec<[SafeAction<WaypointR2, WaitForObstacle>; 5]>;
     type AvoidanceActionIter<'a>
-        = impl IntoIterator<Item = Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>>
-        + 'a
+        = SmallVec<[Result<(Self::AvoidanceAction, WaypointR2), Self::AvoidanceError>; 8]>
     where
         Target: 'a,
         Guidance: 'a,
@@ -234,20 +232,14 @@ where
         ) {
             Ok(extrapolation) => extrapolation.1,
             Err(err) => {
-                return ForkIter::Left(
-                    Some(Err(SafeIntervalMotionError::Extrapolator(err))).into_iter(),
-                )
+                return smallvec![Err(SafeIntervalMotionError::Extrapolator(err))];
             }
         };
 
         let mut safe_arrival_times = match target_key {
             Some(target_key) => match safe_intervals.safe_intervals_for(&target_key) {
                 Ok(r) => r,
-                Err(err) => {
-                    return ForkIter::Left(
-                        Some(Err(SafeIntervalMotionError::Cache(err))).into_iter(),
-                    )
-                }
+                Err(err) => return smallvec![Err(SafeIntervalMotionError::Cache(err))],
             },
             None => SafeArrivalTimes::new(),
         };
@@ -266,7 +258,7 @@ where
         let ranked_hints =
             compute_safe_linear_path_wait_hints((&from_point, &to_point), None, &environment_view);
 
-        let paths: SmallVec<[_; 5]> = safe_arrival_times
+        safe_arrival_times
             .into_iter()
             .filter_map(move |arrival_time| {
                 compute_safe_arrival_path(
@@ -284,9 +276,7 @@ where
                 let wp = *action.last().unwrap().movement().unwrap();
                 Ok((action, wp))
             })
-            .collect();
-
-        ForkIter::Right(paths.into_iter())
+            .collect()
     }
 }
 
