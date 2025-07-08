@@ -2,3 +2,49 @@
 members = [ "mapf", "mapf-rse"]
 
 resolver = "2"
+
+[patch.crates-io]
+bevy = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_a11y = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_animation = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_app = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_asset = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_audio = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_color = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_core_pipeline = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_derive = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_dev_tools = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_diagnostic = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_dylib = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_ecs = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_encase_derive = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_gilrs = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_gizmos = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_gltf = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_image = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_input = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_input_focus = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_internal = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_log = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_macro_utils = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_math = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_mesh = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_mikktspace = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_pbr = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_picking = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_platform = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_ptr = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_reflect = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_remote = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_render = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_scene = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_sprite = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_state = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_tasks = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_text = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_time = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_transform = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_ui = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_utils = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_window = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
+bevy_winit = { git = "https://github.com/xiyuoh/bevy", branch = "fix-specialize-panic" }
