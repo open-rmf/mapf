@@ -21,6 +21,8 @@ use crate::{
     graph::{Edge, Graph},
 };
 
+use std::slice::Iter as SliceIter;
+
 #[derive(Debug, Clone, Default)]
 pub struct SimpleGraph<V, E> {
     pub vertices: Vec<V>,
@@ -95,19 +97,22 @@ impl<V, E> Graph for SimpleGraph<V, E> {
     type Vertex = V;
     type EdgeAttributes = E;
 
-    type VertexRef<'a> = &'a Self::Vertex
+    type VertexRef<'a>
+        = &'a Self::Vertex
     where
         Self::Vertex: 'a,
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type Edge<'a> = (usize, usize, &'a E)
+    type Edge<'a>
+        = (usize, usize, &'a E)
     where
         Self::Vertex: 'a,
         Self::Key: 'a,
         Self::EdgeAttributes: 'a;
 
-    type EdgeIter<'a> = impl Iterator<Item=(usize, usize, &'a E)> + 'a
+    type EdgeIter<'a>
+        = SimpleGraphEdges<'a, E>
     where
         V: 'a,
         E: 'a;
@@ -121,15 +126,14 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         V: 'a,
         E: 'a,
     {
-        let from_key = *from_key;
-        self.edges
-            .get(from_key)
-            .into_iter()
-            .flat_map(|outgoing| outgoing.iter())
-            .map(move |(to_key, attr)| (from_key, *to_key, attr))
+        SimpleGraphEdges {
+            edges: self.edges.get(*from_key).map(|edges| edges.iter()),
+            from_key: *from_key,
+        }
     }
 
-    type LazyEdgeIter<'a> = [(usize, usize, &'a E); 0]
+    type LazyEdgeIter<'a>
+        = [(usize, usize, &'a E); 0]
     where
         V: 'a,
         E: 'a;
@@ -140,5 +144,21 @@ impl<V, E> Graph for SimpleGraph<V, E> {
         E: 'a,
     {
         []
+    }
+}
+
+pub struct SimpleGraphEdges<'a, E> {
+    edges: Option<SliceIter<'a, (usize, E)>>,
+    from_key: usize,
+}
+
+impl<'a, E> Iterator for SimpleGraphEdges<'a, E> {
+    type Item = (usize, usize, &'a E);
+    fn next(&mut self) -> Option<Self::Item> {
+        let from_key = self.from_key;
+        self.edges
+            .as_mut()
+            .map(|edges| edges.next().map(|(to_key, attr)| (from_key, *to_key, attr)))
+            .flatten()
     }
 }

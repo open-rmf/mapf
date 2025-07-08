@@ -48,7 +48,8 @@ pub trait Connectable<State, Action, Target> {
 // any connection.
 impl<State, Action, Target> Connectable<State, Action, Target> for () {
     type ConnectionError = NoError;
-    type Connections<'a> = [Result<(Action, State), NoError>; 0]
+    type Connections<'a>
+        = [Result<(Action, State), NoError>; 0]
     where
         Action: 'a,
         State: 'a,
@@ -74,7 +75,8 @@ where
     State: Clone,
 {
     type ConnectionError = Prop::ConnectionError;
-    type Connections<'a> = impl IntoIterator<Item = Result<(Action, State), Self::ConnectionError>> + 'a
+    type Connections<'a>
+        = ChainedConnections<'a, Base, Prop, State, Action, Target>
     where
         Self: 'a,
         Self::ConnectionError: 'a,
@@ -90,13 +92,43 @@ where
         Action: 'a,
         Target: 'a,
     {
-        self.base
-            .connect(from_state.clone(), to_target)
-            .into_iter()
-            .map(|r| {
-                r.map(|(action, state)| (action.into(), state))
-                    .map_err(Into::into)
-            })
-            .chain(self.prop.connect(from_state, to_target).into_iter())
+        ChainedConnections::<Base, Prop, State, Action, Target> {
+            base_connections: self.base.connect(from_state.clone(), to_target).into_iter(),
+            prop_connections: self.prop.connect(from_state, to_target).into_iter(),
+        }
+    }
+}
+
+pub struct ChainedConnections<'a, Base, Prop, State, Action, Target>
+where
+    Base: Connectable<State, Action, Target> + 'a,
+    Prop: Connectable<State, Action, Target> + 'a,
+    Base::ConnectionError: 'a,
+    State: 'a,
+    Action: 'a,
+    Target: 'a,
+{
+    base_connections: <Base::Connections<'a> as IntoIterator>::IntoIter,
+    prop_connections: <Prop::Connections<'a> as IntoIterator>::IntoIter,
+}
+
+impl<'a, Base, Prop, State, Action, Target> Iterator
+    for ChainedConnections<'a, Base, Prop, State, Action, Target>
+where
+    Base: Connectable<State, Action, Target> + 'a,
+    Prop: Connectable<State, Action, Target> + 'a,
+    Base::ConnectionError: 'a + Into<Prop::ConnectionError>,
+    State: 'a,
+    Action: 'a,
+    Target: 'a,
+{
+    type Item = Result<(Action, State), Prop::ConnectionError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(next) = self.base_connections.next() {
+            let next = next.map_err(Into::into);
+            return Some(next);
+        }
+
+        self.prop_connections.next()
     }
 }

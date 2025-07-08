@@ -120,21 +120,6 @@ where
         let key = self.keyring.key_for(state);
         self.container.get(key.borrow()).into()
     }
-
-    type ClosedSetIter<'a> = impl Iterator<Item=&'a T> + 'a
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a;
-
-    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a,
-    {
-        self.container.values()
-    }
 }
 
 impl<Ring: Keyed, T> ClosedStatusForKey<Ring::Key, T> for KeyedClosedSet<Ring, T> {

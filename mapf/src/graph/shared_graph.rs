@@ -76,15 +76,18 @@ impl<G: Graph> Graph for SharedGraph<G> {
     type Key = G::Key;
     type EdgeAttributes = G::EdgeAttributes;
 
-    type VertexRef<'a> = G::VertexRef<'a>
+    type VertexRef<'a>
+        = G::VertexRef<'a>
     where
         G: 'a;
 
-    type Edge<'a> = G::Edge<'a>
+    type Edge<'a>
+        = G::Edge<'a>
     where
         G: 'a;
 
-    type EdgeIter<'a> = G::EdgeIter<'a>
+    type EdgeIter<'a>
+        = G::EdgeIter<'a>
     where
         G: 'a;
 
@@ -102,7 +105,8 @@ impl<G: Graph> Graph for SharedGraph<G> {
         self.graph.edges_from_vertex(key)
     }
 
-    type LazyEdgeIter<'a> = G::LazyEdgeIter<'a>
+    type LazyEdgeIter<'a>
+        = G::LazyEdgeIter<'a>
     where
         G: 'a;
 

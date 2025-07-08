@@ -14,62 +14,59 @@
  * limitations under the License.
  *
 */
-#![feature(array_windows, binary_heap_into_iter_sorted)]
 
-use time_point::{TimePoint, Duration};
+use clap::Parser;
 use iced::{
-    Application, Alignment, Element, Length, Command, Column, Row, Text, Container, Radio,
-    slider::{self, Slider},
-    scrollable::{self, Scrollable},
-    text_input::{self, TextInput},
     button::{self, Button},
     canvas::{self, Event, Path, Stroke},
     executor, keyboard, mouse,
     pick_list::{self, PickList},
+    scrollable::{self, Scrollable},
+    slider::{self, Slider},
+    text_input::{self, TextInput},
+    Alignment, Application, Column, Command, Container, Element, Length, Radio, Row, Text,
 };
 use iced_native;
 use mapf::{
+    algorithm::{
+        tree::{IntoIterSorted, NodeContainer},
+        AStarConnect, QueueLength, SearchStatus,
+    },
     graph::{
+        occupancy::{Accessibility, AccessibilityGraph, Cell, Grid, SparseGrid},
         SharedGraph,
-        occupancy::{SparseGrid, Cell, Grid, AccessibilityGraph, Accessibility},
     },
     motion::{
-        Trajectory, Motion, CcbsEnvironment, DynamicEnvironment,
-        CircularProfile, DynamicCircularObstacle, TravelEffortCost,
         se2::{
-            Point, LinearTrajectorySE2, Vector, WaypointSE2, GoalSE2,
-            DifferentialDriveLineFollow,
+            DifferentialDriveLineFollow, GoalSE2, LinearTrajectorySE2, Point, Vector, WaypointSE2,
         },
+        CcbsEnvironment, CircularProfile, DynamicCircularObstacle, DynamicEnvironment, Motion,
+        Trajectory, TravelEffortCost,
     },
-    templates::InformedSearch,
+    negotiation::*,
+    planner::halt::QueueLengthLimit,
     planner::{Planner, Search},
     premade::SippSE2,
-    algorithm::{AStarConnect, SearchStatus, tree::NodeContainer, QueueLength},
-    planner::halt::QueueLengthLimit,
-    negotiation::*,
-};
-use mapf_viz::{
-    SparseGridAccessibilityVisual, InfiniteGrid,
-    spatial_canvas::{SpatialCanvas, SpatialCanvasProgram, SpatialCache, InclusionZone},
-    toggle::{Toggle, Toggler, KeyToggler},
+    templates::InformedSearch,
 };
 use mapf_viz::spatial_layers;
+use mapf_viz::{
+    spatial_canvas::{InclusionZone, SpatialCache, SpatialCanvas, SpatialCanvasProgram},
+    toggle::{KeyToggler, Toggle, Toggler},
+    InfiniteGrid, SparseGridAccessibilityVisual,
+};
+use rfd::FileDialog;
 use std::{
-    collections::{HashMap, BTreeMap},
+    collections::{BTreeMap, HashMap},
     sync::Arc,
 };
-use native_dialog::FileDialog;
-use clap::Parser;
+use time_point::{Duration, TimePoint};
 
 type SparseAccessibility = Accessibility<SparseGrid>;
 
 const ASCII_UPPER: [char; 26] = [
-    'A', 'B', 'C', 'D', 'E',
-    'F', 'G', 'H', 'I', 'J',
-    'K', 'L', 'M', 'N', 'O',
-    'P', 'Q', 'R', 'S', 'T',
-    'U', 'V', 'W', 'X', 'Y',
-    'Z',
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+    'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
 
 fn generate_robot_name(mut index: usize) -> String {
@@ -126,7 +123,7 @@ pub(crate) struct Minimum<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> {
 
 impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
     pub(crate) fn new(f: F) -> Self {
-        Self{value: None, f}
+        Self { value: None, f }
     }
 
     pub(crate) fn consider(&mut self, other: &T) -> bool {
@@ -152,7 +149,6 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> Minimum<T, F> {
     }
 }
 
-
 fn draw_agent(
     frame: &mut canvas::Frame,
     point: Point,
@@ -160,38 +156,33 @@ fn draw_agent(
     agent_radius: f32,
     color: iced::Color,
 ) {
-    frame.with_save(
-        |frame| {
-            frame.translate([point.x as f32, point.y as f32].into());
-            frame.fill(&Path::circle([0, 0].into(), agent_radius), color);
+    frame.with_save(|frame| {
+        frame.translate([point.x as f32, point.y as f32].into());
+        frame.fill(&Path::circle([0, 0].into(), agent_radius), color);
 
-            if let Some(angle) = angle {
-                frame.rotate(angle as f32);
-                let r = 0.8 * agent_radius;
-                let angle_to_point = |angle: f32| {
-                    iced::Point::new(r * f32::cos(angle), r * f32::sin(angle))
-                };
+        if let Some(angle) = angle {
+            frame.rotate(angle as f32);
+            let r = 0.8 * agent_radius;
+            let angle_to_point =
+                |angle: f32| iced::Point::new(r * f32::cos(angle), r * f32::sin(angle));
 
-                let points: [iced::Point; 3] = [
-                    angle_to_point(-150_f32.to_radians()),
-                    angle_to_point(0_f32.to_radians()),
-                    angle_to_point(150_f32.to_radians()),
-                ];
+            let points: [iced::Point; 3] = [
+                angle_to_point(-150_f32.to_radians()),
+                angle_to_point(0_f32.to_radians()),
+                angle_to_point(150_f32.to_radians()),
+            ];
 
-                frame.fill(
-                    &Path::new(
-                        |builder| {
-                            builder.move_to(points[0]);
-                            builder.line_to(points[1]);
-                            builder.line_to(points[2]);
-                            builder.line_to(points[0]);
-                        }
-                    ),
-                    iced::Color::from_rgb(1.0, 1.0, 1.0)
-                );
-            }
+            frame.fill(
+                &Path::new(|builder| {
+                    builder.move_to(points[0]);
+                    builder.line_to(points[1]);
+                    builder.line_to(points[2]);
+                    builder.line_to(points[0]);
+                }),
+                iced::Color::from_rgb(1.0, 1.0, 1.0),
+            );
         }
-    );
+    });
 }
 
 fn draw_trajectory(
@@ -200,7 +191,7 @@ fn draw_trajectory(
     color: iced::Color,
     width: Option<f32>,
 ) {
-    for [wp0, wp1] in trajectory.array_windows() {
+    for [wp0, wp1] in trajectory.iter().pairs() {
         let p0 = wp0.position.translation;
         let p1 = wp1.position.translation;
         frame.stroke(
@@ -208,11 +199,11 @@ fn draw_trajectory(
                 [p0.x as f32, p0.y as f32].into(),
                 [p1.x as f32, p1.y as f32].into(),
             ),
-            Stroke{
+            Stroke {
                 color,
                 width: width.unwrap_or(3_f32),
                 ..Default::default()
-            }
+            },
         );
     }
 }
@@ -301,7 +292,6 @@ enum EndpointSelection {
 }
 
 impl<Message> EndpointSelector<Message> {
-
     fn new(
         agents: BTreeMap<String, Agent>,
         cell_size: f64,
@@ -311,8 +301,11 @@ impl<Message> EndpointSelector<Message> {
         goal_color: iced::Color,
     ) -> Self {
         let selected_agent = agents.iter().next().map(|r| r.0.clone());
-        Self{
-            agents: agents.into_iter().map(|(name, a)| (name, AgentContext::new(a))).collect(),
+        Self {
+            agents: agents
+                .into_iter()
+                .map(|(name, a)| (name, AgentContext::new(a)))
+                .collect(),
             selected_agent,
             cell_size,
             invalid_color,
@@ -342,14 +335,17 @@ impl<Message> EndpointSelector<Message> {
     }
 
     fn update_endpoint_conflicts(
-        &mut self, endpoint: Endpoint,
+        &mut self,
+        endpoint: Endpoint,
         accessibility: &SparseAccessibility,
     ) {
-        let Some(selected) = &self.selected_agent else { return };
+        let Some(selected) = &self.selected_agent else {
+            return;
+        };
         let cell: Cell = if let Some(ctx) = self.agents.get(selected) {
             endpoint.of(&ctx.agent)
         } else {
-            return
+            return;
         };
 
         let cs = accessibility.grid().cell_size();
@@ -361,7 +357,10 @@ impl<Message> EndpointSelector<Message> {
 
             endpoint.set_accessibility(
                 ctx,
-                accessibility.grid().is_circle_occupied(p, ctx.agent.radius).is_none(),
+                accessibility
+                    .grid()
+                    .is_circle_occupied(p, ctx.agent.radius)
+                    .is_none(),
             );
         }
 
@@ -379,7 +378,9 @@ impl<Message> EndpointSelector<Message> {
         });
 
         for name in invalidated {
-            let Some(ctx) = self.agents.get_mut(&name) else { continue };
+            let Some(ctx) = self.agents.get_mut(&name) else {
+                continue;
+            };
             endpoint.set_availability(ctx, false);
         }
     }
@@ -409,8 +410,12 @@ impl<Message> EndpointSelector<Message> {
     fn set_endpoint_valid(&mut self, choice: Endpoint, valid: bool) {
         if let Some(ctx) = self.selected_agent_mut() {
             match choice {
-                Endpoint::Start => { ctx.start_open = valid; },
-                Endpoint::Goal => { ctx.goal_open = valid; },
+                Endpoint::Start => {
+                    ctx.start_open = valid;
+                }
+                Endpoint::Goal => {
+                    ctx.goal_open = valid;
+                }
             }
         }
     }
@@ -430,7 +435,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
     fn update(
         &mut self,
         event: iced::canvas::Event,
-        cursor: iced::canvas::Cursor
+        cursor: iced::canvas::Cursor,
     ) -> (SpatialCache, iced::canvas::event::Status, Option<Message>) {
         if let Some(p) = cursor.position() {
             match event {
@@ -439,33 +444,47 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                         let endpoint = match event {
                             mouse::Event::ButtonPressed(mouse::Button::Left) => Endpoint::Start,
                             mouse::Event::ButtonPressed(mouse::Button::Right) => Endpoint::Goal,
-                            _ => return (SpatialCache::Unchanged, canvas::event::Status::Ignored, None),
+                            _ => {
+                                return (
+                                    SpatialCache::Unchanged,
+                                    canvas::event::Status::Ignored,
+                                    None,
+                                )
+                            }
                         };
 
                         let cell_size = self.cell_size;
                         if let Some(cell) = self.endpoint_cell_mut(endpoint) {
-                            *cell = Cell::from_point([p.x as f64, p.y as f64].into(), cell_size).into();
+                            *cell =
+                                Cell::from_point([p.x as f64, p.y as f64].into(), cell_size).into();
                         }
 
                         return (
                             SpatialCache::Refresh,
                             canvas::event::Status::Captured,
-                            Some(Message::EndpointSelected(
-                                EndpointSelection::Cell(endpoint)
-                            ))
+                            Some(Message::EndpointSelected(EndpointSelection::Cell(endpoint))),
                         );
                     }
-                },
+                }
                 Event::Keyboard(event) => {
                     self.shift.key_toggle(event);
                 }
             }
         }
 
-        return (SpatialCache::Unchanged, canvas::event::Status::Ignored, None);
+        return (
+            SpatialCache::Unchanged,
+            canvas::event::Status::Ignored,
+            None,
+        );
     }
 
-    fn draw_in_space(&self, frame: &mut canvas::Frame, _spatial_bounds: iced::Rectangle, _spatial_cursor: canvas::Cursor) {
+    fn draw_in_space(
+        &self,
+        frame: &mut canvas::Frame,
+        _spatial_bounds: iced::Rectangle,
+        _spatial_cursor: canvas::Cursor,
+    ) {
         for (name, ctx) in &self.agents {
             if self.show_details {
                 if ctx.start_sees_goal {
@@ -476,27 +495,36 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                     frame.stroke(
                         &Path::line(
                             [p_start.x as f32, p_start.y as f32].into(),
-                            [p_goal.x as f32, p_goal.y as f32].into()
+                            [p_goal.x as f32, p_goal.y as f32].into(),
                         ),
-                        Stroke{
+                        Stroke {
                             color: self.selected_color,
                             width: 5_f32,
                             ..Default::default()
-                        }
+                        },
                     );
                 }
             }
 
             for (cell, angle, color, valid) in [
-                (ctx.agent.start, Some(ctx.agent.yaw), self.start_color, ctx.start_valid()),
-                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid())
+                (
+                    ctx.agent.start,
+                    Some(ctx.agent.yaw),
+                    self.start_color,
+                    ctx.start_valid(),
+                ),
+                (ctx.agent.goal, None, self.goal_color, ctx.goal_valid()),
             ] {
                 let radius = ctx.agent.radius as f32;
                 let cell: Cell = cell.into();
                 let p = cell.center_point(self.cell_size);
 
                 draw_agent(frame, p, angle, radius, color);
-                let is_selected = self.selected_agent.as_ref().filter(|n| **n == *name).is_some();
+                let is_selected = self
+                    .selected_agent
+                    .as_ref()
+                    .filter(|n| **n == *name)
+                    .is_some();
                 if !valid || is_selected {
                     let color = if !valid {
                         self.invalid_color
@@ -506,7 +534,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
 
                     frame.stroke(
                         &Path::circle([p.x as f32, p.y as f32].into(), radius),
-                        Stroke{
+                        Stroke {
                             color,
                             width: 5_f32,
                             ..Default::default()
@@ -521,10 +549,12 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
         &self,
         hud: &'a mut mapf_viz::spatial_canvas::SpatialHUD<'b>,
         bounds: iced::Rectangle,
-        _cursor: canvas::Cursor
+        _cursor: canvas::Cursor,
     ) {
         for (name, ctx) in &self.agents {
-            for (kind, cell, offset) in [("Start", ctx.agent.start, -16), ("Goal", ctx.agent.goal, 0)] {
+            for (kind, cell, offset) in
+                [("Start", ctx.agent.start, -16), ("Goal", ctx.agent.goal, 0)]
+            {
                 let cell: Cell = cell.into();
                 let p = cell.center_point(self.cell_size);
                 let r = ctx.agent.radius as f32;
@@ -532,13 +562,12 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                 let p = iced::Point::new(p.x as f32, p.y as f32) + delta;
 
                 if bounds.contains(p) {
-                    hud.at(
-                        p,
-                        |frame| {
-                            frame.translate(iced::Vector::new(0.0, offset as f32));
-                            frame.fill_text(format!("{} {}: ({}, {})", name, kind, cell.x, cell.y).to_owned());
-                        }
-                    )
+                    hud.at(p, |frame| {
+                        frame.translate(iced::Vector::new(0.0, offset as f32));
+                        frame.fill_text(
+                            format!("{} {}: ({}, {})", name, kind, cell.x, cell.y).to_owned(),
+                        );
+                    })
                 }
             }
         }
@@ -552,7 +581,7 @@ impl SpatialCanvasProgram<Message> for EndpointSelector<Message> {
                 let p = cell.center_point(self.cell_size);
                 for v in [[1.0, 1.0], [-1.0, -1.0]] {
                     let v: Vector = v.into();
-                    let r = p + ctx.agent.radius*v;
+                    let r = p + ctx.agent.radius * v;
                     zone.include([r.x as f32, r.y as f32].into());
                 }
             }
@@ -633,7 +662,6 @@ impl SolutionVisual<Message> {
     }
 
     fn tick(&mut self) -> bool {
-
         if let Some((start, end)) = self.time_range() {
             let duration = end - start;
             if let Some(start) = self.tick_start {
@@ -661,10 +689,9 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         &self,
         frame: &mut canvas::Frame,
         _spatial_bounds: iced::Rectangle,
-        _spatial_cursor: canvas::Cursor
+        _spatial_cursor: canvas::Cursor,
     ) {
         if let Some((t0, _)) = self.time_range() {
-
             for (_, trajectory) in &self.searches {
                 draw_trajectory(frame, trajectory, self.search_color, None);
             }
@@ -722,18 +749,15 @@ impl SpatialCanvasProgram<Message> for SolutionVisual<Message> {
         &self,
         hud: &'a mut mapf_viz::spatial_canvas::SpatialHUD<'b>,
         bound: iced::Rectangle,
-        _spatial_cursor: canvas::Cursor
+        _spatial_cursor: canvas::Cursor,
     ) {
         for (cell, v) in &self.vertex_lookup {
             let p = cell.center_point(self.cell_size);
             let p = iced::Point::new(p.x as f32, p.y as f32);
             if bound.contains(p) {
-                hud.at(
-                    p,
-                    |frame| {
-                        frame.fill_text(format!("{v}"));
-                    }
-                );
+                hud.at(p, |frame| {
+                    frame.fill_text(format!("{v}"));
+                });
             }
         }
     }
@@ -788,11 +812,11 @@ impl App {
     const TICK_COUNT: u32 = 1000;
 
     fn get_tick(x: f64, min: f64, max: f64) -> u32 {
-        ((x - min)/(max - min) * Self::TICK_COUNT as f64) as u32
+        ((x - min) / (max - min) * Self::TICK_COUNT as f64) as u32
     }
 
     fn from_tick(x: u32, min: f64, max: f64) -> f64 {
-        x as f64 * (max - min)/(Self::TICK_COUNT as f64) + min
+        x as f64 * (max - min) / (Self::TICK_COUNT as f64) + min
     }
 
     fn default_invalid_color() -> iced::Color {
@@ -822,7 +846,10 @@ impl App {
         let out_file = match std::fs::File::create(filename) {
             Ok(r) => r,
             Err(err) => {
-                println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
+                println!(
+                    "Unable to save to file {}: {:?}",
+                    self.file_text_input_value, err
+                );
                 return;
             }
         };
@@ -832,7 +859,10 @@ impl App {
         match serde_yaml::to_writer(out_file, &scenario) {
             Ok(()) => {}
             Err(err) => {
-                println!("Unable to save to file {}: {:?}", self.file_text_input_value, err);
+                println!(
+                    "Unable to save to file {}: {:?}",
+                    self.file_text_input_value, err
+                );
                 return;
             }
         }
@@ -846,7 +876,14 @@ impl App {
                 if let Some(cell) = endpoint_selector.endpoint_cell(endpoint) {
                     let cell: Cell = (*cell).into();
                     let p = cell.center_point(endpoint_selector.cell_size);
-                    let valid = self.canvas.program.layers.1.grid().is_circle_occupied(p, radius).is_none();
+                    let valid = self
+                        .canvas
+                        .program
+                        .layers
+                        .1
+                        .grid()
+                        .is_circle_occupied(p, radius)
+                        .is_none();
                     endpoint_selector.set_endpoint_valid(endpoint, valid);
                 }
             }
@@ -878,25 +915,47 @@ impl App {
         if let Some(ticket) = self.search_memory.get(value) {
             if let Some((r, search)) = &self.search {
                 let solution = search
-                    .memory().0.arena
+                    .memory()
+                    .0
+                    .arena
                     .retrace(ticket.node_id)
                     .unwrap()
                     .make_trajectory()
                     .unwrap();
 
-                self.canvas.program.layers.3.solutions.extend(solution.map(|s| (*r, s.trajectory)).into_iter());
+                self.canvas
+                    .program
+                    .layers
+                    .3
+                    .solutions
+                    .extend(solution.map(|s| (*r, s.trajectory)).into_iter());
                 self.canvas.cache.clear();
 
                 self.canvas.program.layers.3.obstacles.clear();
                 if let Some(node) = search.memory().0.arena.get(ticket.node_id) {
                     if let Some(n) = self.negotiation_node_selected {
                         if let Some(n) = self.negotiation_history.get(n) {
-                            let agent_id = self.name_map.iter()
-                                .find(|(_, name)| **name == *self.canvas.program.layers.2.selected_agent.as_ref().unwrap())
+                            let agent_id = self
+                                .name_map
+                                .iter()
+                                .find(|(_, name)| {
+                                    **name
+                                        == *self
+                                            .canvas
+                                            .program
+                                            .layers
+                                            .2
+                                            .selected_agent
+                                            .as_ref()
+                                            .unwrap()
+                                })
                                 .map(|(i, _)| *i);
 
                             if let Some(agent_id) = agent_id {
-                                for obs in n.environment.iter_obstacles_from(node.state().key.vertex, agent_id) {
+                                for obs in n
+                                    .environment
+                                    .iter_obstacles_from(node.state().key.vertex, agent_id)
+                                {
                                     if let Some(t) = obs.trajectory() {
                                         let r = obs.profile().footprint_radius();
                                         self.canvas.program.layers.3.obstacles.push((r, t.clone()));
@@ -914,17 +973,32 @@ impl App {
         if let Some((radius, search)) = &mut self.search {
             self.debug_step_count += 1;
 
-            self.search_memory = search.memory().0
-                .queue.clone().into_iter_sorted()
-                .map(|n| n.0.clone()).collect();
+            self.search_memory = search
+                .memory()
+                .0
+                .queue
+                .clone()
+                .binary_heap_into_iter_sorted()
+                .map(|n| n.0.clone())
+                .collect();
 
             // TODO(@mxgrey): Make the number to take configurable
             for ticket in self.search_memory.iter().take(10) {
-                if let Some(mt) = search.memory().0
-                    .arena.retrace(ticket.node_id).unwrap()
-                    .make_trajectory().unwrap()
+                if let Some(mt) = search
+                    .memory()
+                    .0
+                    .arena
+                    .retrace(ticket.node_id)
+                    .unwrap()
+                    .make_trajectory()
+                    .unwrap()
                 {
-                    self.canvas.program.layers.3.searches.push((*radius, mt.trajectory));
+                    self.canvas
+                        .program
+                        .layers
+                        .3
+                        .searches
+                        .push((*radius, mt.trajectory));
                 }
             }
 
@@ -932,7 +1006,13 @@ impl App {
                 println!("Queue length: {}", search.memory().queue_length());
                 println!("Solution: {:#?}", solution);
                 self.canvas.program.layers.3.solutions.clear();
-                self.canvas.program.layers.3.solutions.extend(solution.make_trajectory().unwrap().map(|t| (*radius, t.trajectory)).into_iter());
+                self.canvas.program.layers.3.solutions.extend(
+                    solution
+                        .make_trajectory()
+                        .unwrap()
+                        .map(|t| (*radius, t.trajectory))
+                        .into_iter(),
+                );
                 self.debug_node_selected = None;
                 self.search = None;
             } else {
@@ -964,29 +1044,34 @@ impl App {
         // let goal = [5, 0];
         let yaw = 0.0;
         let agent = match self.canvas.program.layers.2.selected_agent() {
-            Some(ctx) => {
-                Agent {
-                    start,
-                    goal,
-                    yaw,
-                    ..ctx.agent
-                }
-            }
-            None => {
-                Agent {
-                    start,
-                    goal,
-                    yaw,
-                    radius: default_radius(),
-                    speed: default_speed(),
-                    spin: default_spin(),
-                }
-            }
+            Some(ctx) => Agent {
+                start,
+                goal,
+                yaw,
+                ..ctx.agent
+            },
+            None => Agent {
+                start,
+                goal,
+                yaw,
+                radius: default_radius(),
+                speed: default_speed(),
+                spin: default_spin(),
+            },
         };
 
-        self.canvas.program.layers.2.agents.insert(name.clone(), AgentContext::new(agent));
+        self.canvas
+            .program
+            .layers
+            .2
+            .agents
+            .insert(name.clone(), AgentContext::new(agent));
         self.canvas.program.layers.2.selected_agent = Some(name);
-        self.canvas.program.layers.1.set_robot_radius(agent.radius as f32);
+        self.canvas
+            .program
+            .layers
+            .1
+            .set_robot_radius(agent.radius as f32);
         self.update_all_endpoints();
         self.canvas.cache.clear();
         self.generate_plan();
@@ -995,8 +1080,15 @@ impl App {
     fn remove_agent(&mut self) {
         if let Some(selected) = &self.canvas.program.layers.2.selected_agent {
             self.canvas.program.layers.2.agents.remove(selected);
-            self.canvas.program.layers.2.selected_agent = self.canvas.program.layers.2.agents
-                .iter().next().map(|r| r.0.clone());
+            self.canvas.program.layers.2.selected_agent = self
+                .canvas
+                .program
+                .layers
+                .2
+                .agents
+                .iter()
+                .next()
+                .map(|r| r.0.clone());
         }
     }
 
@@ -1004,11 +1096,27 @@ impl App {
         let cell_size = self.canvas.program.layers.2.cell_size;
         let camera_bounds = match self.canvas.camera_bounds() {
             InclusionZone::Empty => None,
-            InclusionZone::Some { lower, upper } => Some([[lower.x, lower.y], [upper.x, upper.y]])
+            InclusionZone::Some { lower, upper } => Some([[lower.x, lower.y], [upper.x, upper.y]]),
         };
         Scenario {
-            agents: self.canvas.program.layers.2.agents.iter().map(|(n, a)| (n.clone(), a.agent.clone())).collect(),
-            obstacles: self.canvas.program.layers.3.obstacles.iter().map(|obs| Obstacle::new(obs.0, &obs.1, cell_size)).collect(),
+            agents: self
+                .canvas
+                .program
+                .layers
+                .2
+                .agents
+                .iter()
+                .map(|(n, a)| (n.clone(), a.agent.clone()))
+                .collect(),
+            obstacles: self
+                .canvas
+                .program
+                .layers
+                .3
+                .obstacles
+                .iter()
+                .map(|obs| Obstacle::new(obs.0, &obs.1, cell_size))
+                .collect(),
             occupancy: serialize_grid(self.canvas.program.layers.1.grid()),
             cell_size,
             camera_bounds,
@@ -1026,10 +1134,15 @@ impl App {
         if self.debug_planner_on {
             let endpoints = &self.canvas.program.layers.2;
             let accessibility = self.canvas.program.layers.1.accessibility();
-            let Some(ctx) = endpoints.selected_agent() else { return };
+            let Some(ctx) = endpoints.selected_agent() else {
+                return;
+            };
 
             if !ctx.endpoints_valid() {
-                print!("Cannot plan for {}:", endpoints.selected_agent.as_ref().unwrap());
+                print!(
+                    "Cannot plan for {}:",
+                    endpoints.selected_agent.as_ref().unwrap()
+                );
                 if !ctx.start_open {
                     print!(" invalid start |");
                 }
@@ -1047,7 +1160,8 @@ impl App {
             }
 
             let r = ctx.agent.radius;
-            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin).expect("Bad speeds");
+            let extrapolator = DifferentialDriveLineFollow::new(ctx.agent.speed, ctx.agent.spin)
+                .expect("Bad speeds");
             let profile = CircularProfile::new(r, 0.0, 0.0).expect("Bad profile sizes");
 
             let shared_accessibility = Arc::new(accessibility.clone());
@@ -1059,7 +1173,9 @@ impl App {
                 if let Some(n) = self.negotiation_node_selected {
                     if let Some(node) = self.negotiation_history.get(n) {
                         let mut env = node.environment.clone();
-                        let agent_id = self.name_map.iter()
+                        let agent_id = self
+                            .name_map
+                            .iter()
                             .find(|(_, name)| **name == *endpoints.selected_agent.as_ref().unwrap())
                             .map(|(i, _)| *i);
 
@@ -1075,31 +1191,32 @@ impl App {
                                 }
                             }
 
-                            let finish_time = node.proposals.values()
+                            let finish_time = node
+                                .proposals
+                                .values()
                                 .max_by_key(|t| t.meta.trajectory.finish_motion_time())
-                                .unwrap().meta.trajectory.finish_motion_time();
+                                .unwrap()
+                                .meta
+                                .trajectory
+                                .finish_motion_time();
 
                             break 'environment (Arc::new(env), Some(finish_time));
                         }
-
                     }
                 }
 
-                let environment = Arc::new(
-                    CcbsEnvironment::new(
-                        Arc::new({
-                            let mut env = DynamicEnvironment::new(profile);
-                            for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
-                                env.obstacles.push(
-                                    DynamicCircularObstacle::new(
-                                        CircularProfile::new(*obs_size, 0.0, 0.0).unwrap()
-                                    ).with_trajectory(Some(obs_traj.clone()))
-                                );
-                            }
-                            env
-                        })
-                    )
-                );
+                let environment = Arc::new(CcbsEnvironment::new(Arc::new({
+                    let mut env = DynamicEnvironment::new(profile);
+                    for (obs_size, obs_traj) in self.canvas.program.layers.3.obstacles.iter() {
+                        env.obstacles.push(
+                            DynamicCircularObstacle::new(
+                                CircularProfile::new(*obs_size, 0.0, 0.0).unwrap(),
+                            )
+                            .with_trajectory(Some(obs_traj.clone())),
+                        );
+                    }
+                    env
+                })));
 
                 let mut minimum_time: Option<TimePoint> = None;
                 for obs in environment.iter_all_obstacles() {
@@ -1117,11 +1234,9 @@ impl App {
                 heuristic_graph,
                 extrapolator,
                 environment,
-                TravelEffortCost::save_one_second_with_detour_up_to(
-                    5.0,
-                    360_f64.to_radians(),
-                ),
-            ).unwrap();
+                TravelEffortCost::save_one_second_with_detour_up_to(5.0, 360_f64.to_radians()),
+            )
+            .unwrap();
 
             let start = ctx.agent.make_start();
             let goal = ctx.agent.make_goal().with_minimum_time(minimum_time);
@@ -1131,17 +1246,22 @@ impl App {
                 endpoints.selected_agent.as_ref().unwrap(),
             );
 
-            let planner = Planner::new(AStarConnect(domain))
-                .with_halting(QueueLengthLimit(Some(1_000_000)));
-                // .with_halting(MeasureLimit(None));
+            let planner =
+                Planner::new(AStarConnect(domain)).with_halting(QueueLengthLimit(Some(1_000_000)));
+            // .with_halting(MeasureLimit(None));
             let search = planner.plan(start, goal).unwrap();
 
             self.canvas.program.layers.3.searches.clear();
             self.debug_step_count = 0;
             if self.debug_planner_on {
-                self.search_memory = search.memory().0
-                    .queue.clone().into_iter_sorted()
-                    .map(|n| n.0.clone()).collect();
+                self.search_memory = search
+                    .memory()
+                    .0
+                    .queue
+                    .clone()
+                    .binary_heap_into_iter_sorted()
+                    .map(|n| n.0.clone())
+                    .collect();
                 self.search = Some((r, search));
             }
             self.debug_node_selected = None;
@@ -1192,7 +1312,12 @@ impl App {
         for (i, proposal) in &solution_node.proposals {
             let name = name_map.get(i).unwrap();
             let r = scenario.agents.get(name).unwrap().radius;
-            self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
+            self.canvas
+                .program
+                .layers
+                .3
+                .solutions
+                .push((r, proposal.meta.trajectory.clone()));
         }
 
         if self.debug_negotiation_on {
@@ -1228,7 +1353,9 @@ fn load_file(filename: &String) -> Option<Scenario> {
     Some(scenario)
 }
 
-fn load_scenario(filename: Option<&String>) -> (
+fn load_scenario(
+    filename: Option<&String>,
+) -> (
     BTreeMap<String, Agent>,
     Vec<(f64, Trajectory<WaypointSE2>)>,
     SparseGrid,
@@ -1244,26 +1371,25 @@ fn load_scenario(filename: Option<&String>) -> (
         if let Some(scenario) = load_file(filename) {
             let cell_size = scenario.cell_size;
             agents = scenario.agents;
-            obstacles = scenario.obstacles.into_iter().filter_map(|obs| {
-                LinearTrajectorySE2::from_iter(
-                    obs.trajectory.into_iter()
-                    .map(|(t, x, y)| {
+            obstacles = scenario
+                .obstacles
+                .into_iter()
+                .filter_map(|obs| {
+                    LinearTrajectorySE2::from_iter(obs.trajectory.into_iter().map(|(t, x, y)| {
                         let p = Cell::new(x, y).center_point(cell_size);
                         WaypointSE2::new_f64(t, p.x, p.y, 0.0)
+                    }))
+                    .ok()
+                    .map(|t| {
+                        t.with_indefinite_initial_time(obs.indefinite_start)
+                            .with_indefinite_finish_time(obs.indefinite_finish)
                     })
-                ).ok()
-                .map(|t|
-                    t
-                    .with_indefinite_initial_time(obs.indefinite_start)
-                    .with_indefinite_finish_time(obs.indefinite_finish)
-                )
-                .map(|t| (obs.radius, t))
-            }).collect();
+                    .map(|t| (obs.radius, t))
+                })
+                .collect();
             for (y, row) in scenario.occupancy {
                 for x in row {
-                    grid.change_cells(
-                        &[(Cell::new(x, y), true)].into_iter().collect()
-                    );
+                    grid.change_cells(&[(Cell::new(x, y), true)].into_iter().collect());
                 }
             }
 
@@ -1287,32 +1413,31 @@ impl Application for App {
         let cell_size = 1.0_f32;
         let (agents, obstacles, grid, mut zone, _) = load_scenario(flags.filename.as_ref());
 
-        let mut canvas = SpatialCanvas::new(
-            GridLayers{
-                layers: (
-                    InfiniteGrid::new(cell_size),
-                    SparseGridAccessibilityVisual::new(
-                        grid,
-                        default_radius() as f32,
-                        Some(Box::new(|| { Message::OccupancyChanged })),
-                    ).showing_accessibility(true),
-                    EndpointSelector::new(
-                        agents,
-                        cell_size as f64,
-                        Self::default_invalid_color(),
-                        Self::default_selected_color(),
-                        Self::default_endpoint_color(Endpoint::Start),
-                        Self::default_endpoint_color(Endpoint::Goal),
-                    ),
-                    SolutionVisual::new(
-                        cell_size as f64,
-                        Self::default_solution_color(),
-                        Self::default_search_color(),
-                        obstacles,
-                    ),
+        let mut canvas = SpatialCanvas::new(GridLayers {
+            layers: (
+                InfiniteGrid::new(cell_size),
+                SparseGridAccessibilityVisual::new(
+                    grid,
+                    default_radius() as f32,
+                    Some(Box::new(|| Message::OccupancyChanged)),
                 )
-            }
-        );
+                .showing_accessibility(true),
+                EndpointSelector::new(
+                    agents,
+                    cell_size as f64,
+                    Self::default_invalid_color(),
+                    Self::default_selected_color(),
+                    Self::default_endpoint_color(Endpoint::Start),
+                    Self::default_endpoint_color(Endpoint::Goal),
+                ),
+                SolutionVisual::new(
+                    cell_size as f64,
+                    Self::default_solution_color(),
+                    Self::default_search_color(),
+                    obstacles,
+                ),
+            ),
+        });
         canvas.zoom = 20.0;
 
         let mut app = Self {
@@ -1360,22 +1485,24 @@ impl Application for App {
         let top_agent = app.canvas.program.layers.2.agents.iter().next();
         let set_agent = if let Some((top_agent, _)) = top_agent {
             let top_agent = top_agent.clone();
-            Some(Command::perform(async move {}, move |_| Message::SelectAgent(top_agent.clone())))
+            Some(Command::perform(async move {}, move |_| {
+                Message::SelectAgent(top_agent.clone())
+            }))
         } else {
             None
         };
 
-        (app, Command::batch([set_view].into_iter().chain(set_agent.into_iter())))
+        (
+            app,
+            Command::batch([set_view].into_iter().chain(set_agent.into_iter())),
+        )
     }
 
     fn title(&self) -> String {
         "Grid Planner".to_owned()
     }
 
-    fn update(
-        &mut self,
-        message: Self::Message
-    ) -> Command<Self::Message> {
+    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
             Message::AddAgent => {
                 self.add_agent();
@@ -1387,39 +1514,35 @@ impl Application for App {
             }
             Message::SaveFile | Message::SaveFileAs => {
                 if matches!(message, Message::SaveFileAs) {
-                    match FileDialog::new().show_save_single_file() {
-                        Ok(f) => match f {
-                            Some(f) => self.file_text_input_value = f.as_path().as_os_str().to_str().unwrap().to_owned(),
-                            None => return Command::none(),
-                        }
-                        Err(err) => {
-                            println!("Unable to select file: {err:?}");
-                            return Command::none();
-                        }
+                    if let Some(f) = FileDialog::new().save_file() {
+                        self.file_text_input_value =
+                            f.as_path().as_os_str().to_str().unwrap().to_owned();
+                    } else {
+                        return Command::none();
                     }
                 }
 
                 self.save_file(&self.file_text_input_value);
             }
             Message::LoadFile => {
-                match FileDialog::new().show_open_single_file() {
-                    Ok(f) => match f {
-                        Some(value) => self.file_text_input_value = value.as_path().as_os_str().to_str().unwrap().to_owned(),
-                        None => return Command::none(),
-                    }
-                    Err(err) => {
-                        println!("Unable to load selected file: {err:?}");
-                        return Command::none();
-                    }
+                if let Some(f) = FileDialog::new().pick_file() {
+                    self.file_text_input_value =
+                        f.as_path().as_os_str().to_str().unwrap().to_owned();
+                } else {
+                    return Command::none();
                 }
 
-                let (agents, obstacles, grid, zone, success) = load_scenario(Some(&self.file_text_input_value));
+                let (agents, obstacles, grid, zone, success) =
+                    load_scenario(Some(&self.file_text_input_value));
                 if !success {
                     return Command::none();
                 }
 
                 self.canvas.program.layers.1.set_grid(grid);
-                self.canvas.program.layers.2.agents = agents.into_iter().map(|(n, a)| (n, AgentContext::new(a))).collect();
+                self.canvas.program.layers.2.agents = agents
+                    .into_iter()
+                    .map(|(n, a)| (n, AgentContext::new(a)))
+                    .collect();
                 self.canvas.program.layers.3.obstacles = obstacles;
                 self.update_all_endpoints();
                 self.canvas.cache.clear();
@@ -1433,7 +1556,11 @@ impl Application for App {
                 match self.canvas.program.layers.2.agents.get(&new_agent) {
                     Some(ctx) => {
                         self.canvas.program.layers.2.selected_agent = Some(new_agent);
-                        self.canvas.program.layers.1.set_robot_radius(ctx.agent.radius as f32);
+                        self.canvas
+                            .program
+                            .layers
+                            .1
+                            .set_robot_radius(ctx.agent.radius as f32);
                         self.canvas.cache.clear();
                     }
                     None => {}
@@ -1486,19 +1613,23 @@ impl Application for App {
                             self.canvas.program.layers.1.show_accessibility = false;
                             self.canvas.program.layers.2.show_details = true;
                             self.canvas.cache.clear();
-                        },
+                        }
                         Toggle::Off => {
                             // self.canvas.program.layers.1.show_accessibility = false;
                             self.canvas.program.layers.1.show_accessibility = true;
                             self.canvas.program.layers.2.show_details = false;
                             self.canvas.cache.clear();
-                        },
+                        }
                         Toggle::NoChange => {
                             // Do nothing
                         }
                     }
 
-                    if let keyboard::Event::KeyPressed{key_code: keyboard::KeyCode::D, modifiers} = event {
+                    if let keyboard::Event::KeyPressed {
+                        key_code: keyboard::KeyCode::D,
+                        modifiers,
+                    } = event
+                    {
                         if modifiers.shift() {
                             self.debug_planner_on = false;
                             self.generate_plan();
@@ -1508,7 +1639,11 @@ impl Application for App {
                         }
                     }
 
-                    if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::N, modifiers } = event {
+                    if let keyboard::Event::KeyPressed {
+                        key_code: keyboard::KeyCode::N,
+                        modifiers,
+                    } = event
+                    {
                         if modifiers.shift() {
                             self.debug_negotiation_on = false;
                             self.negotiation_history.clear();
@@ -1518,39 +1653,59 @@ impl Application for App {
                         }
                     }
 
-                    if let keyboard::Event::KeyPressed{key_code: keyboard::KeyCode::S, ..} = event {
+                    if let keyboard::Event::KeyPressed {
+                        key_code: keyboard::KeyCode::S,
+                        ..
+                    } = event
+                    {
                         self.step_progress();
                     }
 
-                    if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Down, .. } = event {
+                    if let keyboard::Event::KeyPressed {
+                        key_code: keyboard::KeyCode::Down,
+                        ..
+                    } = event
+                    {
                         if self.debug_planner_on {
-                            let next_debug_node = self.debug_node_selected.map(|n| n+1).unwrap_or(0);
-                            return Command::perform(async move  {}, move |_| {
+                            let next_debug_node =
+                                self.debug_node_selected.map(|n| n + 1).unwrap_or(0);
+                            return Command::perform(async move {}, move |_| {
                                 Message::SelectDebugNode(next_debug_node)
                             });
                         } else {
-                            let next_negotiation_node = self.negotiation_node_selected.map(|n| n+1).unwrap_or(0);
-                            return Command::perform(async move  {}, move |_| {
+                            let next_negotiation_node =
+                                self.negotiation_node_selected.map(|n| n + 1).unwrap_or(0);
+                            return Command::perform(async move {}, move |_| {
                                 Message::SelectNegotiationNode(next_negotiation_node)
                             });
                         }
                     }
 
-                    if let keyboard::Event::KeyPressed { key_code: keyboard::KeyCode::Up, .. } = event {
+                    if let keyboard::Event::KeyPressed {
+                        key_code: keyboard::KeyCode::Up,
+                        ..
+                    } = event
+                    {
                         if self.debug_planner_on {
-                            let next_debug_node = self.debug_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
+                            let next_debug_node = self
+                                .debug_node_selected
+                                .map(|n| if n > 0 { n - 1 } else { 0 })
+                                .unwrap_or(0);
                             return Command::perform(async move {}, move |_| {
                                 Message::SelectDebugNode(next_debug_node)
                             });
                         } else {
-                            let next_negotiation_node = self.negotiation_node_selected.map(|n| if n > 0 { n-1 } else { 0 }).unwrap_or(0);
+                            let next_negotiation_node = self
+                                .negotiation_node_selected
+                                .map(|n| if n > 0 { n - 1 } else { 0 })
+                                .unwrap_or(0);
                             return Command::perform(async move {}, move |_| {
                                 Message::SelectNegotiationNode(next_negotiation_node)
                             });
                         }
                     }
                 }
-            },
+            }
             Message::EndpointSelected(selection) => {
                 match selection {
                     EndpointSelection::Cell(endpoint) => {
@@ -1561,18 +1716,19 @@ impl Application for App {
                     }
                 }
                 self.generate_plan();
-            },
+            }
             Message::OccupancyChanged => {
                 self.generate_plan();
-            },
+            }
             Message::SelectDebugNode(value) => {
                 self.select_search_node(value);
-            },
+            }
             Message::SelectNegotiationNode(value) => {
                 if self.negotiation_history.is_empty() {
                     self.negotiation_node_selected = None;
                 } else {
-                    self.negotiation_node_selected = Some(usize::min(value, self.negotiation_history.len() - 1));
+                    self.negotiation_node_selected =
+                        Some(usize::min(value, self.negotiation_history.len() - 1));
                 }
 
                 if let Some(node) = self.negotiation_history.get(value) {
@@ -1587,14 +1743,30 @@ impl Application for App {
                     self.canvas.program.layers.3.solutions.clear();
                     for (i, proposal) in &node.proposals {
                         let name = self.name_map.get(i).unwrap();
-                        let r = self.canvas.program.layers.2.agents.get(name).unwrap().agent.radius;
-                        self.canvas.program.layers.3.solutions.push((r, proposal.meta.trajectory.clone()));
+                        let r = self
+                            .canvas
+                            .program
+                            .layers
+                            .2
+                            .agents
+                            .get(name)
+                            .unwrap()
+                            .agent
+                            .radius;
+                        self.canvas
+                            .program
+                            .layers
+                            .3
+                            .solutions
+                            .push((r, proposal.meta.trajectory.clone()));
                     }
 
                     if let Some(conceded) = node.conceded {
                         if let Some(name) = self.name_map.get(&conceded) {
                             let name = name.clone();
-                            return Command::perform(async {}, move |_| Message::SelectAgent(name.clone()));
+                            return Command::perform(async {}, move |_| {
+                                Message::SelectAgent(name.clone())
+                            });
                         }
                     }
                 }
@@ -1615,7 +1787,7 @@ impl Application for App {
     fn subscription(&self) -> iced::Subscription<Message> {
         iced_native::Subscription::batch([
             iced_native::subscription::events().map(Message::EventOccurred),
-            iced::time::every(std::time::Duration::from_millis(50)).map(|_|{ Message::Tick }),
+            iced::time::every(std::time::Duration::from_millis(50)).map(|_| Message::Tick),
         ])
     }
 
@@ -1626,11 +1798,17 @@ impl Application for App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let (agent_yaw, agent_radius, agent_speed, agent_spin) = if let Some(ctx) = self.canvas.program.layers.2.selected_agent() {
-            (ctx.agent.yaw, ctx.agent.radius, ctx.agent.speed, ctx.agent.spin)
-        } else {
-            (0.0, default_radius(), default_speed(), default_spin())
-        };
+        let (agent_yaw, agent_radius, agent_speed, agent_spin) =
+            if let Some(ctx) = self.canvas.program.layers.2.selected_agent() {
+                (
+                    ctx.agent.yaw,
+                    ctx.agent.radius,
+                    ctx.agent.speed,
+                    ctx.agent.spin,
+                )
+            } else {
+                (0.0, default_radius(), default_speed(), default_spin())
+            };
         let yaw_tick = Self::get_tick(agent_yaw, MIN_AGENT_YAW, MAX_AGENT_YAW);
         let radius_tick = Self::get_tick(agent_radius, MIN_AGENT_RADIUS, MAX_AGENT_RADIUS);
         let speed_tick = Self::get_tick(agent_speed, MIN_AGENT_SPEED, MAX_AGENT_SPEED);
@@ -1641,22 +1819,15 @@ impl Application for App {
             .align_items(Alignment::Center)
             .width(Length::Fill)
             .push(
-                Button::new(
-                    &mut self.select_file_button,
-                    iced::Text::new("Save As...")
-                ).on_press(Message::SaveFileAs)
+                Button::new(&mut self.select_file_button, iced::Text::new("Save As..."))
+                    .on_press(Message::SaveFileAs),
             )
             .push({
-                Button::new(
-                    &mut self.load_button,
-                    iced::Text::new("Load")
-                ).on_press(Message::LoadFile)
+                Button::new(&mut self.load_button, iced::Text::new("Load"))
+                    .on_press(Message::LoadFile)
             })
             .push({
-                let button = Button::new(
-                    &mut self.save_button,
-                    iced::Text::new("Save")
-                );
+                let button = Button::new(&mut self.save_button, iced::Text::new("Save"));
                 if !self.file_text_input_value.is_empty() {
                     button.on_press(Message::SaveFile)
                 } else {
@@ -1668,87 +1839,87 @@ impl Application for App {
                     &mut self.file_text_input,
                     "Scenario File",
                     &mut self.file_text_input_value,
-                    Message::ScenarioFileInput
+                    Message::ScenarioFileInput,
                 )
-                .padding(10)
+                .padding(10),
             );
 
-        let mut agent_names: Vec<String> = self.canvas.program.layers.2.agents.iter().map(|(name, _)| name.clone()).collect();
+        let mut agent_names: Vec<String> = self
+            .canvas
+            .program
+            .layers
+            .2
+            .agents
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
         agent_names.sort_unstable();
         let robot_row = Row::new()
             .spacing(20)
             .align_items(Alignment::Center)
             .push(
-                Button::new(
-                    &mut self.add_agent_button,
-                    iced::Text::new("Add Agent"),
-                ).on_press(Message::AddAgent)
+                Button::new(&mut self.add_agent_button, iced::Text::new("Add Agent"))
+                    .on_press(Message::AddAgent),
             )
             .push(
                 Button::new(
                     &mut self.remove_agent_button,
                     iced::Text::new("Remove Agent"),
-                ).on_press(Message::RemoveAgent)
-            )
-            .push(
-                PickList::new(
-                    &mut self.pick_agent_state,
-                    agent_names,
-                    self.canvas.program.layers.2.selected_agent.clone(),
-                    Message::SelectAgent,
                 )
+                .on_press(Message::RemoveAgent),
             )
+            .push(PickList::new(
+                &mut self.pick_agent_state,
+                agent_names,
+                self.canvas.program.layers.2.selected_agent.clone(),
+                Message::SelectAgent,
+            ))
             .push(
                 Column::new()
-                .width(Length::FillPortion(1))
-                .push(Text::new(format!("Yaw: {:.2} deg", agent_yaw)))
-                .push(
-                    Slider::new(
+                    .width(Length::FillPortion(1))
+                    .push(Text::new(format!("Yaw: {:.2} deg", agent_yaw)))
+                    .push(Slider::new(
                         &mut self.agent_yaw_slider,
                         0..=Self::TICK_COUNT,
                         yaw_tick,
-                        Message::AgentYawSlide
-                    )
-                )
+                        Message::AgentYawSlide,
+                    )),
             )
             .push(
                 Column::new()
-                .width(Length::FillPortion(1))
-                .push(Text::new(format!("Radius: {:.2} m", agent_radius)))
-                .push(
-                    Slider::new(
+                    .width(Length::FillPortion(1))
+                    .push(Text::new(format!("Radius: {:.2} m", agent_radius)))
+                    .push(Slider::new(
                         &mut self.agent_radius_slider,
                         0..=Self::TICK_COUNT,
                         radius_tick,
                         Message::AgentRadiusSlide,
-                    )
-                )
+                    )),
             )
             .push(
                 Column::new()
-                .width(Length::FillPortion(1))
-                .push(Text::new(format!("Speed: {:.2} m/s", agent_speed)))
-                .push(
-                    Slider::new(
+                    .width(Length::FillPortion(1))
+                    .push(Text::new(format!("Speed: {:.2} m/s", agent_speed)))
+                    .push(Slider::new(
                         &mut self.agent_speed_slider,
                         0..=Self::TICK_COUNT,
                         speed_tick,
                         Message::AgentSpeedSlide,
-                    )
-                )
+                    )),
             )
             .push(
                 Column::new()
-                .width(Length::FillPortion(1))
-                .push(Text::new(format!("Spin: {:.2} deg/sec", agent_spin.to_degrees())))
-                .push(
-                    Slider::new(
+                    .width(Length::FillPortion(1))
+                    .push(Text::new(format!(
+                        "Spin: {:.2} deg/sec",
+                        agent_spin.to_degrees()
+                    )))
+                    .push(Slider::new(
                         &mut self.agent_spin_slider,
                         0..=Self::TICK_COUNT,
                         spin_tick,
                         Message::AgentSpinSlide,
-                    )
-                )
+                    )),
             );
 
         let instruction_row = Row::<Message>::new()
@@ -1757,26 +1928,23 @@ impl Application for App {
             .width(Length::Shrink)
             .push(
                 Column::new()
-                .push(Text::new("Left click: Set start"))
-                .push(Text::new("Right click: Set goal"))
+                    .push(Text::new("Left click: Set start"))
+                    .push(Text::new("Right click: Set goal")),
             )
             .push(
                 Column::new()
-                .push(Text::new("Shift + Left click: Add occupancy"))
-                .push(Text::new("Shift + Right click: Remove occupancy"))
+                    .push(Text::new("Shift + Left click: Add occupancy"))
+                    .push(Text::new("Shift + Right click: Remove occupancy")),
             )
             .push(
                 Column::new()
-                .push(Text::new("Middle click: Pan view"))
-                .push(Text::new("Scroll: Zoom"))
+                    .push(Text::new("Middle click: Pan view"))
+                    .push(Text::new("Scroll: Zoom")),
             )
             .push(
-                Button::new(
-                    &mut self.reset_view_button,
-                    iced::Text::new("Reset View")
-                )
-                .on_press(Message::ResetView)
-                .height(Length::Shrink)
+                Button::new(&mut self.reset_view_button, iced::Text::new("Reset View"))
+                    .on_press(Message::ResetView)
+                    .height(Length::Shrink),
             )
             .push({
                 if let Some(t) = self.canvas.program.layers.3.now {
@@ -1786,79 +1954,88 @@ impl Application for App {
                 }
             })
             .push(
-                Button::new(
-                    &mut self.reset_time_button,
-                    iced::Text::new("Reset Time")
-                )
-                .on_press(Message::ResetTime)
-                .height(Length::Shrink)
+                Button::new(&mut self.reset_time_button, iced::Text::new("Reset Time"))
+                    .on_press(Message::ResetTime)
+                    .height(Length::Shrink),
             );
 
-        content = content
-            .push(file_row)
-            .push(robot_row)
-            .push(instruction_row);
+        content = content.push(file_row).push(robot_row).push(instruction_row);
 
         const DEBUG_TEXT_SIZE: u16 = 15;
         if self.debug_planner_on {
             content = content.push(
-                Row::new()
-                .push(self.canvas.view())
-                .push(
+                Row::new().push(self.canvas.view()).push(
                     Column::new()
-                    .push(
-                        Row::new()
                         .push(
-                            Button::new(&mut self.step_progress, Text::new("Step"))
-                            .on_press(Message::StepProgress)
+                            Row::new()
+                                .push(
+                                    Button::new(&mut self.step_progress, Text::new("Step"))
+                                        .on_press(Message::StepProgress),
+                                )
+                                .push(iced::Space::with_width(Length::Units(16)))
+                                .push(Text::new(format!("Steps: {}", self.debug_step_count)))
+                                .push(iced::Space::with_width(Length::Units(16)))
+                                .push(Text::new(format!(
+                                    "Queue size: {}",
+                                    self.search_memory.len()
+                                )))
+                                .align_items(Alignment::Center),
                         )
-                        .push(iced::Space::with_width(Length::Units(16)))
-                        .push(Text::new(format!("Steps: {}", self.debug_step_count)))
-                        .push(iced::Space::with_width(Length::Units(16)))
-                        .push(Text::new(format!("Queue size: {}", self.search_memory.len())))
-                        .align_items(Alignment::Center)
-                    )
-                    .push({
-                        let mut scroll = Scrollable::<Message>::new(&mut self.node_list_scroll);
-                        if let Some((_, search)) = &self.search {
-                            for (i, ticket) in self.search_memory.iter().enumerate() {
-                                let node = search.memory().0.arena.get(ticket.node_id).unwrap();
-                                scroll = scroll.push(Radio::new(
-                                    i, format!(
-                                        "{i}: {:?} + {:?} = {:?}",
-                                        node.cost().0,
-                                        node.remaining_cost_estimate().0,
-                                        ticket.evaluation.0,
-                                    ), self.debug_node_selected,
-                                    Message::SelectDebugNode
-                                ));
-                            }
-                        }
-                        scroll
-                    }.height(Length::Fill))
-                    .push({
-                        Scrollable::<Message>::new(&mut self.debug_text_scroll)
                         .push(
-                            Text::new({
-                                if let Some(selection) = self.debug_node_selected {
-                                    if let Some(node) = self.search_memory.get(selection) {
-                                        if let Some((_, search)) = &self.search {
-                                            let node = search.memory().0.arena.get(node.node_id).unwrap();
-                                            format!("{node:#?}")
+                            {
+                                let mut scroll =
+                                    Scrollable::<Message>::new(&mut self.node_list_scroll);
+                                if let Some((_, search)) = &self.search {
+                                    for (i, ticket) in self.search_memory.iter().enumerate() {
+                                        let node =
+                                            search.memory().0.arena.get(ticket.node_id).unwrap();
+                                        scroll = scroll.push(Radio::new(
+                                            i,
+                                            format!(
+                                                "{i}: {:?} + {:?} = {:?}",
+                                                node.cost().0,
+                                                node.remaining_cost_estimate().0,
+                                                ticket.evaluation.0,
+                                            ),
+                                            self.debug_node_selected,
+                                            Message::SelectDebugNode,
+                                        ));
+                                    }
+                                }
+                                scroll
+                            }
+                            .height(Length::Fill),
+                        )
+                        .push(
+                            {
+                                Scrollable::<Message>::new(&mut self.debug_text_scroll).push(
+                                    Text::new({
+                                        if let Some(selection) = self.debug_node_selected {
+                                            if let Some(node) = self.search_memory.get(selection) {
+                                                if let Some((_, search)) = &self.search {
+                                                    let node = search
+                                                        .memory()
+                                                        .0
+                                                        .arena
+                                                        .get(node.node_id)
+                                                        .unwrap();
+                                                    format!("{node:#?}")
+                                                } else {
+                                                    String::new()
+                                                }
+                                            } else {
+                                                String::new()
+                                            }
                                         } else {
                                             String::new()
                                         }
-                                    } else {
-                                        String::new()
-                                    }
-                                } else {
-                                    String::new()
-                                }
-                            })
-                            .size(DEBUG_TEXT_SIZE)
-                        )
-                    }.height(Length::Fill))
-                )
+                                    })
+                                    .size(DEBUG_TEXT_SIZE),
+                                )
+                            }
+                            .height(Length::Fill),
+                        ),
+                ),
             );
         } else if !self.negotiation_history.is_empty() {
             content = content.push(
@@ -1954,12 +2131,17 @@ mod style {
     pub struct Pane;
     impl container::StyleSheet for Pane {
         fn style(&self) -> container::Style {
-            container::Style{
+            container::Style {
                 text_color: None,
                 background: None,
                 border_radius: 0.0,
                 border_width: 3.0,
-                border_color: iced::Color{r: 0.9, g: 0.9, b: 0.9, a: 0.9},
+                border_color: iced::Color {
+                    r: 0.9,
+                    g: 0.9,
+                    b: 0.9,
+                    a: 0.9,
+                },
             }
         }
     }

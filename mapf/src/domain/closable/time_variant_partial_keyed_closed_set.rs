@@ -180,21 +180,6 @@ where
             .flatten()
             .into()
     }
-
-    type ClosedSetIter<'a> = impl Iterator<Item=&'a T> + 'a
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a;
-
-    fn iter_closed<'a>(&'a self) -> Self::ClosedSetIter<'a>
-    where
-        Self: 'a,
-        State: 'a,
-        T: 'a,
-    {
-        self.container.values().flat_map(|c| c.values())
-    }
 }
 
 impl<Ring, T> ClosedStatusForKey<Option<Ring::PartialKey>, T>

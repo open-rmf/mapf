@@ -176,7 +176,7 @@ impl<Base: Domain, Lifter, Prop> Domain for Lifted<Base, Lifter, Prop> {
 }
 
 pub trait Lift {
-    /// Lifts from the domain of property into the base domain using Lifter.
+    /// Lifts from the domain of `Prop` into the base domain using Lifter.
     ///
     /// This can be used to incorporate subspace behaviors or projected domains
     /// into your domain.

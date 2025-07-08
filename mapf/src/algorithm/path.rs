@@ -144,7 +144,7 @@ impl<S, A, C> Path<S, A, C> {
     }
 
     /// Make a trajectory out of this path if possible. If producing a path is
-    /// not possible because no motion is necessary, then creating a trajectory
+    /// not possible because no motion is necessary, then create a trajectory
     /// that holds the agent in place at the start location for the given
     /// `hold_duration`.
     ///

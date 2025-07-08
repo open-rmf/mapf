@@ -23,7 +23,6 @@ use crate::{
         Graph,
     },
     motion::r2::Point,
-    util::ForkIter,
 };
 use bitfield::{bitfield, Bit};
 use std::{
@@ -56,9 +55,18 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
     type Vertex = Point;
     type EdgeAttributes = ();
 
-    type VertexRef<'a> = Point where G: 'a;
-    type Edge<'a> = (Cell, Cell) where G: 'a;
-    type EdgeIter<'a> = impl Iterator<Item=(Cell, Cell)> + 'a where Self: 'a;
+    type VertexRef<'a>
+        = Point
+    where
+        G: 'a;
+    type Edge<'a>
+        = (Cell, Cell)
+    where
+        G: 'a;
+    type EdgeIter<'a>
+        = AccessibilityGraphEdges
+    where
+        Self: 'a;
 
     fn vertex<'a>(&'a self, key: &Cell) -> Option<Point> {
         if self.accessibility.is_inaccessible(key) {
@@ -76,26 +84,29 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
         Self::EdgeAttributes: 'a,
     {
         if self.accessibility.grid.is_occupied(key) {
-            return ForkIter::Left(None.into_iter());
+            return AccessibilityGraphEdges::None;
         }
 
         let directions = match self.accessibility.constraints.get(key) {
             Some(constraints) => match constraints {
                 CellAccessibility::Accessible(constraints) => *constraints,
-                CellAccessibility::Inaccessible => return ForkIter::Left(None.into_iter()),
+                CellAccessibility::Inaccessible => return AccessibilityGraphEdges::None,
             },
             None => CellDirections::all(),
         };
 
         let from_cell = *key;
-        ForkIter::Right(
-            directions
-                .iter_from(from_cell)
-                .map(move |to_cell: Cell| (from_cell, to_cell)),
-        )
+        let directions = directions.into_iter();
+        AccessibilityGraphEdges::Edges {
+            from_cell,
+            directions,
+        }
     }
 
-    type LazyEdgeIter<'a> = [(Cell, Cell); 0] where G: 'a;
+    type LazyEdgeIter<'a>
+        = [(Cell, Cell); 0]
+    where
+        G: 'a;
 
     fn lazy_edges_between<'a>(&'a self, _: &Self::Key, _: &Self::Key) -> Self::LazyEdgeIter<'a>
     where
@@ -105,6 +116,31 @@ impl<G: Grid> Graph for AccessibilityGraph<G> {
         Self::EdgeAttributes: 'a,
     {
         []
+    }
+}
+
+pub enum AccessibilityGraphEdges {
+    None,
+    Edges {
+        from_cell: Cell,
+        directions: CellDirectionsIter,
+    },
+}
+
+impl Iterator for AccessibilityGraphEdges {
+    type Item = (Cell, Cell);
+    fn next(&mut self) -> Option<Self::Item> {
+        let Self::Edges {
+            from_cell,
+            directions,
+        } = self
+        else {
+            return None;
+        };
+
+        directions
+            .next()
+            .map(|[i, j]| (*from_cell, from_cell.shifted(i, j)))
     }
 }
 
@@ -180,13 +216,14 @@ pub struct CellDirectionsIter {
 impl Iterator for CellDirectionsIter {
     type Item = [i64; 2];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next_dir > u8::MAX as u16 {
+        if self.next_dir > 7 {
+            // We have already iterated over all the directions
             return None;
         }
 
         while self.directions.bit(self.next_dir as usize) != self.accessibility {
             self.next_dir += 1;
-            if self.next_dir > u8::MAX as u16 {
+            if self.next_dir > 7 {
                 return None;
             }
         }
