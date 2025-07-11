@@ -36,3 +36,6 @@ pub use positioned::*;
 
 pub mod line_follow;
 pub use line_follow::*;
+
+pub mod shortest_path_length;
+pub use shortest_path_length::*;

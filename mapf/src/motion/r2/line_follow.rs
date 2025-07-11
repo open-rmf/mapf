@@ -189,7 +189,7 @@ impl<const N: usize> Backtrack<WaypointR2, ArrayVec<WaypointR2, N>> for LineFoll
 }
 
 impl<Target, Guidance, K, G: Graph<Key = K>>
-    ConflictAvoider<WaypointR2, Target, Guidance, K, SafeIntervalCache<G>> for LineFollow
+    ConflictAvoider<WaypointR2, Target, Guidance, K, SafeIntervalCache<WaypointR2, G>> for LineFollow
 where
     G::Vertex: Positioned,
     Target: Positioned,
@@ -213,7 +213,7 @@ where
         to_target: &Target,
         with_guidance: &Guidance,
         (from_key, target_key): (Option<&K>, Option<&K>),
-        safe_intervals: &SafeIntervalCache<G>,
+        safe_intervals: &SafeIntervalCache<WaypointR2, G>,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,

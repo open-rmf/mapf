@@ -22,8 +22,7 @@ use crate::{
     motion::{
         compute_safe_arrival_times,
         r2::{Positioned, WaypointR2},
-        se2::WaypointSE2,
-        CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed,
+        CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed, Waypoint
     },
     util::Minimum,
 };
@@ -34,15 +33,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub struct SafeIntervalCache<G: Graph> {
+pub struct SafeIntervalCache<W: Waypoint, G: Graph> {
     graph: G,
-    environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>,
+    environment: Arc<CcbsEnvironment<W, G::Key>>,
     earliest_time: Option<TimePoint>,
     safe_intervals: RwLock<HashMap<G::Key, SafeArrivalTimes>>,
 }
 
-impl<G: Graph> SafeIntervalCache<G> {
-    pub fn new(environment: Arc<CcbsEnvironment<WaypointSE2, G::Key>>, graph: G) -> Self
+impl<W: Waypoint + Into<WaypointR2>, G: Graph> SafeIntervalCache<W, G> {
+    pub fn new(environment: Arc<CcbsEnvironment<W, G::Key>>, graph: G) -> Self
     where
         G::Key: Key,
     {
@@ -66,7 +65,7 @@ impl<G: Graph> SafeIntervalCache<G> {
         &self.graph
     }
 
-    pub fn environment(&self) -> &Arc<CcbsEnvironment<WaypointSE2, G::Key>> {
+    pub fn environment(&self) -> &Arc<CcbsEnvironment<W, G::Key>> {
         &self.environment
     }
 
@@ -127,13 +126,13 @@ pub enum SafeIntervalCacheError<K> {
 }
 
 #[derive(Clone)]
-pub struct SafeIntervalCloser<Ring, G: Graph> {
+pub struct SafeIntervalCloser<Ring, W: Waypoint, G: Graph> {
     keyring: Ring,
-    cache: Arc<SafeIntervalCache<G>>,
+    cache: Arc<SafeIntervalCache<W, G>>,
 }
 
-impl<Ring, G: Graph> SafeIntervalCloser<Ring, G> {
-    pub fn new(keyring: Ring, safe_intervals: Arc<SafeIntervalCache<G>>) -> Self {
+impl<Ring, W: Waypoint, G: Graph> SafeIntervalCloser<Ring, W, G> {
+    pub fn new(keyring: Ring, safe_intervals: Arc<SafeIntervalCache<W, G>>) -> Self {
         Self {
             keyring,
             cache: safe_intervals,
@@ -141,29 +140,30 @@ impl<Ring, G: Graph> SafeIntervalCloser<Ring, G> {
     }
 }
 
-impl<Ring, G, State> Closable<State> for SafeIntervalCloser<Ring, G>
+impl<Ring, W, G, State> Closable<State> for SafeIntervalCloser<Ring, W, G>
 where
     Ring: Keyring<State> + Clone,
     Ring::Key: Borrow<G::Key> + Clone,
     G: Graph,
     G::Vertex: Positioned,
     G::Key: Key + Clone,
+    W: Waypoint + Into<WaypointR2>,
     State: Timed,
 {
-    type ClosedSet<T> = SafeIntervalClosedSet<Ring, G, T>;
+    type ClosedSet<T> = SafeIntervalClosedSet<Ring, W, G, T>;
     fn new_closed_set<T>(&self) -> Self::ClosedSet<T> {
         SafeIntervalClosedSet::new(self.keyring.clone(), self.cache.clone())
     }
 }
 
-pub struct SafeIntervalClosedSet<Ring: Keyed, G: Graph, T> {
+pub struct SafeIntervalClosedSet<Ring: Keyed, W: Waypoint, G: Graph, T> {
     keyring: Ring,
-    cache: Arc<SafeIntervalCache<G>>,
+    cache: Arc<SafeIntervalCache<W, G>>,
     container: HashMap<Ring::Key, ClosedIntervals<T>>,
 }
 
-impl<Ring: Keyed, G: Graph, T> SafeIntervalClosedSet<Ring, G, T> {
-    pub fn new(keyring: Ring, cache: Arc<SafeIntervalCache<G>>) -> Self {
+impl<Ring: Keyed, W: Waypoint + Into<WaypointR2>, G: Graph, T> SafeIntervalClosedSet<Ring, W, G, T> {
+    pub fn new(keyring: Ring, cache: Arc<SafeIntervalCache<W, G>>) -> Self {
         Self {
             keyring,
             cache,
@@ -203,13 +203,14 @@ impl<Ring: Keyed, G: Graph, T> SafeIntervalClosedSet<Ring, G, T> {
     }
 }
 
-impl<State, Ring, G, T> ClosedSet<State, T> for SafeIntervalClosedSet<Ring, G, T>
+impl<State, Ring, W, G, T> ClosedSet<State, T> for SafeIntervalClosedSet<Ring, W, G, T>
 where
     Ring: Keyring<State>,
     Ring::Key: Borrow<G::Key> + Clone,
     G: Graph,
     G::Vertex: Positioned,
     G::Key: Key + Clone,
+    W: Waypoint + Into<WaypointR2>,
     State: Timed,
 {
     fn close<'a>(&'a mut self, state: &State, value: T) -> CloseResult<'a, T> {

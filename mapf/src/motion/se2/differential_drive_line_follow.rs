@@ -373,7 +373,7 @@ impl<const N: usize> Backtrack<WaypointSE2, ArrayVec<WaypointSE2, N>>
 }
 
 impl<Target, Guidance, K, G: Graph<Key = K>>
-    ConflictAvoider<WaypointSE2, Target, Guidance, K, SafeIntervalCache<G>>
+    ConflictAvoider<WaypointSE2, Target, Guidance, K, SafeIntervalCache<WaypointSE2, G>>
     for DifferentialDriveLineFollow
 where
     Target: Positioned + MaybeOriented + std::fmt::Debug,
@@ -398,7 +398,7 @@ where
         to_target: &Target,
         with_guidance: &Guidance,
         (from_key, target_key): (Option<&K>, Option<&K>),
-        safe_intervals: &SafeIntervalCache<G>,
+        safe_intervals: &SafeIntervalCache<WaypointSE2, G>,
     ) -> Self::AvoidanceActionIter<'a>
     where
         Self: 'a,

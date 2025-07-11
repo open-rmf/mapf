@@ -47,17 +47,17 @@ pub type SippSE2<G, H = G> = InformedSearch<
     GraphMotion<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
         SharedGraph<G>,
-        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<SharedGraph<G>>>,
+        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<WaypointSE2, SharedGraph<G>>>,
     >,
     TravelEffortCost,
     QuickestPathHeuristic<SharedGraph<H>, TravelEffortCost, TravelEffortCost, DEFAULT_SIPP_RES>,
-    SafeIntervalCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>, SharedGraph<G>>,
+    SafeIntervalCloser<DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>, WaypointSE2, SharedGraph<G>>,
     InitializeSE2<SharedGraph<G>, DEFAULT_SIPP_RES>,
     SatisfySE2,
     LazyGraphMotion<
         DiscreteSpaceTimeSE2<<G as Graph>::Key, DEFAULT_SIPP_RES>,
         SharedGraph<G>,
-        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<SharedGraph<G>>>,
+        ConflictAvoidance<DifferentialDriveLineFollow, SafeIntervalCache<WaypointSE2, SharedGraph<G>>>,
         (),
         SafeMergeIntoGoal<<G as Graph>::Key, DEFAULT_SIPP_RES>,
     >,
@@ -126,7 +126,7 @@ where
     H::Vertex: Positioned + MaybeOriented,
     H::EdgeAttributes: SpeedLimiter + Clone,
 {
-    safe_intervals: Arc<SafeIntervalCache<SharedGraph<G>>>,
+    safe_intervals: Arc<SafeIntervalCache<WaypointSE2, SharedGraph<G>>>,
     cache: SippSE2ManageCache<H>,
 }
 

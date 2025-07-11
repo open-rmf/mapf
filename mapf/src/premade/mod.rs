@@ -23,3 +23,6 @@ pub use search_se2::*;
 
 pub mod sipp_se2;
 pub use sipp_se2::*;
+
+pub mod sipp_r2;
+pub use sipp_r2::*;
