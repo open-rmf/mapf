@@ -147,7 +147,7 @@ pub struct SpatialCanvas<Message, Program: SpatialCanvasProgram<Message>> {
 
 impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Program> {
     // Add scaling boundary constants
-    const MIN_ZOOM: f32 = 0.001;  // Minimum scaling ratio
+    const MIN_ZOOM: f32 = 0.001; // Minimum scaling ratio
     const MAX_ZOOM: f32 = 1000.0; // Maximum scaling ratio
 
     pub fn new(program: Program) -> Self {
