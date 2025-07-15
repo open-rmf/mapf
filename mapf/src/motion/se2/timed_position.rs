@@ -28,6 +28,7 @@ use crate::{
 use arrayvec::ArrayVec;
 
 #[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaypointSE2 {
     pub time: TimePoint,
     pub position: Position,
