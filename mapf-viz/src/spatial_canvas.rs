@@ -307,6 +307,7 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
                             let p_raw = Point::new(p_raw.x, p_raw.y);
                             self.offset =
                                 p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
+                            self.cache.clear();
                         }
                     }
                 }
