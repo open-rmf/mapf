@@ -146,6 +146,10 @@ pub struct SpatialCanvas<Message, Program: SpatialCanvasProgram<Message>> {
 }
 
 impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Program> {
+    // Add scaling boundary constants
+    const MIN_ZOOM: f32 = 0.001; // Minimum scaling ratio
+    const MAX_ZOOM: f32 = 1000.0; // Maximum scaling ratio
+
     pub fn new(program: Program) -> Self {
         Self {
             program,
@@ -222,6 +226,11 @@ impl<Message, Program: SpatialCanvasProgram<Message>> SpatialCanvas<Message, Pro
             .inverse()
             .unwrap()
     }
+
+    fn set_zoom_safe(&mut self, new_zoom: f32) {
+        self.zoom = new_zoom.clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+        self.cache.clear();
+    }
 }
 
 impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Message>
@@ -293,7 +302,8 @@ impl<'a, Message, Program: SpatialCanvasProgram<Message>> canvas::Program<Messag
                         mouse::ScrollDelta::Lines { y, .. }
                         | mouse::ScrollDelta::Pixels { y, .. } => {
                             let p0 = p;
-                            self.zoom = self.zoom * (1.0 + y / 10.0);
+                            let new_zoom = self.zoom * (1.0 + y / 10.0);
+                            self.set_zoom_safe(new_zoom);
                             let p_raw = Point::new(p_raw.x, p_raw.y);
                             self.offset =
                                 p_raw - Transform::scale(self.zoom, -self.zoom).transform_point(p0);
