@@ -75,7 +75,8 @@ where
     W: Timed + Clone,
     M: Into<W> + Clone,
 {
-    type IntegratedWaypointIter<'a> = SmallVec<[Result<W, SafeActionIntegrateWaypointError>; 5]>
+    type IntegratedWaypointIter<'a>
+        = SmallVec<[Result<W, SafeActionIntegrateWaypointError>; 5]>
     where
         W: 'a,
         M: 'a;

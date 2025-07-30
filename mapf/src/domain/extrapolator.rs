@@ -182,7 +182,8 @@ impl<State, Target, Guidance, Key, E> Extrapolator<State, Target, Guidance, Key>
 {
     type Extrapolation = E;
     type ExtrapolationError = NoError;
-    type ExtrapolationIter<'a> = [Result<(E, State), NoError>; 0]
+    type ExtrapolationIter<'a>
+        = [Result<(E, State), NoError>; 0]
     where
         E: 'a,
         State: 'a,
@@ -213,7 +214,8 @@ impl<State, Target, Guidance, Key, E> IncrementalExtrapolator<State, Target, Gui
 {
     type IncrementalExtrapolation = E;
     type IncrementalExtrapolationError = NoError;
-    type IncrementalExtrapolationIter<'a> = [Result<(E, State, ExtrapolationProgress), NoError>; 0]
+    type IncrementalExtrapolationIter<'a>
+        = [Result<(E, State, ExtrapolationProgress), NoError>; 0]
     where
         E: 'a,
         State: 'a,

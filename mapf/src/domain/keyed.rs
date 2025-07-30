@@ -63,7 +63,10 @@ pub trait SelfKey: Keyed {
 }
 
 impl<T: Key + Clone> SelfKey for T {
-    type KeyRef<'a> = &'a Self::Key where Self: 'a;
+    type KeyRef<'a>
+        = &'a Self::Key
+    where
+        Self: 'a;
     fn key<'a>(&'a self) -> &'a Self::Key
     where
         Self: 'a,
@@ -92,7 +95,10 @@ impl<K: Key> Keyed for SelfKeyring<K> {
 }
 
 impl<State: SelfKey> Keyring<State> for SelfKeyring<State::Key> {
-    type KeyRef<'a> = State::KeyRef<'a> where State: 'a;
+    type KeyRef<'a>
+        = State::KeyRef<'a>
+    where
+        State: 'a;
     fn key_for<'a>(&'a self, state: &'a State) -> State::KeyRef<'a>
     where
         State: 'a,
@@ -124,7 +130,8 @@ impl<K: Key> Keyed for SelfPartialKeyring<K> {
 }
 
 impl<K: Key, State: SelfKey<Key = Option<K>>> Keyring<State> for SelfPartialKeyring<K> {
-    type KeyRef<'a> = State::KeyRef<'a>
+    type KeyRef<'a>
+        = State::KeyRef<'a>
     where
         Self: 'a,
         State: 'a,

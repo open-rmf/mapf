@@ -88,7 +88,8 @@ where
 {
     type ToAction = A::ToAction;
     type ActionMapError = A::ActionMapError;
-    type ToActions<'a> = A::ToActions<'a>
+    type ToActions<'a>
+        = A::ToActions<'a>
     where
         Self: 'a,
         Self::ToAction: 'a,
