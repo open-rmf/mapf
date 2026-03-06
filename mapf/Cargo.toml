@@ -1,7 +1,7 @@
 [package]
 name = "mapf"
 version = "0.3.0"
-edition = "2021"
+edition = "2024"
 description = "Base traits and utilities for multi-agent planning"
 license = "Apache-2.0"
 repository = "https://github.com/open-rmf/mapf"
@@ -11,7 +11,7 @@ keywords = ["mapf", "multi", "agent", "planning", "search"]
 maintenance = {status = "experimental"}
 
 [dependencies]
-nalgebra = "0.31.1"
+nalgebra = "0.32"
 time-point = "0.1"
 sorted-vec = "0.8.2"
 cached = "0.40"
@@ -27,6 +27,11 @@ smallvec = "1.10"
 serde = { version="1.0", features = ["derive"] }
 serde_yaml = "0.9"
 slotmap = "1.0"
+parry2d = { version = "0.21", package = "parry2d-f64" }
+petgraph = "0.6"
+bresenham = "0.1.1"
+rand = "0.8"
+csv = "1.1"
 
 [dev-dependencies]
 approx = "0.5"
