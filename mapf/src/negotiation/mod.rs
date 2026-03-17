@@ -55,7 +55,7 @@ pub enum NegotiationError {
 }
 
 pub fn negotiate(
-    scenario: &Scenario,
+    scenario: &mut Scenario,
     queue_length_limit: Option<usize>,
 ) -> Result<
     (
@@ -98,6 +98,7 @@ pub fn negotiate(
             agents.push(agent.clone());
         }
 
+        scenario.id_to_name = name_map.clone();
         (name_map, agents)
     };
 
@@ -655,7 +656,7 @@ impl NegotiationNode {
 
 impl Scenario {
     pub fn solve(
-        &self,
+        &mut self,
         queue_length_limit: Option<usize>,
     ) -> Result<NegotiationNode, NegotiationError> {
         let (solution, _, _) = negotiate(self, queue_length_limit)?;
@@ -670,6 +671,12 @@ impl Scenario {
         let mut max_finish_time = TimePoint::zero();
         for proposal in solution.proposals.values() {
             max_finish_time = max_finish_time.max(proposal.meta.trajectory.finish_motion().time());
+        }
+
+        for obstacle in &self.obstacles {
+            if let Some(last) = obstacle.trajectory.last() {
+                max_finish_time = max_finish_time.max(TimePoint::from_secs_f64(last.0));
+            }
         }
 
         let mut trajectories = Vec::new();
@@ -697,6 +704,19 @@ impl Scenario {
                         poses.push(pos);
                     }
                 }
+            }
+            trajectories.push(crate::post::Trajectory { poses });
+        }
+
+        for obstacle in &self.obstacles {
+            footprints.push(std::sync::Arc::new(crate::post::shape::Ball::new(obstacle.radius))
+                as std::sync::Arc<dyn crate::post::shape::Shape>);
+
+            let mut poses = Vec::new();
+            let steps = (max_finish_time.as_secs_f64() / timestep).ceil() as usize;
+            for step in 0..=steps {
+                let t = step as f64 * timestep;
+                poses.push(obstacle.interpolate(t, self.cell_size));
             }
             trajectories.push(crate::post::Trajectory { poses });
         }

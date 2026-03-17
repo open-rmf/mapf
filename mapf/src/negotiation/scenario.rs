@@ -18,10 +18,11 @@
 use crate::{
     graph::occupancy::Cell,
     motion::{
-        se2::{GoalSE2, Orientation, StartSE2, WaypointSE2},
+        se2::{GoalSE2, Orientation, Position, StartSE2, WaypointSE2},
         TimePoint, Trajectory,
     },
 };
+use nalgebra::{Isometry2, Vector2};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -69,7 +70,7 @@ impl Agent {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Obstacle {
     /// Trajectory of the obstacle in terms of (time (s), x cell, y cell)
     pub trajectory: Vec<(f64, i64, i64)>,
@@ -97,9 +98,78 @@ impl Obstacle {
             indefinite_finish: trajectory.has_indefinite_finish_time(),
         }
     }
+
+    pub fn to_agent(&self) -> Option<Agent> {
+        let first = self.trajectory.first()?;
+        let last = self.trajectory.last()?;
+        let yaw = if self.trajectory.len() > 1 {
+            let second = &self.trajectory[1];
+            let dx = (second.1 - first.1) as f64;
+            let dy = (second.2 - first.2) as f64;
+            dy.atan2(dx)
+        } else {
+            0.0
+        };
+
+        Some(Agent {
+            start: [first.1, first.2],
+            yaw,
+            goal: [last.1, last.2],
+            radius: self.radius,
+            speed: default_speed(),
+            spin: default_spin(),
+        })
+    }
+
+    pub fn interpolate(&self, time: f64, cell_size: f64) -> Position {
+        if self.trajectory.is_empty() {
+            return Position::identity();
+        }
+
+        if time <= self.trajectory[0].0 {
+            let (_, x, y) = self.trajectory[0];
+            let p = Cell::new(x, y).center_point(cell_size);
+            return Position::translation(p.x, p.y);
+        }
+
+        if time >= self.trajectory.last().unwrap().0 {
+            let (_, x, y) = *self.trajectory.last().unwrap();
+            let p = Cell::new(x, y).center_point(cell_size);
+            return Position::translation(p.x, p.y);
+        }
+
+        // Binary search for the interval
+        let result = self.trajectory.binary_search_by(|(t, _, _)| {
+            t.partial_cmp(&time).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let idx = match result {
+            Ok(i) => i,
+            Err(i) => i,
+        };
+
+        if idx == 0 {
+            let (_, x, y) = self.trajectory[0];
+            let p = Cell::new(x, y).center_point(cell_size);
+            return Position::translation(p.x, p.y);
+        }
+
+        let (t0, x0, y0) = self.trajectory[idx - 1];
+        let (t1, x1, y1) = self.trajectory[idx];
+
+        let f = (time - t0) / (t1 - t0);
+        let p0 = Cell::new(x0, y0).center_point(cell_size);
+        let p1 = Cell::new(x1, y1).center_point(cell_size);
+
+        let x = p0.x + f * (p1.x - p0.x);
+        let y = p0.y + f * (p1.y - p0.y);
+        let yaw = (p1.y - p0.y).atan2(p1.x - p0.x);
+
+        Isometry2::new(Vector2::new(x, y), yaw)
+    }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Scenario {
     pub agents: BTreeMap<String, Agent>,
     pub obstacles: Vec<Obstacle>,
@@ -109,6 +179,31 @@ pub struct Scenario {
     pub cell_size: f64,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub camera_bounds: Option<[[f32; 2]; 2]>,
+    #[serde(skip_serializing)]
+    pub id_to_name: HashMap<usize, String>,
+}
+
+impl Scenario {
+    pub fn add_mobile_objects_as_agents(&mut self) {
+        let mut last_id = 0;
+        for key in self.agents.keys() {
+            if let Ok(id) = key.parse::<usize>() {
+                last_id = last_id.max(id);
+            }
+        }
+
+        if !self.agents.is_empty() {
+            last_id += 1;
+        }
+
+        let obstacles = std::mem::take(&mut self.obstacles);
+        for obstacle in obstacles {
+            if let Some(agent) = obstacle.to_agent() {
+                self.agents.insert(last_id.to_string(), agent);
+                last_id += 1;
+            }
+        }
+    }
 }
 
 pub fn default_radius() -> f64 {
@@ -133,4 +228,73 @@ pub fn bool_false() -> bool {
 
 pub fn is_false(b: &bool) -> bool {
     !b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::negotiation::NegotiationNode;
+    use std::collections::HashMap;
+    use crate::domain::Cost;
+
+    #[test]
+    fn test_derive_mapf_result_with_obstacles() {
+        let scenario = Scenario {
+            agents: BTreeMap::new(),
+            obstacles: vec![
+                Obstacle {
+                    trajectory: vec![
+                        (0.0, 0, 0),
+                        (1.0, 1, 0),
+                    ],
+                    radius: 0.5,
+                    indefinite_start: false,
+                    indefinite_finish: false,
+                }
+            ],
+            occupancy: HashMap::new(),
+            cell_size: 1.0,
+            camera_bounds: None,
+            id_to_name: HashMap::new(),
+        };
+
+        // We need a mock solution node. 
+        // Proposals can be empty if there are no agents.
+        let solution = NegotiationNode {
+            negotiation: crate::negotiation::Negotiation::default(),
+            proposals: HashMap::new(),
+            environment: crate::motion::CcbsEnvironment::new(std::sync::Arc::new(
+                crate::motion::DynamicEnvironment::new(crate::motion::CircularProfile::new(0.0, 0.0, 0.0).unwrap())
+            )),
+            keys: std::collections::HashSet::new(),
+            conceded: None,
+            cost: Cost(0.0),
+            depth: 0,
+            outcome: crate::negotiation::NodeOutcome::Success,
+            id: 0,
+            parent: None,
+        };
+
+        let timestep = 0.5;
+        let mapf_result = scenario.derive_mapf_result(&solution, timestep);
+
+        // One obstacle should result in one trajectory
+        assert_eq!(mapf_result.trajectories.len(), 1);
+        assert_eq!(mapf_result.footprints.len(), 1);
+        
+        // Obstacle trajectory from t=0 to t=1 with timestep 0.5 should have 3 poses (0.0, 0.5, 1.0)
+        assert_eq!(mapf_result.trajectories[0].poses.len(), 3);
+        
+        // Check first and last poses
+        let p0 = mapf_result.trajectories[0].poses[0].translation.vector;
+        let p2 = mapf_result.trajectories[0].poses[2].translation.vector;
+        
+        // Cell (0,0) center is (0.5, 0.5)
+        assert!((p0.x - 0.5).abs() < 1e-6);
+        assert!((p0.y - 0.5).abs() < 1e-6);
+        
+        // Cell (1,0) center is (1.5, 0.5)
+        assert!((p2.x - 1.5).abs() < 1e-6);
+        assert!((p2.y - 0.5).abs() < 1e-6);
+    }
 }
