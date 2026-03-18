@@ -802,6 +802,7 @@ struct App {
     search_memory: Vec<TreeTicket>,
     negotiation_history: Vec<NegotiationNode>,
     name_map: HashMap<usize, String>,
+    debug_ticket_size: usize,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
@@ -1470,6 +1471,7 @@ impl Application for App {
             debug_node_selected: None,
             negotiation_node_selected: None,
             next_robot_name_index: 0,
+            debug_ticket_size: 10,
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
@@ -1777,6 +1779,14 @@ impl Application for App {
             Message::Tick => {
                 if self.canvas.program.layers.3.tick() {
                     self.canvas.cache.clear();
+                }
+            }
+            Message::IncDebugTicketSize => {
+                self.debug_ticket_size += 1;
+            }
+            Message::DecDebugTicketSize => {
+                if self.debug_ticket_size > 1 {
+                    self.debug_ticket_size -= 1;
                 }
             }
         }
@@ -2119,6 +2129,8 @@ enum Message {
     SelectNegotiationNode(usize),
     StepProgress,
     Tick,
+    IncDebugTicketSize,
+    DecDebugTicketSize,
 }
 
 fn main() -> iced::Result {
