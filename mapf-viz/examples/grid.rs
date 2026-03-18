@@ -1987,6 +1987,8 @@ impl Application for App {
                                         .on_press(Message::StepProgress),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
+                                .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                .push(iced::Space::with_width(Length::Units(8)))
                                 .push(
                                     Button::new(
                                         &mut self.decrease_debug_ticket_size,
@@ -1994,8 +1996,6 @@ impl Application for App {
                                     )
                                     .on_press(Message::DecDebugTicketSize),
                                 )
-                                .push(iced::Space::with_width(Length::Units(8)))
-                                .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
                                 .push(iced::Space::with_width(Length::Units(8)))
                                 .push(
                                     Button::new(
