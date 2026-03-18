@@ -986,7 +986,7 @@ impl App {
                 .collect();
 
             // TODO(@mxgrey): Make the number to take configurable
-            for ticket in self.search_memory.iter().take(10) {
+            for ticket in self.search_memory.iter().take(self.debug_ticket_size) {
                 if let Some(mt) = search
                     .memory()
                     .0
