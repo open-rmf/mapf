@@ -973,9 +973,32 @@ impl App {
     }
 
     fn step_progress(&mut self) {
+        self.debug_step_count += 1;
+        self.draw_search_paths();
+        // step towards solution here
         if let Some((radius, search)) = &mut self.search {
-            self.debug_step_count += 1;
+            if let SearchStatus::Solved(solution) = search.step().unwrap() {
+                println!("Queue length: {}", search.memory().queue_length());
+                println!("Solution: {:#?}", solution);
+                self.canvas.program.layers.3.solutions.clear();
+                self.canvas.program.layers.3.solutions.extend(
+                    solution
+                        .make_trajectory()
+                        .unwrap()
+                        .map(|t| (*radius, t.trajectory))
+                        .into_iter(),
+                );
+                self.debug_node_selected = None;
+                self.search = None;
+                self.canvas.cache.clear();
+            } else {
+                println!("Queue length: {}", search.memory().queue_length());
+            }
+        }
+    }
 
+    fn draw_search_paths(&mut self) {
+        if let Some((radius, search)) = &mut self.search {
             self.search_memory = search
                 .memory()
                 .0
@@ -985,7 +1008,8 @@ impl App {
                 .map(|n| n.0.clone())
                 .collect();
 
-            // TODO(@mxgrey): Make the number to take configurable
+            self.canvas.program.layers.3.searches.clear();
+
             for ticket in self.search_memory.iter().take(self.debug_ticket_size) {
                 if let Some(mt) = search
                     .memory()
@@ -1004,25 +1028,8 @@ impl App {
                         .push((*radius, mt.trajectory));
                 }
             }
-
-            if let SearchStatus::Solved(solution) = search.step().unwrap() {
-                println!("Queue length: {}", search.memory().queue_length());
-                println!("Solution: {:#?}", solution);
-                self.canvas.program.layers.3.solutions.clear();
-                self.canvas.program.layers.3.solutions.extend(
-                    solution
-                        .make_trajectory()
-                        .unwrap()
-                        .map(|t| (*radius, t.trajectory))
-                        .into_iter(),
-                );
-                self.debug_node_selected = None;
-                self.search = None;
-            } else {
-                println!("Queue length: {}", search.memory().queue_length());
-                if let Some(selection) = self.debug_node_selected {
-                    self.select_search_node(selection);
-                }
+            if let Some(selection) = self.debug_node_selected {
+                self.select_search_node(selection);
             }
 
             self.canvas.cache.clear();
@@ -1787,10 +1794,12 @@ impl Application for App {
             }
             Message::IncDebugTicketSize => {
                 self.debug_ticket_size += 1;
+                self.draw_search_paths();
             }
             Message::DecDebugTicketSize => {
                 if self.debug_ticket_size > 1 {
                     self.debug_ticket_size -= 1;
+                    self.draw_search_paths();
                 }
             }
         }
