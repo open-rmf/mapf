@@ -797,6 +797,8 @@ struct App {
     show_details: KeyToggler,
     search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, QueueLengthLimit>)>,
     step_progress: button::State,
+    increase_debug_ticket_size: button::State,
+    decrease_debug_ticket_size: button::State,
     debug_planner_on: bool,
     debug_negotiation_on: bool,
     search_memory: Vec<TreeTicket>,
@@ -1462,6 +1464,8 @@ impl Application for App {
             show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
             search: None,
             step_progress: button::State::new(),
+            decrease_debug_ticket_size: button::State::new(),
+            increase_debug_ticket_size: button::State::new(),
             debug_planner_on: false,
             debug_negotiation_on: false,
             search_memory: Default::default(),
@@ -1981,6 +1985,24 @@ impl Application for App {
                                 .push(
                                     Button::new(&mut self.step_progress, Text::new("Step"))
                                         .on_press(Message::StepProgress),
+                                )
+                                .push(iced::Space::with_width(Length::Units(16)))
+                                .push(
+                                    Button::new(
+                                        &mut self.decrease_debug_ticket_size,
+                                        Text::new("-"),
+                                    )
+                                    .on_press(Message::DecDebugTicketSize),
+                                )
+                                .push(iced::Space::with_width(Length::Units(8)))
+                                .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                .push(iced::Space::with_width(Length::Units(8)))
+                                .push(
+                                    Button::new(
+                                        &mut self.increase_debug_ticket_size,
+                                        Text::new("+"),
+                                    )
+                                    .on_press(Message::IncDebugTicketSize),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(Text::new(format!("Steps: {}", self.debug_step_count)))
