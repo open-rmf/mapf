@@ -25,7 +25,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
 };
 
 /// [`KeyedCloser`] implements the [`Closable`] trait by providing a

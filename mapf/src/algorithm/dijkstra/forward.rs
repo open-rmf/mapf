@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    algorithm::{tree::*, Algorithm, Coherent, Path, SearchStatus, Solvable},
+    algorithm::{Algorithm, Coherent, Path, SearchStatus, Solvable, tree::*},
     domain::{
         Activity, ArrivalKeyring, Closable, CloseResult, ClosedSet, ClosedStatus,
         ClosedStatusForKey, Configurable, Connectable, Domain, Initializable, Keyed, Keyring,
@@ -26,7 +26,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     ops::Add,
     sync::{Arc, Mutex, RwLock},
 };
@@ -127,7 +127,7 @@ where
                                     Err(_) => {
                                         return Err(Self::algo_err(
                                             DijkstraImplError::PoisonedMutex,
-                                        ))
+                                        ));
                                     }
                                 };
 

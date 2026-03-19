@@ -55,7 +55,8 @@ impl Grid2D {
         positions: &[CurrentPosition],
     ) -> AllocationField {
         let semantic_plan = mapf_post(trajectories);
-        let semantic_positions: Vec<SemanticWaypoint> = positions.iter().map(|p| p.semantic_position).collect();
+        let semantic_positions: Vec<SemanticWaypoint> =
+            positions.iter().map(|p| p.semantic_position).collect();
         let assignment = semantic_plan.get_claim_dict(&semantic_positions);
 
         let mut allocation_field = AllocationField::create(semantic_plan, 1000, 1000);
@@ -222,10 +223,11 @@ impl AllocationField {
     }
 
     fn update_spot(&mut self, alloc: &TrajectoryAllocation, x: usize, y: usize) {
-        if let Some(prev_alloc) = &self.grid_space[x][y]
-            && let Some(p) = self.cell_by_agent.get_mut(&prev_alloc.agent) {
+        if let Some(prev_alloc) = &self.grid_space[x][y] {
+            if let Some(p) = self.cell_by_agent.get_mut(&prev_alloc.agent) {
                 p.remove(&(x, y));
             }
+        }
         self.grid_space[x][y] = Some(alloc.clone());
         if let Some(allocated_list) = self.cell_by_agent.get_mut(&alloc.agent) {
             allocated_list.insert((x, y));
@@ -271,9 +273,11 @@ impl AllocationField {
                 .leader_follower
                 .allocation_strategy
                 .get(&previous_alloc.to_wp())
-                && let Some((_mode2, priority2, cluster_id2)) =
+            {
+                if let Some((_mode2, priority2, cluster_id2)) =
                     self.leader_follower.allocation_strategy.get(&alloc.to_wp())
-                    && cluster_id == cluster_id2 {
+                {
+                    if cluster_id == cluster_id2 {
                         if priority <= priority2 {
                             self.grid_space[x][y] = Some(previous_alloc.clone());
                             return;
@@ -282,6 +286,8 @@ impl AllocationField {
                             return;
                         }
                     }
+                }
+            }
 
             // Logic for intersections
             if let Some(intersection_type) = self
@@ -293,11 +299,12 @@ impl AllocationField {
                         self.grid_space[x][y] = Some(alloc.clone());
                         return;
                     }
-                } else if let IntersectionType::Next(leaders) = intersection_type
-                    && leaders.contains(&alloc.to_wp()) {
+                } else if let IntersectionType::Next(leaders) = intersection_type {
+                    if leaders.contains(&alloc.to_wp()) {
                         self.update_spot(&previous_alloc, x, y);
                         return;
                     }
+                }
             }
             // Vicinity rule.
             if previous_alloc.dist_from_center < alloc.dist_from_center {
@@ -316,11 +323,11 @@ impl AllocationField {
         }
         let x = x as usize;
         let y = y as usize;
-        
+
         if x >= self.width() || y >= self.height() {
             return None;
         }
-        
+
         let Some(p) = self.grid_space[x][y].clone() else {
             return None;
         };
@@ -339,11 +346,11 @@ impl AllocationField {
         }
         let x = x as usize;
         let y = y as usize;
-        
+
         if x >= self.width() || y >= self.height() {
             return None;
         }
-        
+
         let Some(p) = self.grid_space[x][y].clone() else {
             return None;
         };

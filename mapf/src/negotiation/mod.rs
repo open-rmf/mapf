@@ -20,21 +20,21 @@ pub use scenario::*;
 
 use crate::{
     algorithm::{
-        path::{DecisionRange, MetaTrajectory},
         AStarConnect, QueueLength, SearchStatus,
+        path::{DecisionRange, MetaTrajectory},
     },
     domain::{ClosedStatus, Configurable, Cost},
     error::ThisError,
-    graph::{occupancy::*, SharedGraph},
+    graph::{SharedGraph, occupancy::*},
     motion::{
+        BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
+        DynamicCircularObstacle, DynamicEnvironment, Motion, TimePoint, Timed, TravelEffortCost,
         have_conflict,
         r2::{Positioned, WaypointR2},
         se2::{DifferentialDriveLineFollow, WaypointSE2},
         trajectory::TrajectoryIter,
-        BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
-        DynamicCircularObstacle, DynamicEnvironment, Motion, TimePoint, Timed, TravelEffortCost,
     },
-    planner::{halt::QueueLengthLimit, Planner},
+    planner::{Planner, halt::QueueLengthLimit},
     premade::{SippSE2, StateSippSE2},
     util::triangular_for,
 };
@@ -151,7 +151,7 @@ pub fn negotiate(
             Err(err) => {
                 return Err(NegotiationError::PlanningImpossible(
                     format!("{err:?}").to_owned(),
-                ))
+                ));
             }
         }
         .solve()
@@ -683,8 +683,10 @@ impl Scenario {
         let mut footprints = Vec::new();
 
         for (i, (_name, agent)) in self.agents.iter().enumerate() {
-            footprints.push(std::sync::Arc::new(crate::post::shape::Ball::new(agent.radius))
-                as std::sync::Arc<dyn crate::post::shape::Shape>);
+            footprints.push(
+                std::sync::Arc::new(crate::post::shape::Ball::new(agent.radius))
+                    as std::sync::Arc<dyn crate::post::shape::Shape>,
+            );
 
             let mut poses = Vec::new();
             if let Some(proposal) = solution.proposals.get(&i) {
@@ -709,8 +711,10 @@ impl Scenario {
         }
 
         for obstacle in &self.obstacles {
-            footprints.push(std::sync::Arc::new(crate::post::shape::Ball::new(obstacle.radius))
-                as std::sync::Arc<dyn crate::post::shape::Shape>);
+            footprints.push(
+                std::sync::Arc::new(crate::post::shape::Ball::new(obstacle.radius))
+                    as std::sync::Arc<dyn crate::post::shape::Shape>,
+            );
 
             let mut poses = Vec::new();
             let steps = (max_finish_time.as_secs_f64() / timestep).ceil() as usize;

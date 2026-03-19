@@ -23,11 +23,11 @@ use crate::{
     error::{NoError, ThisError},
     graph::{Edge, Graph},
     motion::{
+        DEFAULT_ROTATIONAL_THRESHOLD, IntegrateWaypoints, MaybeTimed, TimePoint, Timed,
         r2::{MaybePositioned, Point, Positioned},
         se2::*,
-        IntegrateWaypoints, MaybeTimed, TimePoint, Timed, DEFAULT_ROTATIONAL_THRESHOLD,
     },
-    util::{wrap_to_pi, ForkIter, IterError},
+    util::{ForkIter, IterError, wrap_to_pi},
 };
 use smallvec::SmallVec;
 use std::borrow::Borrow;

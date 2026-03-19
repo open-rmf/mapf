@@ -19,11 +19,11 @@ use crate::{
     motion::{MaybeTimed, TimePoint},
     util::triangular_for,
 };
-use bitfield::{bitfield, Bit, BitMut};
+use bitfield::{Bit, BitMut, bitfield};
 use std::{
     collections::{
-        hash_map::{Entry, Iter as HashMapIter},
         HashMap, HashSet,
+        hash_map::{Entry, Iter as HashMapIter},
     },
     ops::Sub,
 };
@@ -274,7 +274,7 @@ pub trait Grid: std::fmt::Debug {
     /// Change the occupancy value of a set of cells. Get back any changes that
     /// have occurred to the corners of the occupancy.
     fn change_cells(&mut self, changes: &HashMap<Cell, bool>)
-        -> (ConfirmedChanges, ChangedCorners);
+    -> (ConfirmedChanges, ChangedCorners);
 
     /// Get the size (width and height) of a cell.
     fn cell_size(&self) -> f64;

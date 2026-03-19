@@ -18,7 +18,7 @@
 use crate::{
     domain::{Key, KeyedCloser, Reversible},
     graph::{Graph, SharedGraph},
-    motion::{r2::*, SpeedLimiter, TravelTimeCost},
+    motion::{SpeedLimiter, TravelTimeCost, r2::*},
     templates::{GraphMotion, InformedSearch},
 };
 
@@ -67,7 +67,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        algorithm::AStar, domain::AsTimeVariant, graph::SimpleGraph, motion::SpeedLimit, Planner,
+        Planner, algorithm::AStar, domain::AsTimeVariant, graph::SimpleGraph, motion::SpeedLimit,
     };
     use std::sync::Arc;
 

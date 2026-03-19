@@ -10,7 +10,6 @@ use parry2d::shape::Shape;
 pub use parry2d::na;
 pub use parry2d::shape;
 use petgraph::algo::toposort;
-use petgraph::data::Build;
 use petgraph::graph::DiGraph;
 use petgraph::visit::EdgeRef;
 
@@ -184,13 +183,13 @@ fn test_waypoint_follower() {
     assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
     let semantic_pose = follower.get_semantic_waypoint();
     assert_eq!(semantic_pose.trajectory_index, 2);
-    }
+}
 
-    #[cfg(test)]
-    #[test]
-    fn test_trajectory_conversion() {
-    use crate::motion::se2::WaypointSE2;
+#[cfg(test)]
+#[test]
+fn test_trajectory_conversion() {
     use crate::motion::Trajectory as MapfTrajectory;
+    use crate::motion::se2::WaypointSE2;
     use time_point::TimePoint;
 
     let w1 = WaypointSE2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0, 0.0);
@@ -201,9 +200,9 @@ fn test_waypoint_follower() {
     assert_eq!(post_traj.len(), 2);
     assert!((post_traj.poses[0].translation.x - 0.0).abs() < 1e-6);
     assert!((post_traj.poses[1].translation.x - 1.0).abs() < 1e-6);
-    }
+}
 
-    /// Semantic waypoint: A point on the trajectory that needs to be passed.
+/// Semantic waypoint: A point on the trajectory that needs to be passed.
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
@@ -730,24 +729,24 @@ impl SemanticPlan {
             // Extract prime leader
             let ts = toposort(&sub_graph, None);
             let ts: Vec<_> = ts.unwrap().iter().map(|v| sub_graph[*v]).collect();
-            if let Some(&leader) = ts.first()
-                && ts.len() > 1
-            {
-                cluster_to_leader.insert(cluster_id, leader);
-                leader_to_cluster.insert(leader, cluster_id);
-                allocation_strategy.insert(
-                    ts[0],
-                    (AllocationStrategy::Leader(0.0, 0.0), 0, *cluster_id),
-                );
-                for i in 1..ts.len() {
+            if let Some(&leader) = ts.first() {
+                if ts.len() > 1 {
+                    cluster_to_leader.insert(cluster_id, leader);
+                    leader_to_cluster.insert(leader, cluster_id);
                     allocation_strategy.insert(
-                        ts[i],
-                        (
-                            AllocationStrategy::Follower(ts[i - 1].agent),
-                            i,
-                            *cluster_id,
-                        ),
+                        ts[0],
+                        (AllocationStrategy::Leader(0.0, 0.0), 0, *cluster_id),
                     );
+                    for i in 1..ts.len() {
+                        allocation_strategy.insert(
+                            ts[i],
+                            (
+                                AllocationStrategy::Follower(ts[i - 1].agent),
+                                i,
+                                *cluster_id,
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -767,12 +766,12 @@ impl SemanticPlan {
         for leader in leaders {
             let mut hypothetical_leader = leader;
             hypothetical_leader.trajectory_index += 1;
-            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader)
-                && let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment)
-            {
-                leaders.insert(leader);
-                leader_to_leader_segments.insert(leader, *leader_segment);
-                continue;
+            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader) {
+                if let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment) {
+                    leaders.insert(leader);
+                    leader_to_leader_segments.insert(leader, *leader_segment);
+                    continue;
+                }
             }
             leader_segment_to_leader.insert(
                 last_lead_segment,
@@ -904,10 +903,10 @@ impl SemanticPlan {
                         continue;
                     }
 
-                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent)
-                        && other_agent.trajectory_index <= dep_wp.trajectory_index
-                    {
-                        return true;
+                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent) {
+                        if other_agent.trajectory_index <= dep_wp.trajectory_index {
+                            return true;
+                        }
                     }
                 }
             }

@@ -18,22 +18,22 @@
 use super::{Position, Positioned, WaypointR2};
 use crate::{
     domain::{
-        backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, ExtrapolationProgress,
-        Extrapolator, IncrementalExtrapolator, Key, Reversible,
+        Backtrack, ConflictAvoider, ExtrapolationProgress, Extrapolator, IncrementalExtrapolator,
+        Key, Reversible, backtrack_times, flip_endpoint_times,
     },
     error::{NoError, ThisError},
     graph::Graph,
     motion::{
-        self,
+        self, Duration, SafeArrivalTimes, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
         conflict::{
-            compute_safe_arrival_path, compute_safe_linear_path_wait_hints, SafeAction,
-            WaitForObstacle,
+            SafeAction, WaitForObstacle, compute_safe_arrival_path,
+            compute_safe_linear_path_wait_hints,
         },
-        se2, Duration, SafeArrivalTimes, SafeIntervalCache, SafeIntervalMotionError, SpeedLimiter,
+        se2,
     },
 };
 use arrayvec::ArrayVec;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineFollow {

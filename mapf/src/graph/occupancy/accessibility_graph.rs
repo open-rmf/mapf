@@ -19,12 +19,12 @@ use crate::{
     domain::Reversible,
     error::NoError,
     graph::{
-        occupancy::{Cell, Grid},
         Graph,
+        occupancy::{Cell, Grid},
     },
     motion::r2::Point,
 };
-use bitfield::{bitfield, Bit};
+use bitfield::{Bit, bitfield};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,

@@ -15,7 +15,7 @@
  *
 */
 
-use super::{timed::TimeCmp, Duration, InterpError, Motion, TimePoint, Waypoint};
+use super::{Duration, InterpError, Motion, TimePoint, Waypoint, timed::TimeCmp};
 use cached::{Cached, UnboundCache};
 use sorted_vec::{FindOrInsert, SortedSet};
 use std::cell::RefCell;

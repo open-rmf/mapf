@@ -20,9 +20,9 @@ use crate::{
     error::Anyhow,
     graph::{Graph, SharedGraph},
     motion::{
+        SpeedLimiter, TravelTimeCost,
         r2::{DirectTravelHeuristic, DiscreteSpaceTimeR2, Positioned, StateR2},
         se2::*,
-        SpeedLimiter, TravelTimeCost,
     },
     templates::{GraphMotion, InformedSearch},
 };
@@ -90,7 +90,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{algorithm::AStarConnect, graph::SimpleGraph, motion::SpeedLimit, Planner};
+    use crate::{Planner, algorithm::AStarConnect, graph::SimpleGraph, motion::SpeedLimit};
     use std::sync::Arc;
 
     #[test]

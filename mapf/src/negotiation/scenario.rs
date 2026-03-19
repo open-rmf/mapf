@@ -18,8 +18,8 @@
 use crate::{
     graph::occupancy::Cell,
     motion::{
-        se2::{GoalSE2, Orientation, Position, StartSE2, WaypointSE2},
         TimePoint, Trajectory,
+        se2::{GoalSE2, Orientation, Position, StartSE2, WaypointSE2},
     },
 };
 use nalgebra::{Isometry2, Vector2};
@@ -233,38 +233,35 @@ pub fn is_false(b: &bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Cost;
     use crate::negotiation::NegotiationNode;
     use std::collections::HashMap;
-    use crate::domain::Cost;
 
     #[test]
     fn test_derive_mapf_result_with_obstacles() {
         let scenario = Scenario {
             agents: BTreeMap::new(),
-            obstacles: vec![
-                Obstacle {
-                    trajectory: vec![
-                        (0.0, 0, 0),
-                        (1.0, 1, 0),
-                    ],
-                    radius: 0.5,
-                    indefinite_start: false,
-                    indefinite_finish: false,
-                }
-            ],
+            obstacles: vec![Obstacle {
+                trajectory: vec![(0.0, 0, 0), (1.0, 1, 0)],
+                radius: 0.5,
+                indefinite_start: false,
+                indefinite_finish: false,
+            }],
             occupancy: HashMap::new(),
             cell_size: 1.0,
             camera_bounds: None,
             id_to_name: HashMap::new(),
         };
 
-        // We need a mock solution node. 
+        // We need a mock solution node.
         // Proposals can be empty if there are no agents.
         let solution = NegotiationNode {
             negotiation: crate::negotiation::Negotiation::default(),
             proposals: HashMap::new(),
             environment: crate::motion::CcbsEnvironment::new(std::sync::Arc::new(
-                crate::motion::DynamicEnvironment::new(crate::motion::CircularProfile::new(0.0, 0.0, 0.0).unwrap())
+                crate::motion::DynamicEnvironment::new(
+                    crate::motion::CircularProfile::new(0.0, 0.0, 0.0).unwrap(),
+                ),
             )),
             keys: std::collections::HashSet::new(),
             conceded: None,
@@ -281,18 +278,18 @@ mod tests {
         // One obstacle should result in one trajectory
         assert_eq!(mapf_result.trajectories.len(), 1);
         assert_eq!(mapf_result.footprints.len(), 1);
-        
+
         // Obstacle trajectory from t=0 to t=1 with timestep 0.5 should have 3 poses (0.0, 0.5, 1.0)
         assert_eq!(mapf_result.trajectories[0].poses.len(), 3);
-        
+
         // Check first and last poses
         let p0 = mapf_result.trajectories[0].poses[0].translation.vector;
         let p2 = mapf_result.trajectories[0].poses[2].translation.vector;
-        
+
         // Cell (0,0) center is (0.5, 0.5)
         assert!((p0.x - 0.5).abs() < 1e-6);
         assert!((p0.y - 0.5).abs() < 1e-6);
-        
+
         // Cell (1,0) center is (1.5, 0.5)
         assert!((p2.x - 1.5).abs() < 1e-6);
         assert!((p2.y - 0.5).abs() < 1e-6);

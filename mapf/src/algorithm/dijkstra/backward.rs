@@ -17,11 +17,11 @@
 
 use crate::{
     algorithm::{
-        dijkstra::{
-            forward::{DijkstraSearchError, Memory},
-            Dijkstra,
-        },
         Algorithm, Coherent, Path, SearchStatus, Solvable,
+        dijkstra::{
+            Dijkstra,
+            forward::{DijkstraSearchError, Memory},
+        },
     },
     domain::{
         Activity, ArrivalKeyring, Backtrack, Closable, ClosedStatusForKey, Configurable,
@@ -175,11 +175,11 @@ pub enum BackwardConfigurationError<R, C> {
 mod tests {
     use super::*;
     use crate::{
+        Planner,
         domain::KeyedCloser,
         graph::{SharedGraph, SimpleGraph},
-        motion::{se2::*, TravelTimeCost},
+        motion::{TravelTimeCost, se2::*},
         templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
-        Planner,
     };
     use std::sync::Arc;
 

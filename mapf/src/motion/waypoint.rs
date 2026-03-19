@@ -15,7 +15,7 @@
  *
 */
 
-use super::{r2::Positioned, se2::MaybeOriented, timed, Interpolation};
+use super::{Interpolation, r2::Positioned, se2::MaybeOriented, timed};
 use arrayvec::ArrayVec;
 
 pub trait Waypoint:

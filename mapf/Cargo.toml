@@ -1,7 +1,7 @@
 [package]
 name = "mapf"
 version = "0.3.0"
-edition = "2024"
+edition = "2021"
 description = "Base traits and utilities for multi-agent planning"
 license = "Apache-2.0"
 repository = "https://github.com/open-rmf/mapf"

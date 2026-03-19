@@ -17,7 +17,7 @@
 
 use crate::{
     algorithm::{
-        tree::*, Algorithm, Coherent, MinimumCostBound, Path, QueueLength, SearchStatus, Solvable,
+        Algorithm, Coherent, MinimumCostBound, Path, QueueLength, SearchStatus, Solvable, tree::*,
     },
     domain::{
         Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Informed,
