@@ -786,6 +786,7 @@ struct App {
     agent_radius_slider: slider::State,
     agent_speed_slider: slider::State,
     agent_spin_slider: slider::State,
+    debug_ticket_size_slider: slider::State,
     add_agent_button: button::State,
     remove_agent_button: button::State,
     pick_agent_state: pick_list::State<String>,
@@ -797,14 +798,12 @@ struct App {
     show_details: KeyToggler,
     search: Option<(f64, Search<MyAlgo, GoalSE2<Cell>, QueueLengthLimit>)>,
     step_progress: button::State,
-    increase_debug_ticket_size: button::State,
-    decrease_debug_ticket_size: button::State,
     debug_planner_on: bool,
     debug_negotiation_on: bool,
     search_memory: Vec<TreeTicket>,
     negotiation_history: Vec<NegotiationNode>,
     name_map: HashMap<usize, String>,
-    debug_ticket_size: usize,
+    debug_ticket_size: u32,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
@@ -1010,7 +1009,7 @@ impl App {
 
             self.canvas.program.layers.3.searches.clear();
 
-            for ticket in self.search_memory.iter().take(self.debug_ticket_size) {
+            for ticket in self.search_memory.iter().take(self.debug_ticket_size as usize) {
                 if let Some(mt) = search
                     .memory()
                     .0
@@ -1460,6 +1459,7 @@ impl Application for App {
             agent_radius_slider: slider::State::new(),
             agent_speed_slider: slider::State::new(),
             agent_spin_slider: slider::State::new(),
+            debug_ticket_size_slider: slider::State::new(),
             add_agent_button: button::State::new(),
             remove_agent_button: button::State::new(),
             pick_agent_state: pick_list::State::new(),
@@ -1471,8 +1471,6 @@ impl Application for App {
             show_details: KeyToggler::for_key(keyboard::KeyCode::LAlt),
             search: None,
             step_progress: button::State::new(),
-            decrease_debug_ticket_size: button::State::new(),
-            increase_debug_ticket_size: button::State::new(),
             debug_planner_on: false,
             debug_negotiation_on: false,
             search_memory: Default::default(),
@@ -1792,15 +1790,9 @@ impl Application for App {
                     self.canvas.cache.clear();
                 }
             }
-            Message::IncDebugTicketSize => {
-                self.debug_ticket_size += 1;
+            Message::ChangeDebugTicketSize(value) => {
+                self.debug_ticket_size = value;
                 self.draw_search_paths();
-            }
-            Message::DecDebugTicketSize => {
-                if self.debug_ticket_size > 1 {
-                    self.debug_ticket_size -= 1;
-                    self.draw_search_paths();
-                }
             }
         }
 
@@ -1999,19 +1991,13 @@ impl Application for App {
                                 .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
                                 .push(iced::Space::with_width(Length::Units(8)))
                                 .push(
-                                    Button::new(
-                                        &mut self.decrease_debug_ticket_size,
-                                        Text::new("-"),
+                                    Slider::new(
+                                        &mut self.debug_ticket_size_slider,
+                                        1..=100,
+                                        self.debug_ticket_size,
+                                        Message::ChangeDebugTicketSize,
                                     )
-                                    .on_press(Message::DecDebugTicketSize),
-                                )
-                                .push(iced::Space::with_width(Length::Units(8)))
-                                .push(
-                                    Button::new(
-                                        &mut self.increase_debug_ticket_size,
-                                        Text::new("+"),
-                                    )
-                                    .on_press(Message::IncDebugTicketSize),
+                                    .width(Length::Units(40)),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(Text::new(format!("Steps: {}", self.debug_step_count)))
@@ -2160,8 +2146,7 @@ enum Message {
     SelectNegotiationNode(usize),
     StepProgress,
     Tick,
-    IncDebugTicketSize,
-    DecDebugTicketSize,
+    ChangeDebugTicketSize(u32),
 }
 
 fn main() -> iced::Result {
