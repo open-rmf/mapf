@@ -127,7 +127,7 @@ where
                                     Err(_) => {
                                         return Err(Self::algo_err(
                                             DijkstraImplError::PoisonedMutex,
-                                        ));
+                                        ))
                                     }
                                 };
 

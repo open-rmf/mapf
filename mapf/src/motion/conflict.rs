@@ -95,7 +95,7 @@ where
             None => {
                 return SmallVec::from_iter([Err(
                     SafeActionIntegrateWaypointError::MissingInitialWaypoint,
-                )]);
+                )])
             }
         };
 
