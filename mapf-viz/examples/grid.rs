@@ -1988,16 +1988,20 @@ impl Application for App {
                                         .on_press(Message::StepProgress),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
-                                .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
-                                .push(iced::Space::with_width(Length::Units(8)))
                                 .push(
-                                    Slider::new(
-                                        &mut self.debug_ticket_size_slider,
-                                        1..=100,
-                                        self.debug_ticket_size,
-                                        Message::ChangeDebugTicketSize,
-                                    )
-                                    .width(Length::Units(40)),
+                                    Column::new()
+                                        .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                        .push(iced::Space::with_height(Length::Units(2)))
+                                        .push(
+                                            Slider::new(
+                                                &mut self.debug_ticket_size_slider,
+                                                1..=100,
+                                                self.debug_ticket_size,
+                                                Message::ChangeDebugTicketSize,
+                                            )
+                                            .width(Length::Units(120)),
+                                        )
+                                        .align_items(Alignment::Center),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(Text::new(format!("Steps: {}", self.debug_step_count)))
