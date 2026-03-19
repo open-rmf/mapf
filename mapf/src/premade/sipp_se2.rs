@@ -20,9 +20,9 @@ use crate::{
     error::{Anyhow, StdError},
     graph::{Graph, SharedGraph},
     motion::{
-        CcbsEnvironment, SafeIntervalCache, SafeIntervalCloser, SpeedLimiter, TravelEffortCost,
         r2::Positioned,
         se2::{quickest_path::QuickestPathSearch, *},
+        CcbsEnvironment, SafeIntervalCache, SafeIntervalCloser, SpeedLimiter, TravelEffortCost,
     },
     templates::{ConflictAvoidance, GraphMotion, InformedSearch, LazyGraphMotion},
 };
@@ -393,15 +393,15 @@ where
 mod tests {
     use super::*;
     use crate::{
-        Planner,
         algorithm::AStarConnect,
         graph::{
-            SimpleGraph,
             occupancy::{Cell, NeighborhoodGraph, SparseGrid, Visibility, VisibilityGraph},
+            SimpleGraph,
         },
         motion::{
             CircularProfile, DynamicCircularObstacle, DynamicEnvironment, TimePoint, Trajectory,
         },
+        Planner,
     };
     use approx::assert_relative_eq;
     use std::sync::Arc;

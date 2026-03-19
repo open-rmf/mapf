@@ -18,12 +18,12 @@
 use crate::{
     domain::Key,
     motion::{
-        Trajectory, Waypoint,
         r2::{Point, WaypointR2},
+        Trajectory, Waypoint,
     },
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     iter::Enumerate,
     slice::Iter as SliceIter,
     sync::Arc,

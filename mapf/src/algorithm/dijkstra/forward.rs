@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    algorithm::{Algorithm, Coherent, Path, SearchStatus, Solvable, tree::*},
+    algorithm::{tree::*, Algorithm, Coherent, Path, SearchStatus, Solvable},
     domain::{
         Activity, ArrivalKeyring, Closable, CloseResult, ClosedSet, ClosedStatus,
         ClosedStatusForKey, Configurable, Connectable, Domain, Initializable, Keyed, Keyring,
@@ -26,7 +26,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     ops::Add,
     sync::{Arc, Mutex, RwLock},
 };

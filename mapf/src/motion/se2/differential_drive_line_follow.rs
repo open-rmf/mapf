@@ -17,24 +17,25 @@
 
 use crate::{
     domain::{
-        Backtrack, ConflictAvoider, Connectable, ExtrapolationProgress, Extrapolator,
-        IncrementalExtrapolator, Key, Reversible, backtrack_times, flip_endpoint_times,
+        backtrack_times, flip_endpoint_times, Backtrack, ConflictAvoider, Connectable,
+        ExtrapolationProgress, Extrapolator, IncrementalExtrapolator, Key, Reversible,
     },
     error::{NoError, ThisError},
     graph::Graph,
     motion::{
-        self, CcbsEnvironment, Duration, MaybeTimed, SafeArrivalTimes, SafeIntervalCache,
-        SafeIntervalMotionError, SpeedLimiter, Timed,
+        self,
         conflict::{
-            SafeAction, WaitForObstacle, compute_safe_arrival_path,
-            compute_safe_linear_path_wait_hints, is_safe_segment,
+            compute_safe_arrival_path, compute_safe_linear_path_wait_hints, is_safe_segment,
+            SafeAction, WaitForObstacle,
         },
         r2::{MaybePositioned, Positioned, WaypointR2},
         se2::{MaybeOriented, Orientation, Point, Position, StateSE2, WaypointSE2},
+        CcbsEnvironment, Duration, MaybeTimed, SafeArrivalTimes, SafeIntervalCache,
+        SafeIntervalMotionError, SpeedLimiter, Timed,
     },
 };
 use arrayvec::ArrayVec;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 use std::{borrow::Borrow, sync::Arc};
 use time_point::TimePoint;
 

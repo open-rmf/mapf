@@ -27,7 +27,7 @@ pub trait ProjectState<State>: StateSubspace {
 
     /// Project a state down to the target state space.
     fn project(&self, state: &State)
-    -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
+        -> Result<Option<Self::ProjectedState>, Self::ProjectionError>;
 }
 
 pub trait LiftState<State>: StateSubspace {

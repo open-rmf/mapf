@@ -19,9 +19,10 @@ use super::{Position, Vector, Velocity};
 use crate::{
     error::NoError,
     motion::{
-        self, IntegrateWaypoints, InterpError, Interpolation, MaybeTimed, TimePoint, Timed,
+        self,
         r2::{MaybePositioned, Positioned},
         se2::{MaybeOriented, Orientation, Oriented},
+        IntegrateWaypoints, InterpError, Interpolation, MaybeTimed, TimePoint, Timed,
     },
 };
 use arrayvec::ArrayVec;

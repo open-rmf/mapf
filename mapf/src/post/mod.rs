@@ -188,8 +188,8 @@ fn test_waypoint_follower() {
 #[cfg(test)]
 #[test]
 fn test_trajectory_conversion() {
-    use crate::motion::Trajectory as MapfTrajectory;
     use crate::motion::se2::WaypointSE2;
+    use crate::motion::Trajectory as MapfTrajectory;
     use time_point::TimePoint;
 
     let w1 = WaypointSE2::new(TimePoint::from_secs_f64(0.0), 0.0, 0.0, 0.0);

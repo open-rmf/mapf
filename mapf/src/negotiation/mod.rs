@@ -20,21 +20,21 @@ pub use scenario::*;
 
 use crate::{
     algorithm::{
-        AStarConnect, QueueLength, SearchStatus,
         path::{DecisionRange, MetaTrajectory},
+        AStarConnect, QueueLength, SearchStatus,
     },
     domain::{ClosedStatus, Configurable, Cost},
     error::ThisError,
-    graph::{SharedGraph, occupancy::*},
+    graph::{occupancy::*, SharedGraph},
     motion::{
-        BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
-        DynamicCircularObstacle, DynamicEnvironment, Motion, TimePoint, Timed, TravelEffortCost,
         have_conflict,
         r2::{Positioned, WaypointR2},
         se2::{DifferentialDriveLineFollow, WaypointSE2},
         trajectory::TrajectoryIter,
+        BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
+        DynamicCircularObstacle, DynamicEnvironment, Motion, TimePoint, Timed, TravelEffortCost,
     },
-    planner::{Planner, halt::QueueLengthLimit},
+    planner::{halt::QueueLengthLimit, Planner},
     premade::{SippSE2, StateSippSE2},
     util::triangular_for,
 };

@@ -20,16 +20,17 @@ use crate::{
     error::ThisError,
     graph::Graph,
     motion::{
-        CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed, compute_safe_arrival_times,
+        compute_safe_arrival_times,
         r2::{Positioned, WaypointR2},
         se2::WaypointSE2,
+        CcbsEnvironment, SafeArrivalTimes, TimePoint, Timed,
     },
     util::Minimum,
 };
 use smallvec::SmallVec;
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     sync::{Arc, RwLock},
 };
 

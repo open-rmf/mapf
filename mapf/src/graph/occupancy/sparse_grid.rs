@@ -17,7 +17,7 @@
 
 use super::util::{LineSegment, SearchF64};
 use super::{Cell, ChangedCorners, ConfirmedChanges, Corner, CornerStatus, Grid, Point, Vector};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, btree_map, hash_map, hash_set};
+use std::collections::{btree_map, hash_map, hash_set, BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct SparseGrid {

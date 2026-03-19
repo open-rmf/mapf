@@ -20,9 +20,9 @@ use crate::{
     error::{NoError, ThisError},
     graph::Graph,
     motion::{
-        IntegrateWaypoints, MaybeTimed, TimePoint, Timed,
         r2::*,
         se2::{MaybeOriented, Orientation, StateSE2},
+        IntegrateWaypoints, MaybeTimed, TimePoint, Timed,
     },
 };
 use std::borrow::Borrow;

@@ -17,7 +17,7 @@
 
 use super::{
     AsTimeInvariant, AsTimeVariant, Closable, CloseResult, ClosedSet, ClosedStatus,
-    ClosedStatusForKey, DEFAULT_TIME_THRESH, PartialKeyedCloser,
+    ClosedStatusForKey, PartialKeyedCloser, DEFAULT_TIME_THRESH,
 };
 use crate::{
     domain::{Keyed, Keyring, PartialKeyed, Reversible},
@@ -26,7 +26,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
 };
 
 /// Factory for [`TimeVariantPartialKeyedClosedSet`]. Provide this to your domain,

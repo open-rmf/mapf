@@ -25,7 +25,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
 };
 
 /// Factory for [`PartialKeyedClosedSet`]. Provide this to your domain, e.g.
@@ -197,21 +197,15 @@ mod tests {
     #[test]
     fn test_partial_keyed_closed_set() {
         let mut closed_set = PartialKeyedClosedSet::new(SelfPartialKeyring::<usize>::new());
-        assert!(
-            closed_set
-                .close(&TestState::new(Some(1), 0.24), 0)
-                .accepted()
-        );
-        assert!(
-            closed_set
-                .status(&TestState::new(Some(1), 0.55))
-                .is_closed()
-        );
-        assert!(
-            closed_set
-                .close(&TestState::new(Some(1), 0.1), 32)
-                .rejected()
-        );
+        assert!(closed_set
+            .close(&TestState::new(Some(1), 0.24), 0)
+            .accepted());
+        assert!(closed_set
+            .status(&TestState::new(Some(1), 0.55))
+            .is_closed());
+        assert!(closed_set
+            .close(&TestState::new(Some(1), 0.1), 32)
+            .rejected());
 
         assert!(closed_set.close(&TestState::new(None, 0.4), 0).accepted());
         assert!(closed_set.status(&TestState::new(None, 123.4)).is_open());

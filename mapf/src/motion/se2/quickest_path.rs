@@ -16,12 +16,10 @@
 */
 
 use crate::{
-    Graph, Planner,
     algorithm::{BackwardDijkstra, Path},
     domain::{Connectable, Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
     error::{Anyhow, ThisError},
     motion::{
-        MaybeTimed, SpeedLimiter, TimePoint, Timed,
         r2::{
             DiscreteSpaceTimeR2, InitializeR2, LineFollow, MaybePositioned, Positioned, StateR2,
             WaypointR2,
@@ -30,9 +28,11 @@ use crate::{
             DifferentialDriveLineFollow, DifferentialDriveLineFollowError,
             DifferentialDriveLineFollowMotion, KeySE2, MaybeOriented, MergeIntoGoal, StateSE2,
         },
+        MaybeTimed, SpeedLimiter, TimePoint, Timed,
     },
     planner::halt::StepLimit,
     templates::{GraphMotion, LazyGraphMotion, UninformedSearch},
+    Graph, Planner,
 };
 use arrayvec::ArrayVec;
 use std::{
@@ -317,12 +317,12 @@ mod tests {
     use super::*;
     use crate::{
         graph::{
-            SharedGraph, SimpleGraph,
             occupancy::{Cell, SparseGrid, Visibility, VisibilityGraph},
+            SharedGraph, SimpleGraph,
         },
         motion::{
-            CircularProfile, TimePoint, TravelTimeCost,
             se2::{GoalSE2, Point, WaypointSE2},
+            CircularProfile, TimePoint, TravelTimeCost,
         },
     };
     use approx::assert_relative_eq;

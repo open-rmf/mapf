@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use bresenham::Bresenham;
 
 use super::{
-    IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint, mapf_post,
+    mapf_post, IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint,
 };
 
 #[derive(Clone)]

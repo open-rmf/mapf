@@ -18,8 +18,8 @@
 use crate::{
     graph::occupancy::Cell,
     motion::{
-        TimePoint, Trajectory,
         se2::{GoalSE2, Orientation, Position, StartSE2, WaypointSE2},
+        TimePoint, Trajectory,
     },
 };
 use nalgebra::{Isometry2, Vector2};

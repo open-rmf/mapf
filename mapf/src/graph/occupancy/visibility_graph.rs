@@ -19,13 +19,13 @@ use crate::{
     domain::Reversible,
     error::NoError,
     graph::{
-        Edge, Graph,
         occupancy::{Cell, Grid, NeighborsIter, Point, Visibility, VisibleCells},
+        Edge, Graph,
     },
     util::triangular_for,
 };
 use std::{
-    collections::{HashMap, HashSet, hash_set::Iter as HashSetIter},
+    collections::{hash_set::Iter as HashSetIter, HashMap, HashSet},
     sync::Arc,
 };
 

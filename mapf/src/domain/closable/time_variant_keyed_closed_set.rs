@@ -26,7 +26,7 @@ use crate::{
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
 };
 
 pub const DEFAULT_TIME_THRESH: i64 = 100_000_000;

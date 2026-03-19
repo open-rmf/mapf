@@ -18,11 +18,11 @@
 use crate::{
     error::ThisError,
     motion::{
+        r2::{Point, Positioned, WaypointR2},
+        se2::MaybeOriented,
         Arclength, BoundingBox, CircularProfile, Duration, DynamicCircularObstacle, Environment,
         IntegrateWaypoints, Interpolation, Measurable, Motion, TimePoint, Timed, Trajectory,
         Waypoint,
-        r2::{Point, Positioned, WaypointR2},
-        se2::MaybeOriented,
     },
 };
 use arrayvec::ArrayVec;
