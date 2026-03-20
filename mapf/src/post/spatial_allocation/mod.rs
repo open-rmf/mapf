@@ -6,6 +6,8 @@ use super::{
     mapf_post, IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint,
 };
 
+use crate::negotiation::Scenario;
+
 #[derive(Clone)]
 pub struct CurrentPosition {
     pub semantic_position: SemanticWaypoint,
@@ -20,6 +22,49 @@ pub struct Grid2D {
 }
 
 impl Grid2D {
+    pub fn from_scenario(scenario: &Scenario) -> Self {
+        let mut max_x = 0i64;
+        let mut max_y = 0i64;
+
+        for (y, row) in &scenario.occupancy {
+            max_y = max_y.max(*y);
+            for x in row {
+                max_x = max_x.max(*x);
+            }
+        }
+
+        for agent in scenario.agents.values() {
+            max_x = max_x.max(agent.start[0]).max(agent.goal[0]);
+            max_y = max_y.max(agent.start[1]).max(agent.goal[1]);
+        }
+
+        for obstacle in &scenario.obstacles {
+            for (_, x, y) in &obstacle.trajectory {
+                max_x = max_x.max(*x);
+                max_y = max_y.max(*y);
+            }
+        }
+
+        if let Some(bounds) = scenario.camera_bounds {
+            max_x = max_x.max((bounds[1][0] / scenario.cell_size as f32) as i64);
+            max_y = max_y.max((bounds[1][1] / scenario.cell_size as f32) as i64);
+        }
+
+        let width = (max_x + 1) as usize;
+        let height = (max_y + 1) as usize;
+
+        let mut static_obstacles = vec![vec![0i8; height]; width];
+        for (y, row) in &scenario.occupancy {
+            for x in row {
+                if *x >= 0 && *y >= 0 {
+                    static_obstacles[*x as usize][height - 1 - *y as usize] = 100;
+                }
+            }
+        }
+
+        Self::new(static_obstacles, scenario.cell_size)
+    }
+
     pub fn new(static_obstacles: Vec<Vec<i8>>, cell_size: f64) -> Self {
         let width = static_obstacles.len();
         let height = if width > 0 {
@@ -59,7 +104,7 @@ impl Grid2D {
             positions.iter().map(|p| p.semantic_position).collect();
         let assignment = semantic_plan.get_claim_dict(&semantic_positions);
 
-        let mut allocation_field = AllocationField::create(semantic_plan, 1000, 1000);
+        let mut allocation_field = AllocationField::create(semantic_plan, self.width, self.height);
 
         for (agent, traj) in trajectories.trajectories.iter().enumerate() {
             let Some(region) = assignment.get(&agent) else {
@@ -355,5 +400,52 @@ impl AllocationField {
             return None;
         };
         Some(p.priority)
+    }
+}
+
+impl From<&Scenario> for Grid2D {
+    fn from(scenario: &Scenario) -> Self {
+        Self::from_scenario(scenario)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_grid2d_from_scenario() {
+        let mut occupancy = HashMap::new();
+        occupancy.insert(0, vec![0, 1]); // y=0, x=0,1
+        occupancy.insert(1, vec![0]); // y=1, x=0
+
+        let scenario = Scenario {
+            agents: BTreeMap::new(),
+            obstacles: vec![],
+            occupancy,
+            cell_size: 1.0,
+            camera_bounds: None,
+        };
+
+        let grid = Grid2D::from_scenario(&scenario);
+
+        // max_x = 1, max_y = 1
+        // width = 2, height = 2
+        assert_eq!(grid.width, 2);
+        assert_eq!(grid.height, 2);
+
+        // In Grid2D, y_grid = height - 1 - y_scenario
+        // y_scenario=0 -> y_grid=1
+        // y_scenario=1 -> y_grid=0
+
+        // (0,0) scenario -> (0,1) grid
+        assert_eq!(grid.static_obstacles[0][1], 100);
+        // (1,0) scenario -> (1,1) grid
+        assert_eq!(grid.static_obstacles[1][1], 100);
+        // (0,1) scenario -> (0,0) grid
+        assert_eq!(grid.static_obstacles[0][0], 100);
+        // (1,1) scenario -> (1,0) grid (not occupied)
+        assert_eq!(grid.static_obstacles[1][0], 0);
     }
 }
