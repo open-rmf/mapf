@@ -662,7 +662,7 @@ impl Scenario {
         Ok(solution)
     }
 
-    pub fn derive_mapf_result(
+    fn derive_mapf_result(
         &self,
         solution: &NegotiationNode,
         timestep: f64,
