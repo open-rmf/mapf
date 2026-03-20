@@ -55,7 +55,7 @@ pub enum NegotiationError {
 }
 
 pub fn negotiate(
-    scenario: &mut Scenario,
+    scenario: &Scenario,
     queue_length_limit: Option<usize>,
 ) -> Result<
     (
@@ -98,7 +98,6 @@ pub fn negotiate(
             agents.push(agent.clone());
         }
 
-        scenario.id_to_name = name_map.clone();
         (name_map, agents)
     };
 
@@ -656,7 +655,7 @@ impl NegotiationNode {
 
 impl Scenario {
     pub fn solve(
-        &mut self,
+        &self,
         queue_length_limit: Option<usize>,
     ) -> Result<NegotiationNode, NegotiationError> {
         let (solution, _, _) = negotiate(self, queue_length_limit)?;
@@ -681,8 +680,10 @@ impl Scenario {
 
         let mut trajectories = Vec::new();
         let mut footprints = Vec::new();
+        let mut agent_name_to_id = std::collections::HashMap::new();
 
-        for (i, (_name, agent)) in self.agents.iter().enumerate() {
+        for (i, (name, agent)) in self.agents.iter().enumerate() {
+            agent_name_to_id.insert(name.clone(), i);
             footprints.push(
                 std::sync::Arc::new(crate::post::shape::Ball::new(agent.radius))
                     as std::sync::Arc<dyn crate::post::shape::Shape>,
@@ -729,6 +730,7 @@ impl Scenario {
             trajectories,
             footprints,
             discretization_timestep: timestep,
+            agent_name_to_id,
         }
     }
 

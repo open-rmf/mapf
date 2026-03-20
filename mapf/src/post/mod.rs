@@ -237,9 +237,16 @@ pub struct SemanticPlan {
     depends_on_all_of: HashMap<usize, Vec<usize>>,
     /// Next states. Key is the state
     potential_successors: HashMap<usize, Vec<usize>>,
+    /// Mapping from agent name to ID
+    pub agent_name_to_id: HashMap<String, usize>,
 }
 
 impl SemanticPlan {
+    /// Get the agent ID from its name
+    pub fn get_agent_id(&self, name: &str) -> Option<usize> {
+        self.agent_name_to_id.get(name).copied()
+    }
+
     fn add_waypoint(&mut self, waypoint: &SemanticWaypoint) {
         self.agent_time_to_wp_id
             .insert(*waypoint, self.waypoints.len());
@@ -1010,6 +1017,8 @@ pub struct MapfResult {
     pub footprints: Vec<Arc<dyn Shape>>,
     /// The time discretization of the trajectories
     pub discretization_timestep: f64,
+    /// Mapping from agent name to ID
+    pub agent_name_to_id: HashMap<String, usize>,
 }
 
 impl std::fmt::Debug for MapfResult {
@@ -1084,7 +1093,10 @@ fn collides(
 ///
 /// Based on https://whoenig.github.io/publications/2019_RA-L_Hoenig.pdf
 pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
-    let mut semantic_plan = SemanticPlan::default();
+    let mut semantic_plan = SemanticPlan {
+        agent_name_to_id: mapf_result.agent_name_to_id.clone(),
+        ..SemanticPlan::default()
+    };
     semantic_plan.num_agents = mapf_result.trajectories.len();
     // Type 1 edges
     for agent in 0..mapf_result.trajectories.len() {
@@ -1335,7 +1347,8 @@ mod tests {
                 Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent1
                 Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
             ],
-            discretization_timestep: 1.0, // Example timestep
+            discretization_timestep: 1.0,
+            agent_name_to_id: HashMap::default(),
         };
 
         // Generate the semantic plan
@@ -1394,7 +1407,8 @@ mod tests {
                 Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent1
                 Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
             ],
-            discretization_timestep: 1.0, // Example timestep
+            discretization_timestep: 1.0,
+            agent_name_to_id: HashMap::default(),
         };
 
         let semantic_plan = mapf_post(&mapf_result);
@@ -1461,6 +1475,7 @@ mod tests {
                 Arc::new(parry2d::shape::Ball::new(0.49)),
             ],
             discretization_timestep: 1.0,
+            agent_name_to_id: HashMap::default(),
         };
 
         let semantic_plan = mapf_post(&mapf_result);

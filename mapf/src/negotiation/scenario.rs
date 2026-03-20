@@ -179,8 +179,6 @@ pub struct Scenario {
     pub cell_size: f64,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub camera_bounds: Option<[[f32; 2]; 2]>,
-    #[serde(skip_serializing)]
-    pub id_to_name: HashMap<usize, String>,
 }
 
 pub fn default_radius() -> f64 {
@@ -227,7 +225,6 @@ mod tests {
             occupancy: HashMap::new(),
             cell_size: 1.0,
             camera_bounds: None,
-            id_to_name: HashMap::new(),
         };
 
         // We need a mock solution node.
