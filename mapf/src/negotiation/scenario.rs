@@ -183,29 +183,6 @@ pub struct Scenario {
     pub id_to_name: HashMap<usize, String>,
 }
 
-impl Scenario {
-    pub fn add_mobile_objects_as_agents(&mut self) {
-        let mut last_id = 0;
-        for key in self.agents.keys() {
-            if let Ok(id) = key.parse::<usize>() {
-                last_id = last_id.max(id);
-            }
-        }
-
-        if !self.agents.is_empty() {
-            last_id += 1;
-        }
-
-        let obstacles = std::mem::take(&mut self.obstacles);
-        for obstacle in obstacles {
-            if let Some(agent) = obstacle.to_agent() {
-                self.agents.insert(last_id.to_string(), agent);
-                last_id += 1;
-            }
-        }
-    }
-}
-
 pub fn default_radius() -> f64 {
     0.45
 }
