@@ -2,6 +2,7 @@
 members = [
     "mapf",
     "mapf-viz",
+    "mapf-bench",
 ]
 
 resolver = "2"
