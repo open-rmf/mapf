@@ -37,17 +37,6 @@ $ rustup update
 
 Follow instructions for installing rustup-init.exe [here](https://forge.rust-lang.org/infra/other-installation-methods.html#other-ways-to-install-rustup).
 
-# Use nightly
-
-We are currently using a few unstable features from the nightly toolchain of Rust
-because they allow `mapf` to have extreme customizability without any loss to
-performance. The easiest way to use the nightly version is to make it your default
-toolchain with this command:
-
-```bash
-$ rustup default nightly
-```
-
 # Run an example
 
 From the root directory:

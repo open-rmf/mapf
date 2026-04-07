@@ -786,6 +786,7 @@ struct App {
     agent_radius_slider: slider::State,
     agent_speed_slider: slider::State,
     agent_spin_slider: slider::State,
+    debug_ticket_size_slider: slider::State,
     add_agent_button: button::State,
     remove_agent_button: button::State,
     pick_agent_state: pick_list::State<String>,
@@ -802,6 +803,7 @@ struct App {
     search_memory: Vec<TreeTicket>,
     negotiation_history: Vec<NegotiationNode>,
     name_map: HashMap<usize, String>,
+    debug_ticket_size: u32,
     debug_step_count: u64,
     debug_node_selected: Option<usize>,
     negotiation_node_selected: Option<usize>,
@@ -970,9 +972,32 @@ impl App {
     }
 
     fn step_progress(&mut self) {
+        self.debug_step_count += 1;
+        self.draw_search_paths();
+        // step towards solution here
         if let Some((radius, search)) = &mut self.search {
-            self.debug_step_count += 1;
+            if let SearchStatus::Solved(solution) = search.step().unwrap() {
+                println!("Queue length: {}", search.memory().queue_length());
+                println!("Solution: {:#?}", solution);
+                self.canvas.program.layers.3.solutions.clear();
+                self.canvas.program.layers.3.solutions.extend(
+                    solution
+                        .make_trajectory()
+                        .unwrap()
+                        .map(|t| (*radius, t.trajectory))
+                        .into_iter(),
+                );
+                self.debug_node_selected = None;
+                self.search = None;
+                self.canvas.cache.clear();
+            } else {
+                println!("Queue length: {}", search.memory().queue_length());
+            }
+        }
+    }
 
+    fn draw_search_paths(&mut self) {
+        if let Some((radius, search)) = &mut self.search {
             self.search_memory = search
                 .memory()
                 .0
@@ -982,8 +1007,9 @@ impl App {
                 .map(|n| n.0.clone())
                 .collect();
 
-            // TODO(@mxgrey): Make the number to take configurable
-            for ticket in self.search_memory.iter().take(10) {
+            self.canvas.program.layers.3.searches.clear();
+
+            for ticket in self.search_memory.iter().take(self.debug_ticket_size as usize) {
                 if let Some(mt) = search
                     .memory()
                     .0
@@ -1001,25 +1027,8 @@ impl App {
                         .push((*radius, mt.trajectory));
                 }
             }
-
-            if let SearchStatus::Solved(solution) = search.step().unwrap() {
-                println!("Queue length: {}", search.memory().queue_length());
-                println!("Solution: {:#?}", solution);
-                self.canvas.program.layers.3.solutions.clear();
-                self.canvas.program.layers.3.solutions.extend(
-                    solution
-                        .make_trajectory()
-                        .unwrap()
-                        .map(|t| (*radius, t.trajectory))
-                        .into_iter(),
-                );
-                self.debug_node_selected = None;
-                self.search = None;
-            } else {
-                println!("Queue length: {}", search.memory().queue_length());
-                if let Some(selection) = self.debug_node_selected {
-                    self.select_search_node(selection);
-                }
+            if let Some(selection) = self.debug_node_selected {
+                self.select_search_node(selection);
             }
 
             self.canvas.cache.clear();
@@ -1457,6 +1466,7 @@ impl Application for App {
             agent_radius_slider: slider::State::new(),
             agent_speed_slider: slider::State::new(),
             agent_spin_slider: slider::State::new(),
+            debug_ticket_size_slider: slider::State::new(),
             add_agent_button: button::State::new(),
             remove_agent_button: button::State::new(),
             pick_agent_state: pick_list::State::new(),
@@ -1477,6 +1487,7 @@ impl Application for App {
             debug_node_selected: None,
             negotiation_node_selected: None,
             next_robot_name_index: 0,
+            debug_ticket_size: 10,
         };
 
         if app.canvas.program.layers.2.agents.is_empty() {
@@ -1786,6 +1797,10 @@ impl Application for App {
                     self.canvas.cache.clear();
                 }
             }
+            Message::ChangeDebugTicketSize(value) => {
+                self.debug_ticket_size = value;
+                self.draw_search_paths();
+            }
         }
 
         Command::none()
@@ -1980,6 +1995,22 @@ impl Application for App {
                                         .on_press(Message::StepProgress),
                                 )
                                 .push(iced::Space::with_width(Length::Units(16)))
+                                .push(
+                                    Column::new()
+                                        .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                        .push(iced::Space::with_height(Length::Units(2)))
+                                        .push(
+                                            Slider::new(
+                                                &mut self.debug_ticket_size_slider,
+                                                1..=100,
+                                                self.debug_ticket_size,
+                                                Message::ChangeDebugTicketSize,
+                                            )
+                                            .width(Length::Units(120)),
+                                        )
+                                        .align_items(Alignment::Center),
+                                )
+                                .push(iced::Space::with_width(Length::Units(16)))
                                 .push(Text::new(format!("Steps: {}", self.debug_step_count)))
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(Text::new(format!(
@@ -2126,6 +2157,7 @@ enum Message {
     SelectNegotiationNode(usize),
     StepProgress,
     Tick,
+    ChangeDebugTicketSize(u32),
 }
 
 fn main() -> iced::Result {
