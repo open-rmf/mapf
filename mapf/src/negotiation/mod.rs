@@ -209,7 +209,7 @@ pub fn negotiate(
             let mut iters = 0;
             while !queue.is_empty() {
                 let top = {
-                    let focal_weight = 1.1;
+                    let focal_weight = 1.5;
                     let min_f = queue.first().unwrap().node.cost.0;
                     let threshold = min_f * focal_weight;
 
