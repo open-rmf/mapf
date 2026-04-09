@@ -40,7 +40,7 @@ use crate::{
 };
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -200,14 +200,34 @@ pub fn negotiate(
         };
 
         for root in negotiations.values() {
-            let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::new();
+            let mut queue: BTreeSet<QueueEntry> = BTreeSet::new();
             let root = NegotiationNode::from_root(root, &ideal, base_env.clone(), arena.len());
             arena.push(root.clone());
-            queue.push(QueueEntry::new(root));
+            queue.insert(QueueEntry::new(root));
 
             let mut solution = None;
             let mut iters = 0;
-            while let Some(mut top) = queue.pop() {
+            while !queue.is_empty() {
+                let top = {
+                    let focal_weight = 1.1;
+                    let min_f = queue.first().unwrap().node.cost.0;
+                    let threshold = min_f * focal_weight;
+
+                    let mut best_entry = queue.first().unwrap();
+                    for entry in queue.iter().take_while(|e| e.node.cost.0 <= threshold) {
+                        if entry.node.negotiation.conflicts.len()
+                            < best_entry.node.negotiation.conflicts.len()
+                        {
+                            best_entry = entry;
+                        }
+                    }
+                    best_entry.clone()
+                };
+                if !queue.remove(&top) {
+                    panic!("Failed to remove node {} from queue!", top.node.id);
+                }
+                let mut top = top;
+
                 iters += 1;
                 if iters % 10 == 0 {
                     dbg!(iters);
@@ -217,7 +237,7 @@ pub fn negotiate(
 
                     // Dump the remaining queue into the node history
                     println!("Queue begins at {}", arena.len() + 1);
-                    while let Some(remainder) = queue.pop() {
+                    while let Some(remainder) = queue.pop_first() {
                         arena.push(remainder.node);
                     }
 
@@ -395,7 +415,7 @@ pub fn negotiate(
                         arena.len(),
                     );
                     arena.push(node.clone());
-                    queue.push(QueueEntry::new(node));
+                    queue.insert(QueueEntry::new(node));
                 }
             }
 
@@ -660,27 +680,23 @@ struct QueueEntry {
 
 impl PartialOrd for QueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if f64::abs(self.node.cost.0 - other.node.cost.0) < 0.1 {
-            Reverse(self.node.depth).partial_cmp(&Reverse(other.node.depth))
-        } else {
-            Reverse(self.node.cost).partial_cmp(&Reverse(other.node.cost))
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl PartialEq for QueueEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.node.cost.eq(&other.node.cost)
+        self.node.id == other.node.id
     }
 }
 
 impl Ord for QueueEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if f64::abs(self.node.cost.0 - other.node.cost.0) < 0.1 {
-            self.node.depth.cmp(&self.node.depth)
-        } else {
-            Reverse(self.node.cost).cmp(&Reverse(other.node.cost))
-        }
+        self.node
+            .cost
+            .cmp(&other.node.cost)
+            .then_with(|| Reverse(self.node.depth).cmp(&Reverse(other.node.depth)))
+            .then_with(|| self.node.id.cmp(&other.node.id))
     }
 }
 impl Eq for QueueEntry {}
