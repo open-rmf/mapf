@@ -1,2 +1,4 @@
 /target
 Cargo.lock
+cache/
+benchmark_report*.json

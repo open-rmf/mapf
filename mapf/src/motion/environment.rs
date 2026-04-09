@@ -622,4 +622,12 @@ impl BoundingBox {
             max: self.max + Vector2::from_element(r),
         }
     }
+
+    pub fn center(&self) -> Point {
+        Point::from((self.min + self.max) / 2.0)
+    }
+
+    pub fn circumscribed_radius(&self) -> f64 {
+        (self.max - self.center().coords).norm()
+    }
 }

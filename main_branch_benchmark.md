@@ -1,0 +1,34 @@
+# Benchmark Report: Main Branch (Baseline)
+
+| Scenario | Agents | Status | Time |
+| --- | --- | --- | --- |
+| empty-32-32.map:empty-32-32-random-1.scen | 2 | SUCCESS |    0.31s |
+| empty-32-32.map:empty-32-32-random-1.scen | 5 | Timeout |   60.00s |
+| empty-32-32.map:empty-32-32-random-1.scen | 10 | Timeout |   60.00s |
+| empty-32-32.map:empty-32-32-random-1.scen | 20 | SUCCESS |    2.57s |
+| empty-32-32.map:empty-32-32-random-1.scen | 30 | Timeout |   60.00s |
+| empty-32-32.map:empty-32-32-random-10.scen | 2 | SUCCESS |    0.32s |
+| empty-32-32.map:empty-32-32-random-10.scen | 5 | SUCCESS |    0.32s |
+| empty-32-32.map:empty-32-32-random-10.scen | 10 | SUCCESS |    0.35s |
+| empty-32-32.map:empty-32-32-random-10.scen | 20 | Timeout |   60.00s |
+| empty-32-32.map:empty-32-32-random-10.scen | 30 | FAILED |   13.49s |
+| room-32-32-4.map:room-32-32-4-random-1.scen | 2 | SUCCESS |    0.32s |
+| room-32-32-4.map:room-32-32-4-random-1.scen | 5 | SUCCESS |    0.36s |
+| room-32-32-4.map:room-32-32-4-random-1.scen | 10 | SUCCESS |    0.40s |
+| room-32-32-4.map:room-32-32-4-random-1.scen | 20 | FAILED |   13.09s |
+| room-32-32-4.map:room-32-32-4-random-1.scen | 30 | Timeout |   60.00s |
+| room-32-32-4.map:room-32-32-4-random-10.scen | 2 | SUCCESS |    0.32s |
+| room-32-32-4.map:room-32-32-4-random-10.scen | 5 | SUCCESS |    0.35s |
+| room-32-32-4.map:room-32-32-4-random-10.scen | 10 | Timeout |   60.00s |
+| room-32-32-4.map:room-32-32-4-random-10.scen | 20 | Timeout |   60.00s |
+| room-32-32-4.map:room-32-32-4-random-10.scen | 30 | FAILED |   19.14s |
+| maze-32-32-2.map:maze-32-32-2-random-1.scen | 2 | SUCCESS |    0.35s |
+| maze-32-32-2.map:maze-32-32-2-random-1.scen | 5 | SUCCESS |    0.40s |
+| maze-32-32-2.map:maze-32-32-2-random-1.scen | 10 | SUCCESS |    0.50s |
+| maze-32-32-2.map:maze-32-32-2-random-1.scen | 20 | FAILED |   20.08s |
+| maze-32-32-2.map:maze-32-32-2-random-1.scen | 30 | FAILED |   33.60s |
+| maze-32-32-2.map:maze-32-32-2-random-10.scen | 2 | SUCCESS |    0.38s |
+| maze-32-32-2.map:maze-32-32-2-random-10.scen | 5 | SUCCESS |    0.40s |
+| maze-32-32-2.map:maze-32-32-2-random-10.scen | 10 | Timeout |   60.00s |
+| maze-32-32-2.map:maze-32-32-2-random-10.scen | 20 | Timeout |   60.00s |
+| maze-32-32-2.map:maze-32-32-2-random-10.scen | 30 | Timeout |   60.00s |
