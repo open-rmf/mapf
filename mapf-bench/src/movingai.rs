@@ -1,8 +1,8 @@
+use anyhow::Result;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use anyhow::Result;
-use std::collections::HashMap;
 
 use mapf::negotiation::{Agent, Scenario};
 use std::collections::BTreeMap;
@@ -44,7 +44,11 @@ impl Map {
             }
         }
 
-        Ok(Map { width, height, grid })
+        Ok(Map {
+            width,
+            height,
+            grid,
+        })
     }
 
     pub fn to_occupancy_map(&self) -> HashMap<i64, Vec<i64>> {
