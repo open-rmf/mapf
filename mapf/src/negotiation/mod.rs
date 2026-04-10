@@ -65,6 +65,21 @@ pub fn negotiate(
     ),
     NegotiationError,
 > {
+    negotiate_focal(scenario, queue_length_limit, 1.0)
+}
+
+pub fn negotiate_focal(
+    scenario: &Scenario,
+    queue_length_limit: Option<usize>,
+    weight: f64,
+) -> Result<
+    (
+        NegotiationNode,
+        Vec<NegotiationNode>,
+        HashMap<usize, String>,
+    ),
+    NegotiationError,
+> {
     let cs = scenario.cell_size;
     let mut conflicts = HashMap::new();
     triangular_for(scenario.agents.iter(), |(n_a, a), (n_b, b)| {
@@ -209,7 +224,7 @@ pub fn negotiate(
             let mut iters = 0;
             while !queue.is_empty() {
                 let top = {
-                    let focal_weight = 1.5;
+                    let focal_weight = weight;
                     let min_f = queue.first().unwrap().node.cost.0;
                     let threshold = min_f * focal_weight;
 
