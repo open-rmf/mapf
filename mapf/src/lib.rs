@@ -40,9 +40,8 @@ pub mod premade;
 mod util;
 
 pub mod prelude {
-    pub use super::algorithm::focal_search as algo_focal;
     pub use super::algorithm::{self, *};
-    pub use super::domain::focal as domain_focal;
+
     pub use super::domain::{self, *};
     pub use super::graph::*;
     pub use super::planner::*;
