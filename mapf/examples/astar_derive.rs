@@ -57,7 +57,8 @@ struct GridMotion;
 impl Activity<Point> for GridMotion {
     type Action = char;
     type ActivityError = NoError;
-    type Choices<'a> = std::vec::IntoIter<Result<(char, Point), NoError>>
+    type Choices<'a>
+        = std::vec::IntoIter<Result<(char, Point), NoError>>
     where
         Self: 'a,
         Point: 'a;
@@ -68,10 +69,34 @@ impl Activity<Point> for GridMotion {
         Point: 'a,
     {
         vec![
-            Ok(('N', Point { x: from_state.x, y: from_state.y + 1 })),
-            Ok(('S', Point { x: from_state.x, y: from_state.y - 1 })),
-            Ok(('E', Point { x: from_state.x + 1, y: from_state.y })),
-            Ok(('W', Point { x: from_state.x - 1, y: from_state.y })),
+            Ok((
+                'N',
+                Point {
+                    x: from_state.x,
+                    y: from_state.y + 1,
+                },
+            )),
+            Ok((
+                'S',
+                Point {
+                    x: from_state.x,
+                    y: from_state.y - 1,
+                },
+            )),
+            Ok((
+                'E',
+                Point {
+                    x: from_state.x + 1,
+                    y: from_state.y,
+                },
+            )),
+            Ok((
+                'W',
+                Point {
+                    x: from_state.x - 1,
+                    y: from_state.y,
+                },
+            )),
         ]
         .into_iter()
     }
@@ -97,8 +122,14 @@ struct ManhattanHeuristic;
 impl Informed<Point, Point> for ManhattanHeuristic {
     type CostEstimate = Cost<f64>;
     type InformedError = NoError;
-    fn estimate_remaining_cost(&self, from: &Point, to: &Point) -> Result<Option<Cost<f64>>, NoError> {
-        Ok(Some(Cost(((from.x - to.x).abs() + (from.y - to.y).abs()) as f64)))
+    fn estimate_remaining_cost(
+        &self,
+        from: &Point,
+        to: &Point,
+    ) -> Result<Option<Cost<f64>>, NoError> {
+        Ok(Some(Cost(
+            ((from.x - to.x).abs() + (from.y - to.y).abs()) as f64,
+        )))
     }
 }
 
@@ -109,7 +140,11 @@ impl Keyed for PointRing {
     type Key = Point;
 }
 impl Keyring<Point> for PointRing {
-    type KeyRef<'a> = &'a Point where Self: 'a, Point: 'a;
+    type KeyRef<'a>
+        = &'a Point
+    where
+        Self: 'a,
+        Point: 'a;
     fn key_for<'a>(&'a self, state: &'a Point) -> Self::KeyRef<'a>
     where
         Self: 'a,
@@ -134,7 +169,7 @@ fn main() {
 
     // Create a planner using AStar with our derived domain.
     let planner = Planner::new(AStar(domain));
-    
+
     // Plan and solve.
     let result = planner.plan(start, goal).unwrap().solve().unwrap();
 

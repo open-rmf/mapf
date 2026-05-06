@@ -1009,7 +1009,11 @@ impl App {
 
             self.canvas.program.layers.3.searches.clear();
 
-            for ticket in self.search_memory.iter().take(self.debug_ticket_size as usize) {
+            for ticket in self
+                .search_memory
+                .iter()
+                .take(self.debug_ticket_size as usize)
+            {
                 if let Some(mt) = search
                     .memory()
                     .0
@@ -1990,7 +1994,10 @@ impl Application for App {
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(
                                     Column::new()
-                                        .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                        .push(Text::new(format!(
+                                            "Debug Paths: {}",
+                                            &self.debug_ticket_size
+                                        )))
                                         .push(iced::Space::with_height(Length::Units(2)))
                                         .push(
                                             Slider::new(

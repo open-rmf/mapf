@@ -15,7 +15,7 @@
  *
 */
 
-use mapf::domain::{Domain, Activity, Weighted, Informed, KeyedCloser, Keyring, Keyed};
+use mapf::domain::{Activity, Domain, Informed, Keyed, KeyedCloser, Keyring, Weighted};
 use mapf::error::NoError;
 
 #[derive(Domain)]
@@ -23,7 +23,7 @@ use mapf::error::NoError;
 struct RobotDomain {
     #[activity]
     motion: MyActivity,
-    
+
     #[weighted]
     cost: MyWeighted,
 
@@ -39,7 +39,8 @@ struct MyActivity;
 impl Activity<f64> for MyActivity {
     type Action = f64;
     type ActivityError = NoError;
-    type Choices<'a> = std::vec::IntoIter<Result<(f64, f64), NoError>>
+    type Choices<'a>
+        = std::vec::IntoIter<Result<(f64, f64), NoError>>
     where
         Self: 'a,
         Self::Action: 'a,
@@ -51,7 +52,7 @@ impl Activity<f64> for MyActivity {
         Self: 'a,
         Self::Action: 'a,
         Self::ActivityError: 'a,
-        f64: 'a
+        f64: 'a,
     {
         vec![Ok((1.0, from_state + 1.0))].into_iter()
     }
@@ -73,7 +74,11 @@ struct MyInformed;
 impl Informed<f64, f64> for MyInformed {
     type CostEstimate = f64;
     type InformedError = NoError;
-    fn estimate_remaining_cost(&self, from_state: &f64, to_goal: &f64) -> Result<Option<f64>, NoError> {
+    fn estimate_remaining_cost(
+        &self,
+        from_state: &f64,
+        to_goal: &f64,
+    ) -> Result<Option<f64>, NoError> {
         Ok(Some((to_goal - from_state).abs()))
     }
 }
@@ -84,7 +89,11 @@ impl Keyed for MyRing {
     type Key = u64;
 }
 impl Keyring<f64> for MyRing {
-    type KeyRef<'a> = u64 where Self: 'a, f64: 'a;
+    type KeyRef<'a>
+        = u64
+    where
+        Self: 'a,
+        f64: 'a;
     fn key_for<'a>(&'a self, state: &'a f64) -> Self::KeyRef<'a>
     where
         Self: 'a,
@@ -101,15 +110,18 @@ fn main() {
         heuristic: MyInformed,
         closer: KeyedCloser(MyRing),
     };
-    
+
     // Test delegation
     let choices: Vec<_> = domain.choices(0.0).collect();
     assert_eq!(choices[0].as_ref().unwrap().1, 1.0);
-    
+
     let cost = domain.cost(&0.0, &1.0, &1.0).unwrap().unwrap();
     assert_eq!(cost, 1.0);
 
-    let estimate = domain.estimate_remaining_cost(&0.0, &10.0).unwrap().unwrap();
+    let estimate = domain
+        .estimate_remaining_cost(&0.0, &10.0)
+        .unwrap()
+        .unwrap();
     assert_eq!(estimate, 10.0);
 
     println!("Delegation worked!");

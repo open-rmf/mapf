@@ -78,14 +78,14 @@ pub enum AStarSearchError<D> {
 }
 
 impl<D> AStar<D> {
-    fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
+    pub fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
     where
         D: Domain,
     {
         AStarSearchError::Domain(err.into())
     }
 
-    fn algo_err(err: TreeError) -> AStarSearchError<D::Error>
+    pub fn algo_err(err: TreeError) -> AStarSearchError<D::Error>
     where
         D: Domain,
     {
@@ -442,10 +442,10 @@ impl<D: Configurable> Configurable for AStarConnect<D> {
 
 #[derive(Debug, Clone)]
 pub struct Node<State, Action, Cost> {
-    state: State,
-    cost: Cost,
-    remaining_cost_estimate: Cost,
-    parent: Option<(usize, Action)>,
+    pub state: State,
+    pub cost: Cost,
+    pub remaining_cost_estimate: Cost,
+    pub parent: Option<(usize, Action)>,
 }
 
 impl<State, Action, Cost> Node<State, Action, Cost> {

@@ -18,6 +18,9 @@
 pub mod a_star;
 pub use a_star::{AStar, AStarConnect};
 
+pub mod focal_search;
+pub use focal_search::FocalConnect;
+
 pub mod dijkstra;
 pub use dijkstra::{BackwardDijkstra, Dijkstra};
 

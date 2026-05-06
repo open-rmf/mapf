@@ -17,9 +17,22 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-#[proc_macro_derive(Domain, attributes(domain, activity, weighted, informed, closer, satisfier, initializer, connector, arrival_keyring))]
+#[proc_macro_derive(
+    Domain,
+    attributes(
+        domain,
+        activity,
+        weighted,
+        informed,
+        closer,
+        satisfier,
+        initializer,
+        connector,
+        arrival_keyring
+    )
+)]
 pub fn derive_domain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -45,7 +58,8 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
         }
     }
 
-    let state_type = state_type.expect("Domain derive requires a 'state' attribute: #[domain(state = ...)]");
+    let state_type =
+        state_type.expect("Domain derive requires a 'state' attribute: #[domain(state = ...)]");
     let error_type = error_type.unwrap_or_else(|| syn::parse_quote!(anyhow::Error));
 
     let mut expanded = quote! {};
