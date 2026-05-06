@@ -33,7 +33,7 @@ pub trait Domain {
     type Error;
 }
 
-// pub use mapf_derive::Domain;
+pub use mapf_derive::Domain;
 
 pub mod action_map;
 pub use action_map::*;
@@ -64,6 +64,9 @@ pub use domain_map::*;
 
 pub mod extrapolator;
 pub use extrapolator::*;
+
+pub mod focal;
+pub use focal::*;
 
 pub mod informed;
 pub use informed::*;

@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "mapf",
+    "mapf", "mapf-derive",
     "mapf-viz",
 ]
 
