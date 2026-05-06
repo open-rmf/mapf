@@ -65,9 +65,6 @@ pub use domain_map::*;
 pub mod extrapolator;
 pub use extrapolator::*;
 
-pub mod focal;
-pub use focal::*;
-
 pub mod informed;
 pub use informed::*;
 
