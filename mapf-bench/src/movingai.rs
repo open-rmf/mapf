@@ -19,7 +19,7 @@
 //! This benchmark is widely seen as the de-facto mapf benchmark.
 //!
 //! The benchmarks consist of *.map files and *.scen files. The *.map
-//! files are occupancy grids where the *.scen files contain
+//! files are occupancy grids while the *.scen files contain
 //! exact mapf scenarios.
 
 use anyhow::Result;
@@ -94,15 +94,13 @@ impl Map {
 }
 
 pub struct ScenarioEntry {
-    pub bucket: usize,
-    pub map_file: String,
-    pub map_width: usize,
-    pub map_height: usize,
-    pub start_x: usize,
-    pub start_y: usize,
-    pub goal_x: usize,
-    pub goal_y: usize,
-    pub optimal_length: f64,
+    pub _bucket: usize,
+    pub _map_file: String,
+    pub _map_width: usize,
+    pub _map_height: usize,
+    pub start: [i64; 2],
+    pub goal: [i64; 2],
+    pub _optimal_length: f64,
 }
 
 pub struct MovingAIScenario {
@@ -126,16 +124,17 @@ impl MovingAIScenario {
                 continue;
             }
 
+            let start: [i64; 2] = [parts[4].parse()?, parts[5].parse()?];
+            let goal: [i64; 2] = [parts[6].parse()?, parts[7].parse()?];
+
             entries.push(ScenarioEntry {
-                bucket: parts[0].parse()?,
-                map_file: parts[1].to_string(),
-                map_width: parts[2].parse()?,
-                map_height: parts[3].parse()?,
-                start_x: parts[4].parse()?,
-                start_y: parts[5].parse()?,
-                goal_x: parts[6].parse()?,
-                goal_y: parts[7].parse()?,
-                optimal_length: parts[8].parse()?,
+                _bucket: parts[0].parse()?,
+                _map_file: parts[1].to_string(),
+                _map_width: parts[2].parse()?,
+                _map_height: parts[3].parse()?,
+                start,
+                goal,
+                _optimal_length: parts[8].parse()?,
             });
         }
 
@@ -156,9 +155,9 @@ impl MovingAIScenario {
             agents.insert(
                 format!("agent_{}", i),
                 Agent {
-                    start: [entry.start_x as i64, entry.start_y as i64],
+                    start: entry.start,
                     yaw: 0.0,
-                    goal: [entry.goal_x as i64, entry.goal_y as i64],
+                    goal: entry.goal,
                     radius,
                     speed,
                     spin,
