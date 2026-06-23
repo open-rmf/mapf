@@ -331,10 +331,7 @@ where
         self.weight.cost(from_state, action, to_state)
     }
 
-    fn initial_cost(
-        &self,
-        for_state: &A::State,
-    ) -> Result<Option<Self::Cost>, Self::WeightError> {
+    fn initial_cost(&self, for_state: &A::State) -> Result<Option<Self::Cost>, Self::WeightError> {
         self.weight.initial_cost(for_state)
     }
 }
