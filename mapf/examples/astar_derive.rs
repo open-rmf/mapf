@@ -16,7 +16,7 @@
 */
 
 use mapf::algorithm::{AStar, SearchStatus};
-use mapf::domain::{Activity, Cost, Domain, Informed, Keyed, KeyedCloser, Keyring, Weighted};
+use mapf::domain::{Activity, Cost, Domain, Heuristic, Keyed, KeyedCloser, Keyring, Weight};
 use mapf::error::NoError;
 use mapf::Planner;
 
@@ -35,10 +35,10 @@ struct GridDomain {
     #[activity]
     motion: GridMotion,
 
-    #[weighted]
+    #[weight]
     cost: ConstantCost,
 
-    #[informed]
+    #[heuristic]
     heuristic: ManhattanHeuristic,
 
     #[closer]
@@ -105,9 +105,9 @@ impl Activity<Point> for GridMotion {
 /// Every move costs 1.0. We use mapf::domain::Cost to get Ord for floats.
 #[derive(Clone)]
 struct ConstantCost;
-impl Weighted<Point, char> for ConstantCost {
+impl Weight<Point, char> for ConstantCost {
     type Cost = Cost<f64>;
-    type WeightedError = NoError;
+    type WeightError = NoError;
     fn cost(&self, _: &Point, _: &char, _: &Point) -> Result<Option<Cost<f64>>, NoError> {
         Ok(Some(Cost(1.0)))
     }
@@ -119,9 +119,9 @@ impl Weighted<Point, char> for ConstantCost {
 /// Manhattan distance heuristic.
 #[derive(Clone)]
 struct ManhattanHeuristic;
-impl Informed<Point, Point> for ManhattanHeuristic {
+impl Heuristic<Point, Point> for ManhattanHeuristic {
     type CostEstimate = Cost<f64>;
-    type InformedError = NoError;
+    type HeuristicError = NoError;
     fn estimate_remaining_cost(
         &self,
         from: &Point,

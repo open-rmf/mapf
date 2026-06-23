@@ -15,7 +15,7 @@
  *
 */
 
-use mapf::domain::{Activity, Domain, Informed, Keyed, KeyedCloser, Keyring, Weighted};
+use mapf::domain::{Activity, Domain, Heuristic, Keyed, KeyedCloser, Keyring, Weight};
 use mapf::error::NoError;
 
 #[derive(Domain)]
@@ -24,11 +24,11 @@ struct RobotDomain {
     #[activity]
     motion: MyActivity,
 
-    #[weighted]
-    cost: MyWeighted,
+    #[weight]
+    cost: MyWeight,
 
-    #[informed]
-    heuristic: MyInformed,
+    #[heuristic]
+    heuristic: MyHeuristic,
 
     #[closer]
     closer: KeyedCloser<MyRing>,
@@ -58,10 +58,10 @@ impl Activity<f64> for MyActivity {
     }
 }
 
-struct MyWeighted;
-impl Weighted<f64, f64> for MyWeighted {
+struct MyWeight;
+impl Weight<f64, f64> for MyWeight {
     type Cost = f64;
-    type WeightedError = NoError;
+    type WeightError = NoError;
     fn cost(&self, _: &f64, _: &f64, _: &f64) -> Result<Option<f64>, NoError> {
         Ok(Some(1.0))
     }
@@ -70,10 +70,10 @@ impl Weighted<f64, f64> for MyWeighted {
     }
 }
 
-struct MyInformed;
-impl Informed<f64, f64> for MyInformed {
+struct MyHeuristic;
+impl Heuristic<f64, f64> for MyHeuristic {
     type CostEstimate = f64;
-    type InformedError = NoError;
+    type HeuristicError = NoError;
     fn estimate_remaining_cost(
         &self,
         from_state: &f64,
@@ -106,8 +106,8 @@ impl Keyring<f64> for MyRing {
 fn main() {
     let domain = RobotDomain {
         motion: MyActivity,
-        cost: MyWeighted,
-        heuristic: MyInformed,
+        cost: MyWeight,
+        heuristic: MyHeuristic,
         closer: KeyedCloser(MyRing),
     };
 

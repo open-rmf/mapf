@@ -17,7 +17,7 @@
 
 use crate::{
     algorithm::{BackwardDijkstra, Path},
-    domain::{Connectable, Extrapolator, Informed, Key, KeyedCloser, Reversible, Weighted},
+    domain::{Connectable, Extrapolator, Heuristic, Key, KeyedCloser, Reversible, Weight},
     error::{Anyhow, ThisError},
     motion::{
         r2::{
@@ -58,9 +58,9 @@ pub type QuickestPathPlanner<G, W> =
 pub struct QuickestPathHeuristic<G, WeightR2, WeightSE2, const R: u32>
 where
     WeightR2: Reversible,
-    WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+    WeightR2: Weight<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::WeightError: Into<Anyhow>,
+    WeightSE2: Weight<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -85,9 +85,9 @@ type HeuristicKey<K, const R: u32> = (KeySE2<K, R>, K);
 impl<G, WeightR2, WeightSE2, const R: u32> QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
 where
     WeightR2: Reversible,
-    WeightR2: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
-    WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+    WeightR2: Weight<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2::WeightError: Into<Anyhow>,
+    WeightSE2: Weight<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -142,12 +142,12 @@ where
         to_goal: &Goal,
     ) -> Result<Option<CostCache<WeightSE2::Cost, G::Key, R>>, QuickestPathHeuristicError>
     where
-        WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+        WeightR2: Reversible + Weight<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
         WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
-        WeightR2::WeightedError: Into<Anyhow>,
-        WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+        WeightR2::WeightError: Into<Anyhow>,
+        WeightSE2: Weight<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
         WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
-        WeightSE2::WeightedError: Into<Anyhow>,
+        WeightSE2::WeightError: Into<Anyhow>,
         G: Graph + Reversible + Clone,
         G::Key: Key + Clone,
         G::Vertex: Positioned + MaybeOriented,
@@ -239,15 +239,15 @@ where
     }
 }
 
-impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Informed<State, Goal>
+impl<G, WeightR2, WeightSE2, const R: u32, State, Goal> Heuristic<State, Goal>
     for QuickestPathHeuristic<G, WeightR2, WeightSE2, R>
 where
-    WeightR2: Reversible + Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    WeightR2: Reversible + Weight<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     WeightR2::Cost: Clone + Ord + Add<WeightR2::Cost, Output = WeightR2::Cost>,
-    WeightR2::WeightedError: Into<Anyhow>,
-    WeightSE2: Weighted<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
+    WeightR2::WeightError: Into<Anyhow>,
+    WeightSE2: Weight<StateSE2<G::Key, R>, DifferentialDriveLineFollowMotion>,
     WeightSE2::Cost: Clone + Add<Output = WeightSE2::Cost>,
-    WeightSE2::WeightedError: Into<Anyhow>,
+    WeightSE2::WeightError: Into<Anyhow>,
     G: Graph + Reversible + Clone,
     G::Key: Key + Clone,
     G::Vertex: Positioned + MaybeOriented,
@@ -256,12 +256,12 @@ where
     Goal: Borrow<G::Key> + MaybePositioned + MaybeOriented + MaybeTimed,
 {
     type CostEstimate = WeightSE2::Cost;
-    type InformedError = QuickestPathHeuristicError;
+    type HeuristicError = QuickestPathHeuristicError;
     fn estimate_remaining_cost(
         &self,
         from_state: &State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         // Calculate an invariant for getting to this goal from the start, no
         // matter what time it is being done.
         let invariant = match self.invariant_cost(from_state, to_goal)? {

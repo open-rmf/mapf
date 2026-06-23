@@ -24,8 +24,8 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields};
     attributes(
         domain,
         activity,
-        weighted,
-        informed,
+        weight,
+        heuristic,
         closer,
         satisfier,
         initializer,
@@ -102,26 +102,26 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                                 }
                             }
                         });
-                    } else if attr.path().is_ident("weighted") {
+                    } else if attr.path().is_ident("weight") {
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Weighted<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action> for #name #ty_generics #where_clause {
-                                type Cost = <#field_ty as ::mapf::domain::Weighted<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::Cost;
-                                type WeightedError = <#field_ty as ::mapf::domain::Weighted<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::WeightedError;
-                                fn cost(&self, from_state: &#state_type, action: &<Self as ::mapf::domain::Activity<#state_type>>::Action, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightedError> {
+                            impl #impl_generics ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action> for #name #ty_generics #where_clause {
+                                type Cost = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::Cost;
+                                type WeightError = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::WeightError;
+                                fn cost(&self, from_state: &#state_type, action: &<Self as ::mapf::domain::Activity<#state_type>>::Action, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
                                     self.#field_name.cost(from_state, action, to_state)
                                 }
-                                fn initial_cost(&self, for_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightedError> {
+                                fn initial_cost(&self, for_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
                                     self.#field_name.initial_cost(for_state)
                                 }
                             }
                         });
-                    } else if attr.path().is_ident("informed") {
+                    } else if attr.path().is_ident("heuristic") {
                         // Assuming Goal is #state_type by default
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Informed<#state_type, #state_type> for #name #ty_generics #where_clause {
-                                type CostEstimate = <#field_ty as ::mapf::domain::Informed<#state_type, #state_type>>::CostEstimate;
-                                type InformedError = <#field_ty as ::mapf::domain::Informed<#state_type, #state_type>>::InformedError;
-                                fn estimate_remaining_cost(&self, from_state: &#state_type, to_goal: &#state_type) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+                            impl #impl_generics ::mapf::domain::Heuristic<#state_type, #state_type> for #name #ty_generics #where_clause {
+                                type CostEstimate = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::CostEstimate;
+                                type HeuristicError = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::HeuristicError;
+                                fn estimate_remaining_cost(&self, from_state: &#state_type, to_goal: &#state_type) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
                                     self.#field_name.estimate_remaining_cost(from_state, to_goal)
                                 }
                             }

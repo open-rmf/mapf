@@ -18,12 +18,12 @@
 use super::*;
 use crate::error::NoError;
 
-pub trait Informed<State, Goal> {
+pub trait Heuristic<State, Goal> {
     /// How is cost represented. E.g. f32, f64, or u64
     type CostEstimate;
 
     /// What kind of error can happen if a bad state is provided
-    type InformedError;
+    type HeuristicError;
 
     /// Calculate an estimate for what it will cost to move from `from_state` to
     /// `to_goal_state`. If it is know to be impossible to reach the goal from
@@ -33,7 +33,7 @@ pub trait Informed<State, Goal> {
         &self,
         from_state: &State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError>;
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError>;
 }
 
 pub trait EstimateModifier<State, Goal, Cost> {
@@ -63,40 +63,40 @@ where
     }
 }
 
-impl<Base, Prop, Goal> Informed<Base::State, Goal> for Incorporated<Base, Prop>
+impl<Base, Prop, Goal> Heuristic<Base::State, Goal> for Incorporated<Base, Prop>
 where
     Base: Domain,
-    Prop: Informed<Base::State, Goal>,
-    Prop::InformedError: Into<Base::Error>,
+    Prop: Heuristic<Base::State, Goal>,
+    Prop::HeuristicError: Into<Base::Error>,
 {
     type CostEstimate = Prop::CostEstimate;
-    type InformedError = Base::Error;
+    type HeuristicError = Base::Error;
     fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         self.prop
             .estimate_remaining_cost(from_state, to_goal)
             .map_err(Into::into)
     }
 }
 
-impl<Base, Prop, Goal> Informed<Base::State, Goal> for Chained<Base, Prop>
+impl<Base, Prop, Goal> Heuristic<Base::State, Goal> for Chained<Base, Prop>
 where
-    Base: Domain + Informed<Base::State, Goal>,
-    Base::InformedError: Into<Base::Error>,
-    Prop: Informed<Base::State, Goal, CostEstimate = Base::CostEstimate>,
-    Prop::InformedError: Into<Base::Error>,
+    Base: Domain + Heuristic<Base::State, Goal>,
+    Base::HeuristicError: Into<Base::Error>,
+    Prop: Heuristic<Base::State, Goal, CostEstimate = Base::CostEstimate>,
+    Prop::HeuristicError: Into<Base::Error>,
     Base::CostEstimate: std::ops::Add<Base::CostEstimate, Output = Base::CostEstimate>,
 {
     type CostEstimate = Base::CostEstimate;
-    type InformedError = Base::Error;
+    type HeuristicError = Base::Error;
     fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         let base_cost_estimate = self
             .base
             .estimate_remaining_cost(from_state, to_goal)
@@ -119,20 +119,20 @@ where
     }
 }
 
-impl<Base, Prop, Goal> Informed<Base::State, Goal> for Mapped<Base, Prop>
+impl<Base, Prop, Goal> Heuristic<Base::State, Goal> for Mapped<Base, Prop>
 where
-    Base: Domain + Informed<Base::State, Goal>,
-    Base::InformedError: Into<Base::Error>,
+    Base: Domain + Heuristic<Base::State, Goal>,
+    Base::HeuristicError: Into<Base::Error>,
     Prop: EstimateModifier<Base::State, Goal, Base::CostEstimate>,
     Prop::EstimateModifierError: Into<Base::Error>,
 {
     type CostEstimate = Base::CostEstimate;
-    type InformedError = Base::Error;
+    type HeuristicError = Base::Error;
     fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         let original_estimate = match self
             .base
             .estimate_remaining_cost(from_state, to_goal)
@@ -148,23 +148,23 @@ where
     }
 }
 
-impl<Base, Lifter, Prop, Goal> Informed<Base::State, Goal> for Lifted<Base, Lifter, Prop>
+impl<Base, Lifter, Prop, Goal> Heuristic<Base::State, Goal> for Lifted<Base, Lifter, Prop>
 where
     Base: Domain,
     Base::State: Clone,
     Lifter: ProjectState<Base::State>,
     Lifter::ProjectionError: Into<Base::Error>,
-    Prop: Informed<Lifter::ProjectedState, Goal>,
-    Prop::InformedError: Into<Base::Error>,
+    Prop: Heuristic<Lifter::ProjectedState, Goal>,
+    Prop::HeuristicError: Into<Base::Error>,
     Prop::CostEstimate: std::ops::Add<Prop::CostEstimate, Output = Prop::CostEstimate>,
 {
     type CostEstimate = Prop::CostEstimate;
-    type InformedError = Base::Error;
+    type HeuristicError = Base::Error;
     fn estimate_remaining_cost(
         &self,
         from_state: &Base::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         let from_state_proj = match self.lifter.project(from_state).map_err(Into::into)? {
             Some(s) => s,
             None => return Ok(None),
@@ -178,33 +178,33 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::weighted::tests::*;
+    use super::weight::tests::*;
     use super::*;
     use crate::error::NoError;
     use approx::assert_relative_eq;
 
     struct EuclideanDistanceEstimate;
-    impl<State: Mobile, Goal: Mobile> Informed<State, Goal> for EuclideanDistanceEstimate {
+    impl<State: Mobile, Goal: Mobile> Heuristic<State, Goal> for EuclideanDistanceEstimate {
         type CostEstimate = f64;
-        type InformedError = NoError;
+        type HeuristicError = NoError;
         fn estimate_remaining_cost(
             &self,
             from_state: &State,
             to_goal: &Goal,
-        ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+        ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
             Ok(Some((from_state.position() - to_goal.position()).norm()))
         }
     }
 
     struct BatteryLevelCostEstimate;
-    impl<State: BatteryPowered, Goal> Informed<State, Goal> for BatteryLevelCostEstimate {
+    impl<State: BatteryPowered, Goal> Heuristic<State, Goal> for BatteryLevelCostEstimate {
         type CostEstimate = f64;
-        type InformedError = NoError;
+        type HeuristicError = NoError;
         fn estimate_remaining_cost(
             &self,
             from_state: &State,
             _: &Goal,
-        ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+        ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
             if from_state.battery_level() <= 0.0 {
                 return Ok(None);
             }

@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    domain::{Extrapolator, Informed, Key, KeyedSpace, Reversible, SelfKey, Weighted},
+    domain::{Extrapolator, Heuristic, Key, KeyedSpace, Reversible, SelfKey, Weight},
     graph::Graph,
     motion::r2::{DiscreteSpaceTimeR2, LineFollow, LineFollowError, Position, StateR2, WaypointR2},
 };
@@ -32,22 +32,22 @@ pub struct DirectTravelHeuristic<G: Graph, W> {
     pub extrapolator: LineFollow,
 }
 
-impl<G, W, Goal> Informed<StateR2<G::Key>, Goal> for DirectTravelHeuristic<G, W>
+impl<G, W, Goal> Heuristic<StateR2<G::Key>, Goal> for DirectTravelHeuristic<G, W>
 where
     G: Graph,
     G::Key: Key + Clone,
     G::Vertex: Borrow<Position>,
-    W: Weighted<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
+    W: Weight<StateR2<G::Key>, ArrayVec<WaypointR2, 1>>,
     Goal: SelfKey<Key = G::Key>,
 {
     type CostEstimate = W::Cost;
-    type InformedError = DirectTravelError<W::WeightedError>;
+    type HeuristicError = DirectTravelError<W::WeightError>;
 
     fn estimate_remaining_cost(
         &self,
         from_state: &StateR2<G::Key>,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         let p_target = {
             if let Some(p) = self.graph.vertex(to_goal.key().borrow()) {
                 p
@@ -73,7 +73,7 @@ where
                             .make_keyed_state(to_goal.key().borrow().clone(), child_wp);
                         self.weight
                             .cost(from_state, &action, &child_state)
-                            .map_err(DirectTravelError::Weighted)
+                            .map_err(DirectTravelError::Weight)
                     })
                     .transpose()
                     .map(|x| x.flatten())
@@ -102,7 +102,7 @@ impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<
             weight: self
                 .weight
                 .reversed()
-                .map_err(DirectTravelReversalError::Weighted)?,
+                .map_err(DirectTravelReversalError::Weight)?,
             extrapolator: self
                 .extrapolator
                 .reversed()
@@ -114,7 +114,7 @@ impl<G: Graph + Reversible, W: Reversible> Reversible for DirectTravelHeuristic<
 #[derive(ThisError, Debug, Clone)]
 pub enum DirectTravelError<W> {
     #[error("The cost calculator had an error:\n{0}")]
-    Weighted(W),
+    Weight(W),
     #[error("The extrapolator had an error:\n{0}")]
     Extrapolator(LineFollowError),
 }
@@ -124,7 +124,7 @@ pub enum DirectTravelReversalError<G, W, E> {
     #[error("The graph had an error while reversing:\n{0}")]
     Graph(G),
     #[error("The cost calculator had an error while reversing:\n{0}")]
-    Weighted(W),
+    Weight(W),
     #[error("The extrapolator had an error while reversing:\n{0}")]
     Extrapolator(E),
 }

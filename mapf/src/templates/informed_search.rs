@@ -18,8 +18,8 @@
 use crate::{
     domain::{
         Activity, ArrivalKeyring, AsTimeInvariant, AsTimeVariant, Backtrack, Chained, Closable,
-        Connectable, Domain, Informed, Initializable, Keyed, Keyring, PartialKeyed, Reversible,
-        Satisfiable, Weighted,
+        Connectable, Domain, Heuristic, Initializable, Keyed, Keyring, PartialKeyed, Reversible,
+        Satisfiable, Weight,
     },
     error::{Anyhow, ThisError},
 };
@@ -38,10 +38,10 @@ pub struct InformedSearch<A, W, H, X, I, S, C> {
     /// * [`crate::templates::graph_motion::GraphMotion`]
     pub activity: A,
     /// Calculate the cost of each choice that is searched. This field must
-    /// implement [`Weighted<A::State, A::Action>`].
+    /// implement [`Weight<A::State, A::Action>`].
     pub weight: W,
     /// Calculate an estimate of the remaining cost from a state. This field
-    /// must implemented [`Informed<A::State, Goal>`].
+    /// must implement [`Heuristic<A::State, Goal>`].
     pub heuristic: H,
     /// Provide the [`ClosedSet`] that should be used during the search. This
     /// field must implement [`Closable<A::State>`].
@@ -314,44 +314,44 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Weighted<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Weight<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain + Activity<A::State>,
-    W: Weighted<A::State, A::Action>,
-    W::WeightedError: Into<Anyhow>,
+    W: Weight<A::State, A::Action>,
+    W::WeightError: Into<Anyhow>,
 {
     type Cost = W::Cost;
-    type WeightedError = W::WeightedError;
+    type WeightError = W::WeightError;
     fn cost(
         &self,
         from_state: &A::State,
         action: &A::Action,
         to_state: &A::State,
-    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    ) -> Result<Option<Self::Cost>, Self::WeightError> {
         self.weight.cost(from_state, action, to_state)
     }
 
     fn initial_cost(
         &self,
         for_state: &A::State,
-    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    ) -> Result<Option<Self::Cost>, Self::WeightError> {
         self.weight.initial_cost(for_state)
     }
 }
 
-impl<A, W, H, X, I, S, C, Goal> Informed<A::State, Goal> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C, Goal> Heuristic<A::State, Goal> for InformedSearch<A, W, H, X, I, S, C>
 where
     A: Domain,
-    H: Informed<A::State, Goal>,
-    H::InformedError: Into<Anyhow>,
+    H: Heuristic<A::State, Goal>,
+    H::HeuristicError: Into<Anyhow>,
 {
     type CostEstimate = H::CostEstimate;
-    type InformedError = H::InformedError;
+    type HeuristicError = H::HeuristicError;
     fn estimate_remaining_cost(
         &self,
         from_state: &A::State,
         to_goal: &Goal,
-    ) -> Result<Option<Self::CostEstimate>, Self::InformedError> {
+    ) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
         self.heuristic.estimate_remaining_cost(from_state, to_goal)
     }
 }
