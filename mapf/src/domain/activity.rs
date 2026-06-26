@@ -15,8 +15,10 @@
  *
 */
 
-use super::*;
-use crate::error::NoError;
+use crate::{
+    domain::Domain,
+    error::NoError
+};
 
 /// The Activity trait describes an activity that can be performed within a
 /// domain. An activity yields action choices for an agent where those choices
@@ -27,51 +29,47 @@ use crate::error::NoError;
 /// In graph theory terms, an action an edge of a graph. An Activity is a
 /// function that maps a graph vertex (agent state) to the outgoing edges from
 /// that vertex.
-pub trait Activity<State> {
-    /// What kind of action is produced by this activity
-    type Action;
-
+pub trait Activity<State, Action> {
     /// What kind of error can happen if a bad state is provided
     type ActivityError;
 
     /// Concrete type for the returned container of choices
-    type Choices<'a>: IntoIterator<Item = Result<(Self::Action, State), Self::ActivityError>> + 'a
+    type Choices<'a>: IntoIterator<Item = Result<(Action, State), Self::ActivityError>> + 'a
     where
         Self: 'a,
-        Self::Action: 'a,
         Self::ActivityError: 'a,
-        State: 'a;
+        State: 'a,
+        Action: 'a;
 
     /// What choices can be made related to this activity from the provided state
     // TODO(@mxgrey): Investigate whether `from_state` can have a `&State` type
     fn choices<'a>(&'a self, from_state: State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
         Self::ActivityError: 'a,
-        State: 'a;
+        State: 'a,
+        Action: 'a;
 }
 
 /// [`NoActivity`] can be used as a placeholder where an Activity is required
 /// but it doesn't need to do anything.
 pub struct NoActivity<A>(std::marker::PhantomData<A>);
-impl<State, A> Activity<State> for NoActivity<A> {
-    type Action = A;
+impl<State, Action> Activity<State, Action> for NoActivity<Action> {
     type ActivityError = NoError;
     type Choices<'a>
-        = [Result<(A, State), NoError>; 0]
+        = [Result<(Action, State), NoError>; 0]
     where
         Self: 'a,
-        Self::Action: 'a,
         Self::ActivityError: 'a,
-        State: 'a;
+        State: 'a,
+        Action: 'a;
 
     fn choices<'a>(&'a self, _: State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
         Self::ActivityError: 'a,
         State: 'a,
+        Action: 'a,
     {
         []
     }
@@ -132,371 +130,6 @@ impl<State, FromAction> ActivityModifier<State, FromAction> for () {
     }
 }
 
-impl<Base, Prop> Activity<Base::State> for Incorporated<Base, Prop>
-where
-    Base: Domain,
-    Prop: Activity<Base::State>,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    type Action = Prop::Action;
-    type ActivityError = Base::Error;
-    type Choices<'a>
-        = IncorporatedChoices<'a, Base, Prop>
-    where
-        Self: 'a,
-        Base: 'a,
-        Prop: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a;
-
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
-    where
-        Self: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a,
-    {
-        let choices = self.prop.choices(from_state).into_iter();
-        IncorporatedChoices { choices }
-    }
-}
-
-pub struct IncorporatedChoices<'a, Base, Prop>
-where
-    Base: Domain,
-    Base::State: 'a,
-    Prop: Activity<Base::State> + 'a,
-    Prop::Action: 'a,
-    Prop::ActivityError: Into<Base::Error> + 'a,
-{
-    choices: <Prop::Choices<'a> as IntoIterator>::IntoIter,
-}
-
-impl<'a, Base, Prop> Iterator for IncorporatedChoices<'a, Base, Prop>
-where
-    Base: Domain,
-    Prop: Activity<Base::State>,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    type Item = Result<(Prop::Action, Base::State), Base::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(
-            self.choices
-                .next()?
-                .map(|(a, s)| (a.into(), s.into()))
-                .map_err(Into::into),
-        )
-    }
-}
-
-impl<Base, Prop> Activity<Base::State> for Chained<Base, Prop>
-where
-    Base: Domain + Activity<Base::State>,
-    Base::State: Clone,
-    Base::Action: Into<Prop::Action>,
-    Base::ActivityError: Into<Base::Error>,
-    Prop: Activity<Base::State>,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    type Action = Prop::Action;
-    type ActivityError = Base::Error;
-    type Choices<'a>
-        = ChainedChoices<'a, Base, Prop>
-    where
-        Self: 'a,
-        Base: 'a,
-        Prop: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a;
-
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
-    where
-        Self: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a,
-    {
-        ChainedChoices {
-            base_choices: self.base.choices(from_state.clone()).into_iter(),
-            prop_choices: self.prop.choices(from_state).into_iter(),
-        }
-    }
-}
-
-pub struct ChainedChoices<'a, Base, Prop>
-where
-    Base: Domain + Activity<Base::State> + 'a,
-    Base::State: Clone,
-    Base::Action: Into<Prop::Action>,
-    Base::ActivityError: Into<Base::Error> + 'a,
-    Prop: Activity<Base::State> + 'a,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    base_choices: <Base::Choices<'a> as IntoIterator>::IntoIter,
-    prop_choices: <Prop::Choices<'a> as IntoIterator>::IntoIter,
-}
-
-impl<'a, Base, Prop> Iterator for ChainedChoices<'a, Base, Prop>
-where
-    Base: Domain + Activity<Base::State>,
-    Base::State: Clone,
-    Base::Action: Into<Prop::Action>,
-    Base::ActivityError: Into<Base::Error>,
-    Prop: Activity<Base::State>,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    type Item = Result<(Prop::Action, Base::State), Base::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(next) = self.base_choices.next() {
-                return Some(next.map(|(a, s)| (a.into(), s)).map_err(Into::into));
-            }
-
-            return self
-                .prop_choices
-                .next()
-                .map(|r| r.map(|(a, s)| (a, s.into())).map_err(Into::into));
-        }
-    }
-}
-
-impl<Base, Prop> Activity<Base::State> for Mapped<Base, Prop>
-where
-    Base: Domain + Activity<Base::State>,
-    Base::State: Clone,
-    Base::ActivityError: Into<Base::Error>,
-    Prop: ActivityModifier<Base::State, Base::Action>,
-    Prop::ModifiedActionError: Into<Base::Error>,
-{
-    type Action = Prop::ModifiedAction;
-    type ActivityError = Base::Error;
-    type Choices<'a>
-        = MappedChoices<'a, Base, Prop>
-    where
-        Self: 'a,
-        Base: 'a,
-        Prop: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a;
-
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
-    where
-        Self: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a,
-    {
-        let choices = self.base.choices(from_state.clone()).into_iter();
-        MappedChoices {
-            from_state,
-            choices,
-            modified_choices: None,
-            prop: &self.prop,
-        }
-    }
-}
-
-pub struct MappedChoices<'a, Base, Prop>
-where
-    Base: Domain + Activity<Base::State> + 'a,
-    Base::State: Clone,
-    Base::ActivityError: Into<Base::Error>,
-    Prop: ActivityModifier<Base::State, Base::Action> + 'a,
-    Prop::ModifiedActionError: Into<Base::Error>,
-{
-    from_state: Base::State,
-    choices: <Base::Choices<'a> as IntoIterator>::IntoIter,
-    modified_choices: Option<<Prop::ModifiedChoices<'a> as IntoIterator>::IntoIter>,
-    prop: &'a Prop,
-}
-
-impl<'a, Base, Prop> Iterator for MappedChoices<'a, Base, Prop>
-where
-    Base: Domain + Activity<Base::State>,
-    Base::State: Clone,
-    Base::ActivityError: Into<Base::Error>,
-    Prop: ActivityModifier<Base::State, Base::Action>,
-    Prop::ModifiedActionError: Into<Base::Error>,
-{
-    type Item = Result<(Prop::ModifiedAction, Base::State), Base::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(modified_choices) = &mut self.modified_choices {
-                if let Some(next_modified_action) = modified_choices.next() {
-                    let next = next_modified_action.map_err(Into::into);
-                    return Some(next);
-                }
-            }
-            self.modified_choices = None;
-
-            let (from_action, to_state): (Base::Action, Base::State) = match self.choices.next()? {
-                Ok(next) => next,
-                Err(err) => return Some(Err(err.into())),
-            };
-
-            self.modified_choices = Some(
-                self.prop
-                    .modify_action(self.from_state.clone(), from_action, to_state)
-                    .into_iter(),
-            );
-        }
-    }
-}
-
-impl<Base, Lifter, Prop> Activity<Base::State> for Lifted<Base, Lifter, Prop>
-where
-    Base: Domain,
-    Lifter:
-        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
-    Lifter::ActionMapError: Into<Base::Error>,
-    Lifter::ProjectionError: Into<Base::Error>,
-    Lifter::LiftError: Into<Base::Error>,
-    Prop: Activity<Lifter::ProjectedState>,
-    Base::State: Clone,
-    Prop::Action: Clone,
-    Prop::ActivityError: Into<Base::Error>,
-{
-    type Action = Lifter::ToAction;
-    type ActivityError = Base::Error;
-    type Choices<'a>
-        = LiftedActivityChoices<'a, Base, Lifter, Prop>
-    where
-        Self: 'a,
-        Base: 'a,
-        Prop: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a;
-
-    fn choices<'a>(&'a self, from_state: Base::State) -> Self::Choices<'a>
-    where
-        Self: 'a,
-        Self::Action: 'a,
-        Self::ActivityError: 'a,
-        Base::State: 'a,
-    {
-        match self.lifter.project(&from_state) {
-            Ok(Some(projected_state)) => {
-                let choices = self.prop.choices(projected_state).into_iter();
-                return LiftedActivityChoices::Choices {
-                    from_state,
-                    choices,
-                    // lifted_actions will be filled in while iterating
-                    lifted_actions: None,
-                    lifter: &self.lifter,
-                };
-            }
-            Ok(None) => {
-                // This is not actually an error, but we can piggyback on the
-                // ProjectionError variant to have the desired effect for the
-                // iterator.
-                return LiftedActivityChoices::ProjectionError(None);
-            }
-            Err(err) => {
-                return LiftedActivityChoices::ProjectionError(Some(err));
-            }
-        }
-    }
-}
-
-pub enum LiftedActivityChoices<'a, Base, Lifter, Prop>
-where
-    Base: Domain,
-    Lifter:
-        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
-    Lifter::ActionMapError: Into<Base::Error> + 'a,
-    Lifter::ProjectionError: Into<Base::Error>,
-    Lifter::ProjectedState: 'a,
-    Lifter::LiftError: Into<Base::Error>,
-    Prop: Activity<Lifter::ProjectedState> + 'a,
-    Base::State: Clone + 'a,
-    Prop::Action: Clone + 'a,
-    Prop::ActivityError: Into<Base::Error> + 'a,
-{
-    ProjectionError(Option<Lifter::ProjectionError>),
-    Choices {
-        from_state: Base::State,
-        choices: <Prop::Choices<'a> as IntoIterator>::IntoIter,
-        lifted_actions: Option<(
-            Base::State,
-            <Lifter::ToActions<'a> as IntoIterator>::IntoIter,
-        )>,
-        lifter: &'a Lifter,
-    },
-}
-
-impl<'a, Base, Lifter, Prop> Iterator for LiftedActivityChoices<'a, Base, Lifter, Prop>
-where
-    Base: Domain,
-    Lifter:
-        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
-    Lifter::ActionMapError: Into<Base::Error>,
-    Lifter::ProjectionError: Into<Base::Error>,
-    Lifter::ProjectedState: 'a,
-    Lifter::LiftError: Into<Base::Error>,
-    Prop: Activity<Lifter::ProjectedState> + 'a,
-    Base::State: Clone + 'a,
-    Prop::Action: Clone + 'a,
-    Prop::ActivityError: Into<Base::Error> + 'a,
-    Lifter::ToAction: 'a,
-{
-    type Item = Result<(Lifter::ToAction, Base::State), Base::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let (from_state, lifted_actions, choices, lifter) = match self {
-                Self::ProjectionError(error) => {
-                    return error.take().map(Into::into).map(Err);
-                }
-                Self::Choices {
-                    from_state,
-                    lifted_actions,
-                    choices,
-                    lifter,
-                } => (from_state, lifted_actions, choices, lifter),
-            };
-
-            if let Some((state, lifted_actions)) = lifted_actions {
-                if let Some(next_lifted_action) = lifted_actions.next() {
-                    let next = next_lifted_action
-                        .map(|action| (action, state.clone()))
-                        .map_err(Into::into);
-                    return Some(next);
-                }
-            }
-            *lifted_actions = None;
-
-            let next: Result<(Prop::Action, Lifter::ProjectedState), Prop::ActivityError> =
-                choices.next()?;
-
-            let (action, state) = match next {
-                Ok(ok) => ok,
-                Err(err) => return Some(Err(err.into())),
-            };
-
-            let lifted_state = match lifter.lift(&from_state, state).map_err(Into::into) {
-                Ok(lifted_state) => lifted_state,
-                Err(err) => return Some(Err(err.into())),
-            };
-
-            let Some(lifted_state) = lifted_state else {
-                continue;
-            };
-
-            *lifted_actions = Some((
-                lifted_state,
-                lifter.map_action(from_state.clone(), action).into_iter(),
-            ));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,17 +144,14 @@ mod tests {
     #[derive(Debug, PartialEq, Eq)]
     struct Interval(u64);
 
-    impl Activity<u64> for Count {
-        type Action = Interval;
+    impl Activity<u64, Interval> for Count {
         type ActivityError = NoError;
         type Choices<'a> = Vec<Result<(Interval, u64), NoError>>;
 
         fn choices<'a>(&'a self, s: u64) -> Self::Choices<'a>
         where
             Self: 'a,
-            Self::Action: 'a,
             Self::ActivityError: 'a,
-            u64: 'a,
         {
             self.by_interval
                 .iter()
@@ -595,80 +225,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_activity_chain_map() {
-        let domain = DefineTrait::<u64>::new().with(Count {
-            by_interval: vec![1, 2, 3],
-        });
-
-        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
-        assert_eq!(
-            choices.unwrap(),
-            vec![(Interval(1), 1), (Interval(2), 2), (Interval(3), 3)]
-        );
-
-        let domain = domain.chain(Count {
-            by_interval: vec![10, 20, 30],
-        });
-        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
-        assert_eq!(
-            choices.unwrap(),
-            vec![
-                (Interval(1), 1),
-                (Interval(2), 2),
-                (Interval(3), 3),
-                (Interval(10), 10),
-                (Interval(20), 20),
-                (Interval(30), 30),
-            ]
-        );
-
-        let domain = domain.map(Multiplier(2));
-        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
-        assert_eq!(
-            choices.unwrap(),
-            vec![
-                (Interval(2), 2),
-                (Interval(4), 4),
-                (Interval(6), 6),
-                (Interval(20), 20),
-                (Interval(40), 40),
-                (Interval(60), 60),
-            ]
-        );
-
-        let domain = domain.map(MapToTestError);
-        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
-        assert!(choices.is_err());
-    }
-
-    #[test]
-    fn test_state_dependent_activity_map() {
-        let domain = DefineTrait::<u64>::new()
-            .with(Count {
-                by_interval: vec![2, 3, 4, 5],
-            })
-            .map(DoubleTheOdds);
-
-        let choices: Result<Vec<_>, _> = domain.choices(0).collect();
-        assert_eq!(
-            choices.unwrap(),
-            [2, 3, 4, 5]
-                .into_iter()
-                .map(|x| (Interval(x), x))
-                .collect::<Vec<_>>()
-        );
-
-        let choices: Result<Vec<_>, _> = domain.choices(13).collect();
-        assert_eq!(
-            choices.unwrap(),
-            vec![4, 6, 8, 10]
-                .into_iter()
-                .map(|x| (Interval(x), 13 + x))
-                .collect::<Vec<_>>()
-        );
-    }
-
     #[derive(Clone, Copy)]
     struct Inventory {
         apples: u64,
@@ -696,8 +252,7 @@ mod tests {
 
     #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
     struct Buy(u64 /* price per unit */);
-    impl Activity<Item> for Buy {
-        type Action = Buy;
+    impl Activity<Item, Buy> for Buy {
         type ActivityError = NoError;
         type Choices<'a> = Option<Result<(Buy, Item), NoError>>;
         fn choices<'a>(&'a self, mut from_state: Item) -> Option<Result<(Buy, Item), NoError>>
@@ -715,8 +270,7 @@ mod tests {
 
     #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
     struct Sell(u64 /* price per unit */);
-    impl Activity<Item> for Sell {
-        type Action = Sell;
+    impl Activity<Item, Sell> for Sell {
         type ActivityError = NoError;
         type Choices<'a> = Option<Result<(Sell, Item), NoError>>;
         fn choices<'a>(&'a self, mut from_state: Item) -> Self::Choices<'a>
@@ -754,107 +308,112 @@ mod tests {
         Bananas(Transaction),
     }
 
-    struct JustApples;
-    impl StateSubspace for JustApples {
-        type ProjectedState = Item;
-    }
-    impl ProjectState<Inventory> for JustApples {
-        type ProjectionError = NoError;
-        fn project(
-            &self,
-            state: &Inventory,
-        ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
-            Ok(Some(Item {
-                count: state.apples,
-                budget: state.budget,
-            }))
-        }
-    }
-    impl LiftState<Inventory> for JustApples {
-        type LiftError = NoError;
-        fn lift(
-            &self,
-            original: &Inventory,
-            projection: Self::ProjectedState,
-        ) -> Result<Option<Inventory>, Self::LiftError> {
-            Ok(Some(Inventory {
-                apples: projection.count,
-                budget: projection.budget,
-                ..original.clone()
-            }))
-        }
-    }
-    impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustApples {
-        type ActionMapError = NoError;
-        type ToAction = Order;
-        type ToActions<'a>
-            = Option<Result<Order, NoError>>
+    struct Apples<Tx>(Tx);
+
+    impl<Tx> Activity<Inventory, Order> for Apples<Tx>
+    where
+        Tx: Activity<Item, Transaction>,
+    {
+        type ActivityError = Tx::ActivityError;
+        type Choices<'a> = Vec<Result<(Order, Inventory), Tx::ActivityError>>;
+        fn choices<'a>(&'a self, from_state: Inventory) -> Self::Choices<'a>
         where
-            A: 'a;
-        fn map_action<'a>(&'a self, _: Inventory, from_action: A) -> Self::ToActions<'a>
-        where
-            Transaction: 'a,
+            Self: 'a,
+            Self::ActivityError: 'a,
             Inventory: 'a,
-            A: 'a,
+            Order: 'a
         {
-            Some(Ok(Order::Apples(from_action.into())))
+            let item = Item {
+                count: from_state.apples,
+                budget: from_state.budget,
+            };
+
+            let mut choices = Vec::new();
+            for choice in self.0.choices(item) {
+                let choice = match choice {
+                    Ok((tx, item)) => {
+                        let state = Inventory {
+                            apples: item.count,
+                            budget: item.budget,
+                            ..from_state.clone()
+                        };
+                        Ok((Order::Apples(tx), state))
+                    }
+                    Err(err) => Err(err),
+                };
+
+                choices.push(choice);
+            }
+
+            choices
         }
     }
 
-    struct JustBananas;
-    impl StateSubspace for JustBananas {
-        type ProjectedState = Item;
-    }
-    impl ProjectState<Inventory> for JustBananas {
-        type ProjectionError = NoError;
-        fn project(
-            &self,
-            state: &Inventory,
-        ) -> Result<Option<Self::ProjectedState>, Self::ProjectionError> {
-            Ok(Some(Item {
-                count: state.bananas,
-                budget: state.budget,
-            }))
-        }
-    }
-    impl LiftState<Inventory> for JustBananas {
-        type LiftError = NoError;
-        fn lift(
-            &self,
-            original: &Inventory,
-            projection: Self::ProjectedState,
-        ) -> Result<Option<Inventory>, Self::LiftError> {
-            Ok(Some(Inventory {
-                bananas: projection.count,
-                budget: projection.budget,
-                ..original.clone()
-            }))
-        }
-    }
-    impl<A: Into<Transaction>> ActionMap<Inventory, A> for JustBananas {
-        type ActionMapError = NoError;
-        type ToAction = Order;
-        type ToActions<'a>
-            = Option<Result<Order, NoError>>
+    struct Bananas<Tx>(Tx);
+
+    impl<Tx> Activity<Inventory, Order> for Bananas<Tx>
+    where
+        Tx: Activity<Item, Transaction>,
+    {
+        type ActivityError = Tx::ActivityError;
+        type Choices<'a> = Vec<Result<(Order, Inventory), Tx::ActivityError>>;
+        fn choices<'a>(&'a self, from_state: Inventory) -> Self::Choices<'a>
         where
-            A: 'a;
-        fn map_action<'a>(&'a self, _: Inventory, from_action: A) -> Self::ToActions<'a>
-        where
-            Transaction: 'a,
+            Self: 'a,
+            Self::ActivityError: 'a,
             Inventory: 'a,
-            A: 'a,
+            Order: 'a
         {
-            Some(Ok(Order::Bananas(from_action.into())))
+            let item = Item {
+                count: from_state.bananas,
+                budget: from_state.budget,
+            };
+
+            let mut choices = Vec::new();
+            for choice in self.0.choices(item) {
+                let choice = match choice {
+                    Ok((tx, item)) => {
+                        let state = Inventory {
+                            bananas: item.count,
+                            budget: item.budget,
+                            ..from_state.clone()
+                        };
+                        Ok((Order::Bananas(tx), state))
+                    }
+                    Err(err) => Err(err),
+                };
+
+                choices.push(choice);
+            }
+
+            choices
         }
+    }
+
+    #[derive(Domain)]
+    #[domain(state = Inventory, action = Order)]
+    struct InventoryDomain {
+        #[activity]
+        buy_apples: Apples<Buy>,
+
+        #[activity]
+        sell_apples: Apples<Sell>,
+
+        #[activity]
+        buy_bananas: Bananas<Buy>,
+
+        #[activity]
+        sell_bananas: Bananas<Sell>,
     }
 
     #[test]
     fn test_lifted_activity() {
-        let domain = DefineTrait::<Inventory>::new()
-            .lift(JustApples, Buy(20))
-            .chain_lift(JustApples, Sell(60))
-            .chain_lift(JustBananas, Buy(30))
-            .chain_lift(JustBananas, Sell(80));
+        let domain = InventoryDomain {
+            buy_apples: Apples(Buy(20)),
+            sell_apples: Apples(Sell(60)),
+            buy_bananas: Bananas(Buy(30)),
+            sell_bananas: Bananas(Sell(80)),
+        };
 
         let inventory = Inventory {
             apples: 5,

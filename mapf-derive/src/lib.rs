@@ -38,6 +38,7 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let mut state_type = None;
+    let mut action_type = None;
     let mut error_type = None;
 
     for attr in &input.attrs {
@@ -46,6 +47,10 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                 if meta.path.is_ident("state") {
                     let value = meta.value()?;
                     state_type = Some(value.parse::<syn::Type>()?);
+                    Ok(())
+                } else if meta.path.is_ident("action") {
+                    let value = meta.value()?;
+                    action_type = Some(value.parse::<syn::Type>()?);
                     Ok(())
                 } else if meta.path.is_ident("error") {
                     let value = meta.value()?;
@@ -60,7 +65,9 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
 
     let state_type =
         state_type.expect("Domain derive requires a 'state' attribute: #[domain(state = ...)]");
-    let error_type = error_type.unwrap_or_else(|| syn::parse_quote!(anyhow::Error));
+    let action_type =
+        action_type.expect("Domain derive requires an 'action' attribute: #[domain(action = ...)]");
+    let error_type = error_type.unwrap_or_else(|| syn::parse_quote!(::mapf::error::Anyhow));
 
     let mut expanded = quote! {};
 
@@ -69,63 +76,27 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
     expanded.extend(quote! {
         impl #impl_generics ::mapf::domain::Domain for #name #ty_generics #where_clause {
             type State = #state_type;
+            type Action = #action_type;
             type Error = #error_type;
         }
     });
 
+    let mut activities = Vec::new();
+    let mut weights = Vec::new();
+    let mut heuristics = Vec::new();
+
     if let Data::Struct(data) = &input.data {
         if let Fields::Named(fields) = &data.fields {
             for field in &fields.named {
-                let field_name = &field.ident;
+                let field_name = field.ident.as_ref().expect("Domain derive only works for structs with named fields");
                 let field_ty = &field.ty;
                 for attr in &field.attrs {
                     if attr.path().is_ident("activity") {
-                        expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Activity<#state_type> for #name #ty_generics #where_clause {
-                                type Action = <#field_ty as ::mapf::domain::Activity<#state_type>>::Action;
-                                type ActivityError = <#field_ty as ::mapf::domain::Activity<#state_type>>::ActivityError;
-                                type Choices<'a> = <#field_ty as ::mapf::domain::Activity<#state_type>>::Choices<'a>
-                                where
-                                    Self: 'a,
-                                    Self::Action: 'a,
-                                    Self::ActivityError: 'a,
-                                    #state_type: 'a;
-
-                                fn choices<'a>(&'a self, from_state: #state_type) -> Self::Choices<'a>
-                                where
-                                    Self: 'a,
-                                    Self::Action: 'a,
-                                    Self::ActivityError: 'a,
-                                    #state_type: 'a
-                                {
-                                    self.#field_name.choices(from_state)
-                                }
-                            }
-                        });
+                        activities.push((field_name, field_ty));
                     } else if attr.path().is_ident("weight") {
-                        expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action> for #name #ty_generics #where_clause {
-                                type Cost = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::Cost;
-                                type WeightError = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::WeightError;
-                                fn cost(&self, from_state: &#state_type, action: &<Self as ::mapf::domain::Activity<#state_type>>::Action, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
-                                    self.#field_name.cost(from_state, action, to_state)
-                                }
-                                fn initial_cost(&self, for_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
-                                    self.#field_name.initial_cost(for_state)
-                                }
-                            }
-                        });
+                        weights.push((field_name, field_ty));
                     } else if attr.path().is_ident("heuristic") {
-                        // Assuming Goal is #state_type by default
-                        expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Heuristic<#state_type, #state_type> for #name #ty_generics #where_clause {
-                                type CostEstimate = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::CostEstimate;
-                                type HeuristicError = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::HeuristicError;
-                                fn estimate_remaining_cost(&self, from_state: &#state_type, to_goal: &#state_type) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
-                                    self.#field_name.estimate_remaining_cost(from_state, to_goal)
-                                }
-                            }
-                        });
+                        heuristics.push((field_name, field_ty));
                     } else if attr.path().is_ident("closer") {
                         expanded.extend(quote! {
                             impl #impl_generics ::mapf::domain::Closable<#state_type> for #name #ty_generics #where_clause {
@@ -168,21 +139,21 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                         });
                     } else if attr.path().is_ident("connector") {
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type> for #name #ty_generics #where_clause {
-                                type ConnectionError = <#field_ty as ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type>>::ConnectionError;
-                                type Connections<'a> = <#field_ty as ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type>>::Connections<'a>
+                            impl #impl_generics ::mapf::domain::Connectable<#state_type, #action_type, #state_type> for #name #ty_generics #where_clause {
+                                type ConnectionError = <#field_ty as ::mapf::domain::Connectable<#state_type, #action_type, #state_type>>::ConnectionError;
+                                type Connections<'a> = <#field_ty as ::mapf::domain::Connectable<#state_type, #action_type, #state_type>>::Connections<'a>
                                 where
                                     Self: 'a,
                                     Self::ConnectionError: 'a,
                                     #state_type: 'a,
-                                    <Self as ::mapf::domain::Activity<#state_type>>::Action: 'a;
+                                    #action_type: 'a;
 
                                 fn connect<'a>(&'a self, from_state: #state_type, to_target: &'a #state_type) -> Self::Connections<'a>
                                 where
                                     Self: 'a,
                                     Self::ConnectionError: 'a,
                                     #state_type: 'a,
-                                    <Self as ::mapf::domain::Activity<#state_type>>::Action: 'a
+                                    #action_type: 'a
                                 {
                                     self.#field_name.connect(from_state, to_target)
                                 }
@@ -214,6 +185,128 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                 }
             }
         }
+    }
+
+    if activities.len() == 1 {
+        let (field_name, field_ty) = *activities.first().unwrap();
+        expanded.extend(quote! {
+            impl #impl_generics ::mapf::domain::Activity<#state_type, #action_type> for #name #ty_generics #where_clause {
+                type ActivityError = <#field_ty as ::mapf::domain::Activity<#state_type>>::ActivityError;
+                type Choices<'a> = <#field_ty as ::mapf::domain::Activity<#state_type>>::Choices<'a>
+                where
+                    Self: 'a,
+                    Self::ActivityError: 'a,
+                    #state_type: 'a,
+                    #action_type: 'a;
+
+                fn choices<'a>(&'a self, from_state: #state_type) -> Self::Choices<'a>
+                where
+                    Self: 'a,
+                    Self::ActivityError: 'a,
+                    #state_type: 'a,
+                    #action_type: 'a,
+                {
+                    <#field_ty as ::mapf::domain::Activity<#state_type, #action_type>>::choices(
+                        &self.#field_name,
+                        from_state,
+                    )
+                    .map(|result| result.map_err(|err| err.into()))
+                }
+            }
+        });
+    } else {
+        let mut create_choices = quote! {
+            let mut choices = ::std::vec::Vec::<::std::result::Result<(#action_type, #state_type), #error_type>>::new();
+        };
+
+        for (field_name, field_ty) in activities {
+            create_choices.extend(quote! {
+                choices.extend(
+                    <#field_ty as ::mapf::domain::Activity<#state_type, #action_type>>::choices(
+                        &self.#field_name,
+                        from_state,
+                    )
+                    .map(|result| result.map_err(|err| err.into()))
+                );
+            });
+        }
+
+        expanded.extend(quote! {
+            impl #impl_generics ::mapf::domain::Activity<#state_type, #action_type> for #name #ty_generics #where_clause {
+                type ActivityError = #error_type;
+                type Choices<'a> = ::std::vec::Vec<Result<(#action_type, #state_type), #error_type>>
+                where
+                    Self: 'a,
+                    Self::ActivityError: 'a,
+                    #state_type: 'a,
+                    #action_type: 'a;
+
+                fn choices<'a>(&'a self, from_state: #state_type) -> Self::Choices<'a>
+                where
+                    Self: 'a,
+                    Self::ActivityError: 'a,
+                    #state_type: 'a,
+                    #action_type: 'a,
+                {
+                    #create_choices
+                    choices
+                }
+            }
+        });
+    }
+
+    if !weights.is_empty() {
+        let (field_name, field_ty) = *weights.first().unwrap();
+        let cost_type = quote! {
+            <#field_ty as ::mapf::domain::Weight<#state_type, #action_type>::Cost;
+        };
+        let mut create_initial_cost = quote! {
+            let initial_cost = <#field_ty as ::mapf::domain::Weight<#state_type, #action_type>::initial_cost(&self.#field_name, for_state)?;
+        };
+        let mut create_cost = quote! {
+            let cost = <#field_ty as ::mapf::domain::Weight<#state_type, #action_type>::cost(&self.#field_name, from_state, action, to_state)?;
+        };
+
+        for (field_name, _) in weights.iter().skip(1) {
+            let field_name = *field_name;
+            create_initial_cost.extend(quote! {
+                let initial_cost = initial_cost + <#field_ty as ::mapf::domain::Weight<#state_type, #action_type>::initial_cost(&self.#field_name, for_state)?;
+            });
+
+            create_cost.extend(quote! {
+                let cost = cost + <#field_ty as ::mapf::domain::Weight<#state_type, #action_type>::cost(&self.#field_name, for_state)?;
+            });
+        }
+
+        expanded.extend(quote! {
+            impl #impl_generics ::mapf::domain::Weight<#state_type, #action_type> for #name #ty_generics #where_clause {
+                type Cost = #cost_type;
+                type WeightError = #error_type;
+                fn cost(&self, from_state: &#state_type, action: &#action_type, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
+                    #create_cost
+                    cost
+                }
+                fn initial_cost(&self, for_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
+                    #create_initial_cost
+                    initial_cost
+                }
+            }
+        });
+    }
+
+    if !heuristics.is_empty() {
+
+
+                        // Assuming Goal is #state_type by default
+        expanded.extend(quote! {
+            impl #impl_generics ::mapf::domain::Heuristic<#state_type, #state_type> for #name #ty_generics #where_clause {
+                type CostEstimate = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::CostEstimate;
+                type HeuristicError = <#field_ty as ::mapf::domain::Heuristic<#state_type, #state_type>>::HeuristicError;
+                fn estimate_remaining_cost(&self, from_state: &#state_type, to_goal: &#state_type) -> Result<Option<Self::CostEstimate>, Self::HeuristicError> {
+                    self.#field_name.estimate_remaining_cost(from_state, to_goal)
+                }
+            }
+        });
     }
 
     TokenStream::from(expanded)

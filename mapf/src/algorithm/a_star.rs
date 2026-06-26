@@ -95,7 +95,7 @@ impl<D> AStar<D> {
 
 impl<D> AStar<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weight<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
     D::State: Clone,
     D::Action: Clone,
     D::WeightError: Into<D::Error>,
@@ -151,7 +151,7 @@ where
         goal: &Goal,
     ) -> Result<Flow<(usize, Node<D::State, D::Action, D::Cost>), D>, AStarSearchError<D::Error>>
     where
-        D: Satisfiable<D::State, Goal> + Activity<D::State>,
+        D: Satisfiable<D::State, Goal> + Activity<D::State, D::Action>,
         D::SatisfactionError: Into<D::Error>,
     {
         let top_id = match queue.pop() {
@@ -194,7 +194,7 @@ where
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
     where
-        D: Activity<D::State>,
+        D: Activity<D::State, D::Action>,
         D::Action: Into<D::Action>,
         D::ActivityError: Into<D::Error>,
         D: Heuristic<D::State, Goal, CostEstimate = D::Cost>,
@@ -264,7 +264,7 @@ where
 
 impl<D> Algorithm for AStar<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weight<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
 }
@@ -274,7 +274,7 @@ where
     D: Domain
         + Initializable<Start, Goal, D::State>
         + Closable<D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Heuristic<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
@@ -295,7 +295,7 @@ impl<D, Goal> Solvable<Goal> for AStar<D>
 where
     D: Domain
         + Closable<D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Heuristic<D::State, Goal, CostEstimate = D::Cost>
         + Satisfiable<D::State, Goal>,
@@ -345,7 +345,7 @@ impl<D: Configurable> Configurable for AStar<D> {
 
 impl<D> Algorithm for AStarConnect<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weight<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
 }
@@ -355,7 +355,7 @@ where
     D: Domain
         + Initializable<Start, Goal, D::State>
         + Closable<D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Heuristic<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
@@ -376,7 +376,7 @@ impl<D, Goal> Solvable<Goal> for AStarConnect<D>
 where
     D: Domain
         + Closable<D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Heuristic<D::State, Goal, CostEstimate = D::Cost>
         + Satisfiable<D::State, Goal>
@@ -494,7 +494,7 @@ where
 /// Control flow return value for functions that constitute step()
 enum Flow<T, D>
 where
-    D: Domain + Activity<D::State> + Weight<D::State, D::Action>,
+    D: Domain + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
     // D::Error: StdError,
 {
     Proceed(T),

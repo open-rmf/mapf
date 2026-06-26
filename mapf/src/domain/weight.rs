@@ -224,7 +224,7 @@ where
     Base: Domain,
     Base::State: Clone,
     Action: Clone,
-    Lifter: ProjectState<Base::State> + ActionMap<Base::State, Action>,
+    Lifter: ProjectedState<Base::State> + ActionMap<Base::State, Action>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Weight<Lifter::ProjectedState, Lifter::ToAction>,

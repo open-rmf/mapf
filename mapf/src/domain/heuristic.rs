@@ -152,7 +152,7 @@ impl<Base, Lifter, Prop, Goal> Heuristic<Base::State, Goal> for Lifted<Base, Lif
 where
     Base: Domain,
     Base::State: Clone,
-    Lifter: ProjectState<Base::State>,
+    Lifter: ProjectedState<Base::State>,
     Lifter::ProjectionError: Into<Base::Error>,
     Prop: Heuristic<Lifter::ProjectedState, Goal>,
     Prop::HeuristicError: Into<Base::Error>,

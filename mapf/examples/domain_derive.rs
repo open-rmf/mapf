@@ -19,7 +19,7 @@ use mapf::domain::{Activity, Domain, Heuristic, Keyed, KeyedCloser, Keyring, Wei
 use mapf::error::NoError;
 
 #[derive(Domain)]
-#[domain(state = f64, error = NoError)]
+#[domain(state = f64, action = f64, error = NoError)]
 struct RobotDomain {
     #[activity]
     motion: MyActivity,
@@ -37,7 +37,6 @@ struct RobotDomain {
 #[derive(Clone)]
 struct MyActivity;
 impl Activity<f64> for MyActivity {
-    type Action = f64;
     type ActivityError = NoError;
     type Choices<'a>
         = std::vec::IntoIter<Result<(f64, f64), NoError>>

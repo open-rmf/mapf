@@ -33,7 +33,7 @@ use std::{
 
 pub struct Dijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     domain: D,
     cache: Arc<Mutex<Cache<D>>>,
@@ -41,14 +41,14 @@ where
 
 impl<D> Algorithm for Dijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     type Memory = Memory<D>;
 }
 
 impl<D> Dijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     pub fn new(domain: D) -> Self {
         Self {
@@ -86,7 +86,7 @@ where
     D: Domain
         + Keyring<D::State>
         + Initializable<Start, Goal, D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Closable<D::State>
         + Connectable<D::State, D::Action, D::Key>
@@ -223,7 +223,7 @@ impl<D, Goal> Solvable<Goal> for Dijkstra<D>
 where
     D: Domain
         + Keyring<D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Closable<D::State>
         + Connectable<D::State, D::Action, D::Key>,
@@ -463,7 +463,7 @@ where
 /// previous search remains valid.
 impl<D: Configurable> Configurable for Dijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     type Configuration = D::Configuration;
     fn configure<F>(self, f: F) -> Result<Self, Anyhow>
@@ -503,14 +503,14 @@ impl From<TreeError> for DijkstraImplError {
 #[derive(Clone)]
 struct Cache<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     trees: HashMap<D::Key, SharedCachedTree<D>>,
 }
 
 impl<D> Default for Cache<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     fn default() -> Self {
         Self {
@@ -527,7 +527,7 @@ type SharedCachedTree<D> = Arc<RwLock<CachedTree<D>>>;
 
 pub struct CachedTree<D>
 where
-    D: Domain + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     /// The tree data that has been cached
     tree: Tree<D::ClosedSet<usize>, Node<D::State, D::Action, D::Cost>, D::Cost>,
@@ -536,7 +536,7 @@ where
 
 impl<D> CachedTree<D>
 where
-    D: Domain + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     fn new(closed_set: D::ClosedSet<usize>) -> Self
     where
@@ -555,7 +555,7 @@ where
 
 pub struct Memory<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     /// Trees that are being grown for this search.
     // TODO(@mxgrey): Consider using a SmallVec here to avoid heap allocation
@@ -575,7 +575,7 @@ where
 
 impl<D> Memory<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     fn new(trees: Vec<TreeMemory<D>>, goal_keys: Vec<D::Key>) -> Self {
         Self {
@@ -590,7 +590,7 @@ where
 
 pub struct TreeMemory<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     /// A reference to the cache entry that is being searched.
     tree: SharedCachedTree<D>,
@@ -604,7 +604,7 @@ where
 
 impl<D> TreeMemory<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     fn new(tree: SharedCachedTree<D>) -> Self {
         Self {

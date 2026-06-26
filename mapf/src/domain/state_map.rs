@@ -21,7 +21,7 @@ pub trait StateSubspace {
     type ProjectedState;
 }
 
-pub trait ProjectState<State>: StateSubspace {
+pub trait ProjectedState<State>: StateSubspace {
     /// What kind of error can happen if a bad state is provided
     type ProjectionError;
 
@@ -47,8 +47,8 @@ pub trait LiftState<State>: StateSubspace {
 /// The StateMap trait describes a domain property that can project the state of
 /// a domain to another state space and then lift it back to the domain's state
 /// space.
-pub trait StateMap<State>: ProjectState<State> + LiftState<State> {}
-impl<State, T: ProjectState<State> + LiftState<State>> StateMap<State> for T {}
+pub trait StateMap<State>: ProjectedState<State> + LiftState<State> {}
+impl<State, T: ProjectedState<State> + LiftState<State>> StateMap<State> for T {}
 
 /// NoStateSubspace is a struct that provides a no-op implementation of
 /// StateSubspace, ProjectState, and LiftState. Used by DomainMap when an
@@ -66,7 +66,7 @@ impl<State> NoStateSubspace<State> {
 impl<State> StateSubspace for NoStateSubspace<State> {
     type ProjectedState = State;
 }
-impl<State: Clone> ProjectState<State> for NoStateSubspace<State> {
+impl<State: Clone> ProjectedState<State> for NoStateSubspace<State> {
     type ProjectionError = NoError;
     fn project(&self, state: &State) -> Result<Option<State>, NoError> {
         Ok(Some(state.clone()))
@@ -82,8 +82,8 @@ impl<State> LiftState<State> for NoStateSubspace<State> {
 /// StateInto implements state subspace traits for state subspaces that can
 /// be mapped using Into
 #[derive(Debug)]
-pub struct StateInto<ProjectedState> {
-    _ignore: std::marker::PhantomData<ProjectedState>,
+pub struct StateInto<Projection> {
+    _ignore: std::marker::PhantomData<Projection>,
 }
 impl<ProjectedState> StateInto<ProjectedState> {
     pub fn new() -> Self {
@@ -95,7 +95,7 @@ impl<ProjectedState> StateInto<ProjectedState> {
 impl<ProjectedState> StateSubspace for StateInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
-impl<State: Clone + Into<ProjectedState>, ProjectedState> ProjectState<State>
+impl<State: Clone + Into<ProjectedState>, ProjectedState> ProjectedState<State>
     for StateInto<ProjectedState>
 {
     type ProjectionError = NoError;
@@ -131,7 +131,7 @@ impl<ProjectedState> StateMaybeInto<ProjectedState> {
 impl<ProjectedState> StateSubspace for StateMaybeInto<ProjectedState> {
     type ProjectedState = ProjectedState;
 }
-impl<State, ProjectedState> ProjectState<State> for StateMaybeInto<ProjectedState>
+impl<State, ProjectedState> ProjectedState<State> for StateMaybeInto<ProjectedState>
 where
     State: Clone + Into<Option<ProjectedState>>,
 {

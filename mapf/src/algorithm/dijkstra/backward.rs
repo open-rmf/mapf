@@ -33,14 +33,14 @@ use std::ops::Add;
 
 pub struct BackwardDijkstra<D: Reversible>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     backward: Dijkstra<D>,
 }
 
 impl<D: Reversible> BackwardDijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
         Ok(Self {
@@ -55,14 +55,14 @@ where
 
 impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
 }
 
 pub struct BackwardMemory<D: Reversible>
 where
-    D: Domain + Keyed + Activity<D::State> + Weight<D::State, D::Action> + Closable<D::State>,
+    D: Domain + Keyed + Activity<D::State, D::Action> + Weight<D::State, D::Action> + Closable<D::State>,
 {
     backward: Memory<D>,
 }
@@ -72,7 +72,7 @@ where
     D: Domain
         + Keyring<D::State>
         + Initializable<Goal, Start, D::State>
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Closable<D::State>
         + Connectable<D::State, D::Action, D::Key>
@@ -101,7 +101,7 @@ impl<D, Goal> Solvable<Goal> for BackwardDijkstra<D>
 where
     D: Domain
         + Reversible
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Keyring<D::State>
         + Closable<D::State>
@@ -142,7 +142,7 @@ where
     D: Domain
         + Reversible
         + Keyed
-        + Activity<D::State>
+        + Activity<D::State, D::Action>
         + Weight<D::State, D::Action>
         + Closable<D::State>,
     D::ReversalError: Into<Anyhow>,
