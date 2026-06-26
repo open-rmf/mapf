@@ -89,7 +89,17 @@ def run_benchmark(map_path, scen_path, num_agents, timeout):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download Moving AI benchmarks for MAPF and run the solver against them to measure performance."
+        description=(
+            "Download Moving AI benchmarks for MAPF and run the solver against them to measure performance.\n\n"
+            "This script automates the benchmarking workflow:\n"
+            "1. Downloads map and scenario zip files from Moving AI website if not present in cache.\n"
+            "2. Unzips them into the cache directory.\n"
+            "3. Builds the `mapf-bench` Rust crate in release mode.\n"
+            "4. Runs the benchmark for specified maps and scenarios with a range of agent counts.\n"
+            "5. Generates a JSON report (`benchmark_report.json`) and prints a summary table.\n\n"
+            "For more details on the underlying benchmark runner, see `mapf-bench/README.md`."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--timeout", type=int, default=30, help="Timeout in seconds per run")
     parser.add_argument("--max-scenarios", type=int, default=1, help="Max random scenarios per map")

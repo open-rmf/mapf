@@ -34,6 +34,11 @@ use std::collections::BTreeMap;
 pub struct Map {
     pub width: usize,
     pub height: usize,
+    /// The grid representation of the map.
+    ///
+    /// The characters in the grid represent different terrain types based on the Moving AI format:
+    /// - `.` : Passable terrain
+    /// - `@` : Obstacle
     pub grid: Vec<Vec<char>>,
 }
 
