@@ -88,7 +88,9 @@ def run_benchmark(map_path, scen_path, num_agents, timeout):
         }
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Download Moving AI benchmarks for MAPF and run the solver against them to measure performance."
+    )
     parser.add_argument("--timeout", type=int, default=30, help="Timeout in seconds per run")
     parser.add_argument("--max-scenarios", type=int, default=1, help="Max random scenarios per map")
     parser.add_argument("--maps", nargs="+", default=["empty-32-32.map", "room-32-32-4.map", "maze-32-32-2.map"])
