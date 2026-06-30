@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_cost_estimate() {
-        let domain = DefineTrait::<TestState>::new()
+        let domain = DefineTrait::<TestState, ()>::new()
             .with(EuclideanDistanceEstimate)
             .map(ScaleWeight(0.1));
 
@@ -238,16 +238,16 @@ mod tests {
 
     #[test]
     fn test_lifted_cost_estimate() {
-        let domain = DefineTrait::<TestState>::new()
+        let domain = DefineTrait::<TestState, ()>::new()
             .lift(
                 DefineDomainMap::for_subspace(StateInto::<Point>::new()),
-                DefineTrait::<Point>::new()
+                DefineTrait::<Point, ()>::new()
                     .with(EuclideanDistanceEstimate)
                     .map(ScaleWeight(0.1)),
             )
             .chain_lift(
                 DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
-                DefineTrait::<Battery>::new()
+                DefineTrait::<Battery, ()>::new()
                     .with(BatteryLevelCostEstimate)
                     .map(ScaleWeight(0.2)),
             );

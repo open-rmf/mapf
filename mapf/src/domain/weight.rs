@@ -396,14 +396,14 @@ pub(crate) mod tests {
 
     #[test]
     fn test_cost_calculation() {
-        let domain = DefineTrait::<TestState>::new()
+        let domain = DefineTrait::<TestState, ()>::new()
             .with(
-                DefineTrait::<TestState>::new()
+                DefineTrait::<TestState, ()>::new()
                     .with(DistanceWeight(0.1))
                     .map(ScaleWeight(2.0)),
             )
             .chain(
-                DefineTrait::<TestState>::new()
+                DefineTrait::<TestState, ()>::new()
                     .with(BatteryLossWeight(10.0))
                     .map(ScaleWeight(3.0)),
             );
@@ -423,16 +423,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_lifted_weight_calculation() {
-        let domain = DefineTrait::<TestState>::new()
+        let domain = DefineTrait::<TestState, ()>::new()
             .lift(
                 DefineDomainMap::for_subspace(StateInto::<Point>::new()),
-                DefineTrait::<Point>::new()
+                DefineTrait::<Point, ()>::new()
                     .with(DistanceWeight(0.1))
                     .map(ScaleWeight(2.0)),
             )
             .chain_lift(
                 DefineDomainMap::for_subspace(StateInto::<Battery>::new()),
-                DefineTrait::<Battery>::new()
+                DefineTrait::<Battery, ()>::new()
                     .with(BatteryLossWeight(10.0))
                     .map(ScaleWeight(3.0)),
             );

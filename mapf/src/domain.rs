@@ -29,6 +29,9 @@ pub trait Domain {
     /// Data structure that represents a state within this domain.
     type State;
 
+    /// Data structure that represents an action within this domain.
+    type Action;
+
     /// The error type that this domain may produce from its various operations.
     type Error;
 }

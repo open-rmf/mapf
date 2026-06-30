@@ -246,6 +246,7 @@ impl<A, W, H, X, I, S, C> InformedSearch<A, W, H, X, I, S, C> {
 
 impl<A: Domain, W, H, X, I, S, C> Domain for InformedSearch<A, W, H, X, I, S, C> {
     type State = A::State;
+    type Action = A::Action;
     type Error = anyhow::Error;
 }
 
@@ -289,24 +290,23 @@ where
     }
 }
 
-impl<A, W, H, X, I, S, C> Activity<A::State> for InformedSearch<A, W, H, X, I, S, C>
+impl<A, W, H, X, I, S, C> Activity<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State>,
+    A: Domain + Activity<A::State, A::Action>,
 {
-    type Action = A::Action;
     type ActivityError = A::ActivityError;
     type Choices<'a>
         = A::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
+        A::Action: 'a,
         Self::ActivityError: 'a,
         A::State: 'a;
 
     fn choices<'a>(&'a self, from_state: A::State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
+        A::Action: 'a,
         Self::ActivityError: 'a,
         A::State: 'a,
     {
@@ -316,7 +316,7 @@ where
 
 impl<A, W, H, X, I, S, C> Weight<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State>,
+    A: Domain + Activity<A::State, A::Action>,
     W: Weight<A::State, A::Action>,
     W::WeightError: Into<Anyhow>,
 {
@@ -372,7 +372,7 @@ where
 impl<A, W, H, X, I, S, C, Goal> Connectable<A::State, A::Action, Goal>
     for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State>,
+    A: Domain + Activity<A::State, A::Action>,
     A::State: Clone,
     C: Connectable<A::State, A::Action, Goal>,
     C::ConnectionError: Into<Anyhow>,
@@ -509,7 +509,7 @@ where
 
 impl<A, W, H, X, I, S, C> Backtrack<A::State, A::Action> for InformedSearch<A, W, H, X, I, S, C>
 where
-    A: Domain + Activity<A::State> + Backtrack<A::State, A::Action>,
+    A: Domain + Activity<A::State, A::Action> + Backtrack<A::State, A::Action>,
 {
     type BacktrackError = A::BacktrackError;
     fn flip_endpoints(

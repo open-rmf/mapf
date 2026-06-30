@@ -20,6 +20,15 @@ use mapf::domain::{Activity, Cost, Domain, Heuristic, Keyed, KeyedCloser, Keyrin
 use mapf::error::NoError;
 use mapf::Planner;
 
+/// Actions that can be performed in the grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GridAction {
+    North,
+    South,
+    East,
+    West,
+}
+
 /// A simple 2D point state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Point {
@@ -30,7 +39,7 @@ struct Point {
 /// Define a domain using the new derive macro.
 /// Adding Clone to GridDomain because AStar<D> needs to be Clone for the planner.
 #[derive(Domain, Clone)]
-#[domain(state = Point, error = NoError)]
+#[domain(state = Point, action = GridAction, error = NoError)]
 struct GridDomain {
     #[activity]
     motion: GridMotion,
@@ -54,44 +63,45 @@ struct GridDomain {
 /// Move in 4 directions.
 #[derive(Clone)]
 struct GridMotion;
-impl Activity<Point> for GridMotion {
-    type Action = char;
+impl Activity<Point, GridAction> for GridMotion {
     type ActivityError = NoError;
     type Choices<'a>
-        = std::vec::IntoIter<Result<(char, Point), NoError>>
+        = std::vec::IntoIter<Result<(GridAction, Point), NoError>>
     where
         Self: 'a,
+        GridAction: 'a,
         Point: 'a;
 
     fn choices<'a>(&'a self, from_state: Point) -> Self::Choices<'a>
     where
         Self: 'a,
+        GridAction: 'a,
         Point: 'a,
     {
         vec![
             Ok((
-                'N',
+                GridAction::North,
                 Point {
                     x: from_state.x,
                     y: from_state.y + 1,
                 },
             )),
             Ok((
-                'S',
+                GridAction::South,
                 Point {
                     x: from_state.x,
                     y: from_state.y - 1,
                 },
             )),
             Ok((
-                'E',
+                GridAction::East,
                 Point {
                     x: from_state.x + 1,
                     y: from_state.y,
                 },
             )),
             Ok((
-                'W',
+                GridAction::West,
                 Point {
                     x: from_state.x - 1,
                     y: from_state.y,
@@ -105,10 +115,10 @@ impl Activity<Point> for GridMotion {
 /// Every move costs 1.0. We use mapf::domain::Cost to get Ord for floats.
 #[derive(Clone)]
 struct ConstantCost;
-impl Weight<Point, char> for ConstantCost {
+impl Weight<Point, GridAction> for ConstantCost {
     type Cost = Cost<f64>;
     type WeightError = NoError;
-    fn cost(&self, _: &Point, _: &char, _: &Point) -> Result<Option<Cost<f64>>, NoError> {
+    fn cost(&self, _: &Point, _: &GridAction, _: &Point) -> Result<Option<Cost<f64>>, NoError> {
         Ok(Some(Cost(1.0)))
     }
     fn initial_cost(&self, _: &Point) -> Result<Option<Cost<f64>>, NoError> {

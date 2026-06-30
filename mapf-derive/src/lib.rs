@@ -38,6 +38,7 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let mut state_type = None;
+    let mut action_type = None;
     let mut error_type = None;
 
     for attr in &input.attrs {
@@ -46,6 +47,10 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                 if meta.path.is_ident("state") {
                     let value = meta.value()?;
                     state_type = Some(value.parse::<syn::Type>()?);
+                    Ok(())
+                } else if meta.path.is_ident("action") {
+                    let value = meta.value()?;
+                    action_type = Some(value.parse::<syn::Type>()?);
                     Ok(())
                 } else if meta.path.is_ident("error") {
                     let value = meta.value()?;
@@ -66,9 +71,11 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    let action_type = action_type.expect("Domain derive requires an 'action' attribute: #[domain(action = ...)]");
     expanded.extend(quote! {
         impl #impl_generics ::mapf::domain::Domain for #name #ty_generics #where_clause {
             type State = #state_type;
+            type Action = #action_type;
             type Error = #error_type;
         }
     });
@@ -80,21 +87,21 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                 let field_ty = &field.ty;
                 for attr in &field.attrs {
                     if attr.path().is_ident("activity") {
+                        let action = &action_type;
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Activity<#state_type> for #name #ty_generics #where_clause {
-                                type Action = <#field_ty as ::mapf::domain::Activity<#state_type>>::Action;
-                                type ActivityError = <#field_ty as ::mapf::domain::Activity<#state_type>>::ActivityError;
-                                type Choices<'a> = <#field_ty as ::mapf::domain::Activity<#state_type>>::Choices<'a>
+                            impl #impl_generics ::mapf::domain::Activity<#state_type, #action> for #name #ty_generics #where_clause {
+                                type ActivityError = <#field_ty as ::mapf::domain::Activity<#state_type, #action>>::ActivityError;
+                                type Choices<'a> = <#field_ty as ::mapf::domain::Activity<#state_type, #action>>::Choices<'a>
                                 where
                                     Self: 'a,
-                                    Self::Action: 'a,
+                                    #action: 'a,
                                     Self::ActivityError: 'a,
                                     #state_type: 'a;
 
                                 fn choices<'a>(&'a self, from_state: #state_type) -> Self::Choices<'a>
                                 where
                                     Self: 'a,
-                                    Self::Action: 'a,
+                                    #action: 'a,
                                     Self::ActivityError: 'a,
                                     #state_type: 'a
                                 {
@@ -103,11 +110,12 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                             }
                         });
                     } else if attr.path().is_ident("weight") {
+                        let action = &action_type;
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action> for #name #ty_generics #where_clause {
-                                type Cost = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::Cost;
-                                type WeightError = <#field_ty as ::mapf::domain::Weight<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action>>::WeightError;
-                                fn cost(&self, from_state: &#state_type, action: &<Self as ::mapf::domain::Activity<#state_type>>::Action, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
+                            impl #impl_generics ::mapf::domain::Weight<#state_type, #action> for #name #ty_generics #where_clause {
+                                type Cost = <#field_ty as ::mapf::domain::Weight<#state_type, #action>>::Cost;
+                                type WeightError = <#field_ty as ::mapf::domain::Weight<#state_type, #action>>::WeightError;
+                                fn cost(&self, from_state: &#state_type, action: &#action, to_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
                                     self.#field_name.cost(from_state, action, to_state)
                                 }
                                 fn initial_cost(&self, for_state: &#state_type) -> Result<Option<Self::Cost>, Self::WeightError> {
@@ -167,22 +175,23 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
                             }
                         });
                     } else if attr.path().is_ident("connector") {
+                        let action = &action_type;
                         expanded.extend(quote! {
-                            impl #impl_generics ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type> for #name #ty_generics #where_clause {
-                                type ConnectionError = <#field_ty as ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type>>::ConnectionError;
-                                type Connections<'a> = <#field_ty as ::mapf::domain::Connectable<#state_type, <Self as ::mapf::domain::Activity<#state_type>>::Action, #state_type>>::Connections<'a>
+                            impl #impl_generics ::mapf::domain::Connectable<#state_type, #action, #state_type> for #name #ty_generics #where_clause {
+                                type ConnectionError = <#field_ty as ::mapf::domain::Connectable<#state_type, #action, #state_type>>::ConnectionError;
+                                type Connections<'a> = <#field_ty as ::mapf::domain::Connectable<#state_type, #action, #state_type>>::Connections<'a>
                                 where
                                     Self: 'a,
                                     Self::ConnectionError: 'a,
                                     #state_type: 'a,
-                                    <Self as ::mapf::domain::Activity<#state_type>>::Action: 'a;
+                                    #action: 'a;
 
                                 fn connect<'a>(&'a self, from_state: #state_type, to_target: &'a #state_type) -> Self::Connections<'a>
                                 where
                                     Self: 'a,
                                     Self::ConnectionError: 'a,
                                     #state_type: 'a,
-                                    <Self as ::mapf::domain::Activity<#state_type>>::Action: 'a
+                                    #action: 'a
                                 {
                                     self.#field_name.connect(from_state, to_target)
                                 }
