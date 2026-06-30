@@ -79,7 +79,8 @@ where
     type Error = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
 }
 
-impl<S, G, E> Activity<IncrementalState<S::State, G>, E::IncrementalExtrapolation> for IncrementalGraphMotion<S, G, E>
+impl<S, G, E> Activity<IncrementalState<S::State, G>, E::IncrementalExtrapolation>
+    for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     S::Key: Borrow<G::Key>,

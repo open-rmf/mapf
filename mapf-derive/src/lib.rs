@@ -71,7 +71,8 @@ pub fn derive_domain(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let action_type = action_type.expect("Domain derive requires an 'action' attribute: #[domain(action = ...)]");
+    let action_type =
+        action_type.expect("Domain derive requires an 'action' attribute: #[domain(action = ...)]");
     expanded.extend(quote! {
         impl #impl_generics ::mapf::domain::Domain for #name #ty_generics #where_clause {
             type State = #state_type;

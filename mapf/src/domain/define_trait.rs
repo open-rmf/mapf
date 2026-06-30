@@ -201,7 +201,11 @@ pub trait Lift {
 
 type ChainedLift<Base, Lifter, Prop> = Chained<
     Base,
-    Lifted<DefineTrait<<Base as Domain>::State, <Base as Domain>::Action, <Base as Domain>::Error>, Lifter, Prop>,
+    Lifted<
+        DefineTrait<<Base as Domain>::State, <Base as Domain>::Action, <Base as Domain>::Error>,
+        Lifter,
+        Prop,
+    >,
 >;
 
 impl<D: Domain> Lift for D {

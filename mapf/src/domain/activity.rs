@@ -345,9 +345,8 @@ impl<Base, Lifter, Prop> Activity<Base::State, Lifter::ToAction> for Lifted<Base
 where
     Base: Domain,
     Prop: Domain + Activity<Lifter::ProjectedState, Prop::Action>,
-    Lifter: ProjectState<Base::State>
-        + LiftState<Base::State>
-        + ActionMap<Base::State, Prop::Action>,
+    Lifter:
+        ProjectState<Base::State> + LiftState<Base::State> + ActionMap<Base::State, Prop::Action>,
     Lifter::ActionMapError: Into<Base::Error>,
     Lifter::ProjectionError: Into<Base::Error>,
     Lifter::LiftError: Into<Base::Error>,
@@ -695,7 +694,8 @@ mod tests {
     struct Buy(u64 /* price per unit */);
     impl Activity<Item, Buy> for Buy {
         type ActivityError = NoError;
-        type Choices<'a> = Option<Result<(Buy, Item), NoError>>
+        type Choices<'a>
+            = Option<Result<(Buy, Item), NoError>>
         where
             Self: 'a,
             Buy: 'a,
@@ -722,7 +722,8 @@ mod tests {
     struct Sell(u64 /* price per unit */);
     impl Activity<Item, Sell> for Sell {
         type ActivityError = NoError;
-        type Choices<'a> = Option<Result<(Sell, Item), NoError>>
+        type Choices<'a>
+            = Option<Result<(Sell, Item), NoError>>
         where
             Self: 'a,
             Sell: 'a,
