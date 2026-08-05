@@ -2,6 +2,7 @@ use core::panic;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use parry2d::bounding_volume::{Aabb, BoundingVolume};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
@@ -1123,37 +1124,104 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
         }
     }
 
-    // Type 2 edges
-    for agent1 in 0..mapf_result.trajectories.len() {
-        for trajectory_index1 in 1..mapf_result.trajectories[agent1].len() {
-            for agent2 in 0..mapf_result.trajectories.len() {
-                if agent1 == agent2 {
-                    continue;
+    // Type 2 edges.
+    //
+    // Broad phase: build a merged (start-pose, end-pose) AABB per trajectory
+    // segment, then sweep-and-prune along whichever axis (X or Y) has the
+    // larger spread. Segments are sorted by their AABB min on that axis, and
+    // for each segment we only scan forward while later segments could still
+    // overlap on that axis, stopping early once they can't. Only AABB-overlapping
+    // pairs go through the expensive exact `collides` check.
+    struct SegmentAabb {
+        agent: usize,
+        index: usize, // index in trajectory (represents motion from index-1 to index)
+        aabb: Aabb,
+    }
+
+    let mut all_segments = Vec::new();
+    let mut min_bound = Point2::new(f64::MAX, f64::MAX);
+    let mut max_bound = Point2::new(f64::MIN, f64::MIN);
+
+    for (agent_idx, trajectory) in mapf_result.trajectories.iter().enumerate() {
+        let footprint = &*mapf_result.footprints[agent_idx];
+        for i in 1..trajectory.len() {
+            let aabb1 = footprint.compute_aabb(&trajectory.poses[i - 1]);
+            let aabb2 = footprint.compute_aabb(&trajectory.poses[i]);
+            let merged_aabb = aabb1.merged(&aabb2);
+
+            min_bound.x = min_bound.x.min(merged_aabb.mins.x);
+            min_bound.y = min_bound.y.min(merged_aabb.mins.y);
+            max_bound.x = max_bound.x.max(merged_aabb.maxs.x);
+            max_bound.y = max_bound.y.max(merged_aabb.maxs.y);
+
+            all_segments.push(SegmentAabb {
+                agent: agent_idx,
+                index: i,
+                aabb: merged_aabb,
+            });
+        }
+    }
+
+    let x_spread = max_bound.x - min_bound.x;
+    let y_spread = max_bound.y - min_bound.y;
+    let sort_by_x = x_spread >= y_spread;
+
+    if sort_by_x {
+        all_segments.sort_by(|a, b| a.aabb.mins.x.partial_cmp(&b.aabb.mins.x).unwrap());
+    } else {
+        all_segments.sort_by(|a, b| a.aabb.mins.y.partial_cmp(&b.aabb.mins.y).unwrap());
+    }
+
+    for i in 0..all_segments.len() {
+        let seg1 = &all_segments[i];
+        for j in i + 1..all_segments.len() {
+            let seg2 = &all_segments[j];
+
+            if sort_by_x {
+                if seg2.aabb.mins.x > seg1.aabb.maxs.x {
+                    break;
                 }
-                for trajectory_index2 in
-                    trajectory_index1 + 1..mapf_result.trajectories[agent2].len()
-                {
-                    if collides(
-                        &mapf_result.trajectories[agent1].poses[trajectory_index1 - 1],
-                        &mapf_result.trajectories[agent1].poses[trajectory_index1],
-                        &*mapf_result.footprints[agent1],
-                        &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1],
-                        &mapf_result.trajectories[agent2].poses[trajectory_index2],
-                        &*mapf_result.footprints[agent2],
-                        mapf_result.discretization_timestep,
-                    ) {
-                        semantic_plan.requires_comes_after(
-                            &SemanticWaypoint {
-                                agent: agent1,
-                                trajectory_index: trajectory_index1 - 1,
-                            },
-                            &SemanticWaypoint {
-                                agent: agent2,
-                                trajectory_index: trajectory_index2 - 1,
-                            },
-                        );
-                    }
-                }
+            } else if seg2.aabb.mins.y > seg1.aabb.maxs.y {
+                break;
+            }
+
+            if seg1.agent == seg2.agent {
+                continue;
+            }
+
+            // We sorted by X or Y, so seg1 and seg2 can be in any temporal
+            // order; normalize them to (earlier, later) by trajectory index
+            // before running the exact collision check.
+            let (earlier, later) = if seg1.index < seg2.index {
+                (seg1, seg2)
+            } else if seg2.index < seg1.index {
+                (seg2, seg1)
+            } else {
+                // Same trajectory index on both agents: neither can depend on the other.
+                continue;
+            };
+
+            if earlier.aabb.intersects(&later.aabb)
+                && collides(
+                    &mapf_result.trajectories[earlier.agent].poses[earlier.index - 1],
+                    &mapf_result.trajectories[earlier.agent].poses[earlier.index],
+                    &*mapf_result.footprints[earlier.agent],
+                    &mapf_result.trajectories[later.agent].poses[later.index - 1],
+                    &mapf_result.trajectories[later.agent].poses[later.index],
+                    &*mapf_result.footprints[later.agent],
+                    mapf_result.discretization_timestep,
+                )
+            {
+                semantic_plan.requires_comes_after(
+                    &SemanticWaypoint {
+                        agent: earlier.agent,
+                        trajectory_index: earlier.index - 1,
+                    },
+                    &SemanticWaypoint {
+                        agent: later.agent,
+                        trajectory_index: later.index - 1,
+                    },
+                );
             }
         }
     }
@@ -1518,5 +1586,206 @@ mod tests {
             },
         ];
         assert!(!semantic_plan.check_for_violation(&safe_state_2));
+    }
+}
+
+/// Cross-checks the AABB sweep-and-prune broad phase used by `mapf_post`'s
+/// Type 2 edge detection against a brute-force O((N*T)^2) reference
+/// implementation, to make sure the pruning never drops a true collision.
+#[cfg(test)]
+mod sweep_line_tests {
+    use super::*;
+    use parry2d::na::Vector2;
+    use parry2d::shape::Ball;
+    use std::collections::HashSet;
+
+    fn mapf_result_from(paths: &[Vec<(f64, f64)>], r: f64) -> MapfResult {
+        MapfResult {
+            trajectories: paths
+                .iter()
+                .map(|path| Trajectory {
+                    poses: path
+                        .iter()
+                        .map(|&(x, y)| Isometry2::new(Vector2::new(x, y), 0.0))
+                        .collect(),
+                })
+                .collect(),
+            footprints: paths
+                .iter()
+                .map(|_| Arc::new(Ball::new(r)) as Arc<dyn Shape>)
+                .collect(),
+            discretization_timestep: 1.0,
+            agent_name_to_id: HashMap::default(),
+        }
+    }
+
+    fn type2_edges_of(plan: &SemanticPlan) -> HashSet<(SemanticWaypoint, SemanticWaypoint)> {
+        let mut edges = HashSet::new();
+        for successor in &plan.waypoints {
+            let Some(predecessor_ids) = plan.comes_before(successor) else {
+                continue;
+            };
+            for &pred_id in predecessor_ids {
+                let predecessor = plan.waypoints[pred_id];
+                if predecessor.agent != successor.agent {
+                    edges.insert((predecessor, *successor));
+                }
+            }
+        }
+        edges
+    }
+
+    /// The brute-force O((NT)^2) collision-dependency algorithm that the
+    /// sweep-and-prune broad phase replaced.
+    fn brute_force_type2_edges(
+        mapf_result: &MapfResult,
+    ) -> HashSet<(SemanticWaypoint, SemanticWaypoint)> {
+        let mut edges = HashSet::new();
+        let trajectories = &mapf_result.trajectories;
+        for agent1 in 0..trajectories.len() {
+            for ti1 in 1..trajectories[agent1].len() {
+                for agent2 in 0..trajectories.len() {
+                    if agent1 == agent2 {
+                        continue;
+                    }
+                    for ti2 in ti1 + 1..trajectories[agent2].len() {
+                        if collides(
+                            &trajectories[agent1].poses[ti1 - 1],
+                            &trajectories[agent1].poses[ti1],
+                            &*mapf_result.footprints[agent1],
+                            &trajectories[agent2].poses[ti2 - 1],
+                            &trajectories[agent2].poses[ti2],
+                            &*mapf_result.footprints[agent2],
+                            mapf_result.discretization_timestep,
+                        ) {
+                            edges.insert((
+                                SemanticWaypoint {
+                                    agent: agent1,
+                                    trajectory_index: ti1 - 1,
+                                },
+                                SemanticWaypoint {
+                                    agent: agent2,
+                                    trajectory_index: ti2 - 1,
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        edges
+    }
+
+    /// For ball footprints, straight-line motion scenarios the sweep-line
+    /// must produce the identical dependency graph as the brute-force
+    /// implementation: the merged endpoint AABB contains each segment's swept
+    /// volume, so AABB-disjoint segments cannot collide, and both algorithms
+    /// then apply the same exact collision check.
+    #[test]
+    fn test_sweep_line_matches_bruteforce() {
+        let scenarios: Vec<(&str, Vec<Vec<(f64, f64)>>)> = vec![
+            (
+                "horizontal_cross",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 0.0)],
+                    vec![(1.0, -1.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0)],
+                ],
+            ),
+            (
+                "horizontal_follow",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
+                    vec![(1.0, 0.0), (2.0, 0.0), (3.0, 0.0), (4.0, 0.0)],
+                ],
+            ),
+            (
+                "vertical_follow",
+                vec![
+                    vec![(0.0, 0.0), (0.0, 1.0), (0.0, 2.0), (0.0, 3.0)],
+                    vec![(0.0, 1.0), (0.0, 2.0), (0.0, 3.0), (0.0, 4.0)],
+                ],
+            ),
+            (
+                "head_on_swap",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)],
+                    vec![(2.0, 0.0), (1.0, 0.0), (0.0, 0.0)],
+                ],
+            ),
+            (
+                "diagonal_cross",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
+                    vec![(0.0, 2.0), (1.0, 1.0), (2.0, 0.0)],
+                ],
+            ),
+            (
+                "parallel_far_apart",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)],
+                    vec![(0.0, 50.0), (1.0, 50.0), (2.0, 50.0)],
+                ],
+            ),
+            (
+                "three_agents",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
+                    vec![(1.5, -1.5), (1.5, 0.0), (1.5, 1.5), (1.5, 1.5)],
+                    vec![(3.0, 0.0), (2.0, 0.0), (1.0, 0.0), (0.0, 0.0)],
+                ],
+            ),
+            (
+                "unequal_lengths_crossing",
+                vec![
+                    vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)],
+                    vec![(1.0, -2.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (1.0, 2.0)],
+                ],
+            ),
+        ];
+
+        for (name, paths) in scenarios {
+            let mapf_result = mapf_result_from(&paths, 0.49);
+            let actual = type2_edges_of(&mapf_post(&mapf_result));
+            let expected = brute_force_type2_edges(&mapf_result);
+            assert_eq!(
+                actual, expected,
+                "sweep-line and brute-force disagree on scenario '{name}'"
+            );
+        }
+    }
+
+    /// A scene and its 90-degree rotation must yield identical edges, since
+    /// ball footprints make collisions rotation-invariant. Tests that the
+    /// sort-by-Y branch agrees with the sort-by-X branch.
+    #[test]
+    fn test_sort_axis_invariance() {
+        // Spread is larger along X -> sweep sorts by X.
+        let horizontal = mapf_result_from(
+            &[
+                vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
+                vec![(1.0, 0.0), (2.0, 0.0), (3.0, 0.0), (4.0, 0.0)],
+            ],
+            0.49,
+        );
+        // Same agent/index structure rotated 90 degrees onto Y -> sweep sorts by Y.
+        let vertical = mapf_result_from(
+            &[
+                vec![(0.0, 0.0), (0.0, 1.0), (0.0, 2.0), (0.0, 3.0)],
+                vec![(0.0, 1.0), (0.0, 2.0), (0.0, 3.0), (0.0, 4.0)],
+            ],
+            0.49,
+        );
+
+        let horizontal_edges = type2_edges_of(&mapf_post(&horizontal));
+        let vertical_edges = type2_edges_of(&mapf_post(&vertical));
+
+        assert!(
+            !horizontal_edges.is_empty(),
+            "overlapping follow paths must produce collision dependencies"
+        );
+        assert_eq!(
+            horizontal_edges, vertical_edges,
+            "sort-by-X and sort-by-Y branches must produce identical edges"
+        );
     }
 }
