@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parry2d::bounding_volume::{Aabb, BoundingVolume};
-use parry2d::partitioning::Qbvh;
 use parry2d::na::{Isometry2, Point2};
+use parry2d::partitioning::Qbvh;
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
@@ -1957,8 +1957,7 @@ mod timing {
             let cy = row * cell_spacing;
             let poses = (0..NUM_WAYPOINTS)
                 .map(|wp_idx| {
-                    let t = wp_idx as f64 / (NUM_WAYPOINTS - 1) as f64
-                        * std::f64::consts::TAU;
+                    let t = wp_idx as f64 / (NUM_WAYPOINTS - 1) as f64 * std::f64::consts::TAU;
                     Isometry2::new(
                         Vector2::new(cx + t.sin() * wiggle, cy + t.cos() * wiggle),
                         0.0,
@@ -2007,9 +2006,18 @@ mod timing {
         let bruteforce = type2_edge_count(&mapf_post_bruteforce(&scene));
         let sweep = type2_edge_count(&mapf_post_sweep(&scene));
         let aabb_tree = type2_edge_count(&mapf_post(&scene));
-        assert_eq!(bruteforce, 0, "grid scene should have zero collisions by construction");
-        assert_eq!(sweep, bruteforce, "sweep disagrees with brute-force on grid scene");
-        assert_eq!(aabb_tree, bruteforce, "aabb tree disagrees with brute-force on grid scene");
+        assert_eq!(
+            bruteforce, 0,
+            "grid scene should have zero collisions by construction"
+        );
+        assert_eq!(
+            sweep, bruteforce,
+            "sweep disagrees with brute-force on grid scene"
+        );
+        assert_eq!(
+            aabb_tree, bruteforce,
+            "aabb tree disagrees with brute-force on grid scene"
+        );
     }
 
     #[test]
@@ -2018,8 +2026,18 @@ mod timing {
         println!("{:>10} {:>14} {:>14}", "agents", "sweep", "aabb_tree");
         for &n in &[100, 500, 1000, 2000, 4000, 8000, 16000, 32000] {
             let scene = grid_scene(n);
-            let sweep = time(|| { std::hint::black_box(mapf_post_sweep(&scene)); }, 3);
-            let aabb_tree = time(|| { std::hint::black_box(mapf_post(&scene)); }, 3);
+            let sweep = time(
+                || {
+                    std::hint::black_box(mapf_post_sweep(&scene));
+                },
+                3,
+            );
+            let aabb_tree = time(
+                || {
+                    std::hint::black_box(mapf_post(&scene));
+                },
+                3,
+            );
             println!("{n:>10} {sweep:>14?} {aabb_tree:>14?}");
         }
     }
