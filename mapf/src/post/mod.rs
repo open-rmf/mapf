@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parry2d::bounding_volume::{Aabb, BoundingVolume};
+use parry2d::partitioning::Qbvh;
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
@@ -1088,18 +1089,16 @@ fn collides(
     }
 }
 
-/// Simple implementation of mapf_post: A MapF -> semantic plan
-/// Method.
-/// TODO(arjoc): This can be improved.
-///
-/// Based on https://whoenig.github.io/publications/2019_RA-L_Hoenig.pdf
-pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
+/// Builds the semantic plan skeleton (agent bookkeeping + Type 1, i.e.
+/// same-agent sequential, edges). Shared by every `mapf_post*` variant;
+/// they only differ in how they compute Type 2 (cross-agent collision)
+/// edges.
+fn init_semantic_plan_with_type1_edges(mapf_result: &MapfResult) -> SemanticPlan {
     let mut semantic_plan = SemanticPlan {
         agent_name_to_id: mapf_result.agent_name_to_id.clone(),
         ..SemanticPlan::default()
     };
     semantic_plan.num_agents = mapf_result.trajectories.len();
-    // Type 1 edges
     for agent in 0..mapf_result.trajectories.len() {
         for trajectory_index in 0..mapf_result.trajectories[agent].len() {
             semantic_plan.add_waypoint(&SemanticWaypoint {
@@ -1123,48 +1122,143 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
             );
         }
     }
+    semantic_plan
+}
 
-    // Type 2 edges.
-    //
-    // Broad phase: build a merged (start-pose, end-pose) AABB per trajectory
-    // segment, then sweep-and-prune along whichever axis (X or Y) has the
-    // larger spread. Segments are sorted by their AABB min on that axis, and
-    // for each segment we only scan forward while later segments could still
-    // overlap on that axis, stopping early once they can't. Only AABB-overlapping
-    // pairs go through the expensive exact `collides` check.
-    struct SegmentAabb {
-        agent: usize,
-        index: usize, // index in trajectory (represents motion from index-1 to index)
-        aabb: Aabb,
+/// Type 2 (cross-agent collision) edges, brute-force O((N*T)^2): every
+/// segment of every agent is checked against every later-starting segment
+/// of every other agent, with no spatial pruning. This is the reference
+/// implementation the two broad-phase strategies below are checked against.
+fn add_type2_edges_bruteforce(semantic_plan: &mut SemanticPlan, mapf_result: &MapfResult) {
+    let trajectories = &mapf_result.trajectories;
+    for agent1 in 0..trajectories.len() {
+        for ti1 in 1..trajectories[agent1].len() {
+            for agent2 in 0..trajectories.len() {
+                if agent1 == agent2 {
+                    continue;
+                }
+                for ti2 in ti1 + 1..trajectories[agent2].len() {
+                    if collides(
+                        &trajectories[agent1].poses[ti1 - 1],
+                        &trajectories[agent1].poses[ti1],
+                        &*mapf_result.footprints[agent1],
+                        &trajectories[agent2].poses[ti2 - 1],
+                        &trajectories[agent2].poses[ti2],
+                        &*mapf_result.footprints[agent2],
+                        mapf_result.discretization_timestep,
+                    ) {
+                        semantic_plan.requires_comes_after(
+                            &SemanticWaypoint {
+                                agent: agent1,
+                                trajectory_index: ti1 - 1,
+                            },
+                            &SemanticWaypoint {
+                                agent: agent2,
+                                trajectory_index: ti2 - 1,
+                            },
+                        );
+                    }
+                }
+            }
+        }
     }
+}
 
+struct SegmentAabb {
+    agent: usize,
+    index: usize, // index in trajectory (represents motion from index-1 to index)
+    aabb: Aabb,
+}
+
+fn segment_aabbs(mapf_result: &MapfResult) -> Vec<SegmentAabb> {
     let mut all_segments = Vec::new();
-    let mut min_bound = Point2::new(f64::MAX, f64::MAX);
-    let mut max_bound = Point2::new(f64::MIN, f64::MIN);
-
     for (agent_idx, trajectory) in mapf_result.trajectories.iter().enumerate() {
         let footprint = &*mapf_result.footprints[agent_idx];
         for i in 1..trajectory.len() {
             let aabb1 = footprint.compute_aabb(&trajectory.poses[i - 1]);
             let aabb2 = footprint.compute_aabb(&trajectory.poses[i]);
-            let merged_aabb = aabb1.merged(&aabb2);
-
-            min_bound.x = min_bound.x.min(merged_aabb.mins.x);
-            min_bound.y = min_bound.y.min(merged_aabb.mins.y);
-            max_bound.x = max_bound.x.max(merged_aabb.maxs.x);
-            max_bound.y = max_bound.y.max(merged_aabb.maxs.y);
-
             all_segments.push(SegmentAabb {
                 agent: agent_idx,
                 index: i,
-                aabb: merged_aabb,
+                aabb: aabb1.merged(&aabb2),
             });
         }
     }
+    all_segments
+}
 
-    let x_spread = max_bound.x - min_bound.x;
-    let y_spread = max_bound.y - min_bound.y;
-    let sort_by_x = x_spread >= y_spread;
+/// Given a normalized (temporally earlier, later) pair of overlapping
+/// segments, runs the exact `collides` check and records the dependency
+/// edge if they actually collide.
+fn check_and_record_collision(
+    semantic_plan: &mut SemanticPlan,
+    mapf_result: &MapfResult,
+    earlier: &SegmentAabb,
+    later: &SegmentAabb,
+) {
+    if collides(
+        &mapf_result.trajectories[earlier.agent].poses[earlier.index - 1],
+        &mapf_result.trajectories[earlier.agent].poses[earlier.index],
+        &*mapf_result.footprints[earlier.agent],
+        &mapf_result.trajectories[later.agent].poses[later.index - 1],
+        &mapf_result.trajectories[later.agent].poses[later.index],
+        &*mapf_result.footprints[later.agent],
+        mapf_result.discretization_timestep,
+    ) {
+        semantic_plan.requires_comes_after(
+            &SemanticWaypoint {
+                agent: earlier.agent,
+                trajectory_index: earlier.index - 1,
+            },
+            &SemanticWaypoint {
+                agent: later.agent,
+                trajectory_index: later.index - 1,
+            },
+        );
+    }
+}
+
+/// Normalizes an unordered pair of segments into (earlier, later) by
+/// trajectory index, since neither the sweep nor the tree broad phase
+/// returns candidates in temporal order. Returns `None` when both segments
+/// share the same trajectory index (neither can depend on the other) or
+/// belong to the same agent.
+fn normalize_pair<'a>(
+    seg1: &'a SegmentAabb,
+    seg2: &'a SegmentAabb,
+) -> Option<(&'a SegmentAabb, &'a SegmentAabb)> {
+    if seg1.agent == seg2.agent {
+        return None;
+    }
+    if seg1.index < seg2.index {
+        Some((seg1, seg2))
+    } else if seg2.index < seg1.index {
+        Some((seg2, seg1))
+    } else {
+        None
+    }
+}
+
+/// Type 2 edges via sort-and-sweep: sort segments' merged AABBs by their
+/// min bound on whichever axis (X or Y) has the larger spread across the
+/// scene, then for each segment scan forward only while later segments
+/// could still overlap on that axis, breaking out as soon as they can't.
+/// Only AABB-overlapping pairs go through the exact `collides` check.
+fn add_type2_edges_sweep(semantic_plan: &mut SemanticPlan, mapf_result: &MapfResult) {
+    let mut all_segments = segment_aabbs(mapf_result);
+    if all_segments.is_empty() {
+        return;
+    }
+
+    let mut min_bound = Point2::new(f64::MAX, f64::MAX);
+    let mut max_bound = Point2::new(f64::MIN, f64::MIN);
+    for seg in &all_segments {
+        min_bound.x = min_bound.x.min(seg.aabb.mins.x);
+        min_bound.y = min_bound.y.min(seg.aabb.mins.y);
+        max_bound.x = max_bound.x.max(seg.aabb.maxs.x);
+        max_bound.y = max_bound.y.max(seg.aabb.maxs.y);
+    }
+    let sort_by_x = (max_bound.x - min_bound.x) >= (max_bound.y - min_bound.y);
 
     if sort_by_x {
         all_segments.sort_by(|a, b| a.aabb.mins.x.partial_cmp(&b.aabb.mins.x).unwrap());
@@ -1185,46 +1279,96 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
                 break;
             }
 
-            if seg1.agent == seg2.agent {
-                continue;
-            }
-
-            // We sorted by X or Y, so seg1 and seg2 can be in any temporal
-            // order; normalize them to (earlier, later) by trajectory index
-            // before running the exact collision check.
-            let (earlier, later) = if seg1.index < seg2.index {
-                (seg1, seg2)
-            } else if seg2.index < seg1.index {
-                (seg2, seg1)
-            } else {
-                // Same trajectory index on both agents: neither can depend on the other.
+            let Some((earlier, later)) = normalize_pair(seg1, seg2) else {
                 continue;
             };
-
-            if earlier.aabb.intersects(&later.aabb)
-                && collides(
-                    &mapf_result.trajectories[earlier.agent].poses[earlier.index - 1],
-                    &mapf_result.trajectories[earlier.agent].poses[earlier.index],
-                    &*mapf_result.footprints[earlier.agent],
-                    &mapf_result.trajectories[later.agent].poses[later.index - 1],
-                    &mapf_result.trajectories[later.agent].poses[later.index],
-                    &*mapf_result.footprints[later.agent],
-                    mapf_result.discretization_timestep,
-                )
-            {
-                semantic_plan.requires_comes_after(
-                    &SemanticWaypoint {
-                        agent: earlier.agent,
-                        trajectory_index: earlier.index - 1,
-                    },
-                    &SemanticWaypoint {
-                        agent: later.agent,
-                        trajectory_index: later.index - 1,
-                    },
-                );
+            if earlier.aabb.intersects(&later.aabb) {
+                check_and_record_collision(semantic_plan, mapf_result, earlier, later);
             }
         }
     }
+}
+
+/// Type 2 edges via `parry2d::partitioning::Qbvh`: a quaternary (4-ary),
+/// SIMD-accelerated bounding-volume hierarchy already shipped by `parry2d`
+/// (this crate's existing collision-geometry dependency — no extra crate
+/// needed). Index every segment's merged AABB in it, then for each segment
+/// query the tree with its own AABB to get its overlap candidates. Only
+/// those candidate pairs go through the exact `collides` check.
+///
+/// This replaced a hand-rolled binary AABB tree (median-split on whichever
+/// axis had the widest spread of bbox centers, recursing per node) that
+/// duplicated what `Qbvh` already does, with a scalar, non-SIMD binary
+/// split instead of `Qbvh`'s 4-ary SIMD-batched one.
+fn add_type2_edges_aabb_tree(semantic_plan: &mut SemanticPlan, mapf_result: &MapfResult) {
+    let all_segments = segment_aabbs(mapf_result);
+    if all_segments.is_empty() {
+        return;
+    }
+
+    let entries: Vec<(usize, Aabb)> = all_segments
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| (i, seg.aabb))
+        .collect();
+    let mut tree: Qbvh<usize> = Qbvh::new();
+    tree.clear_and_rebuild(entries.into_iter(), 0.0);
+
+    let mut candidates = Vec::new();
+    for i in 0..all_segments.len() {
+        let seg1 = &all_segments[i];
+
+        candidates.clear();
+        tree.intersect_aabb(&seg1.aabb, &mut candidates);
+
+        for &j in &candidates {
+            // Every unordered pair is found twice, once from each side's
+            // query (and a segment always finds itself); only process it
+            // once, from the lower index.
+            if j <= i {
+                continue;
+            }
+
+            let seg2 = &all_segments[j];
+            let Some((earlier, later)) = normalize_pair(seg1, seg2) else {
+                continue;
+            };
+            check_and_record_collision(semantic_plan, mapf_result, earlier, later);
+        }
+    }
+}
+
+/// Simple implementation of mapf_post: A MapF -> semantic plan
+/// Method.
+/// TODO(arjoc): This can be improved.
+///
+/// Based on https://whoenig.github.io/publications/2019_RA-L_Hoenig.pdf
+///
+/// Uses the `AabbTree` broad phase for Type 2 edges. See
+/// `mapf_post_sweep` and `mapf_post_bruteforce` for the alternative
+/// strategies this is benchmarked against.
+pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
+    let mut semantic_plan = init_semantic_plan_with_type1_edges(mapf_result);
+    add_type2_edges_aabb_tree(&mut semantic_plan, mapf_result);
+    semantic_plan
+}
+
+/// Same as `mapf_post`, but using the sort-and-sweep broad phase for Type 2
+/// edges instead of `AabbTree`. Kept as a separate entry point purely so it
+/// can be benchmarked against `mapf_post` and `mapf_post_bruteforce`.
+pub fn mapf_post_sweep(mapf_result: &MapfResult) -> SemanticPlan {
+    let mut semantic_plan = init_semantic_plan_with_type1_edges(mapf_result);
+    add_type2_edges_sweep(&mut semantic_plan, mapf_result);
+    semantic_plan
+}
+
+/// Same as `mapf_post`, but using the brute-force O((N*T)^2) check for
+/// Type 2 edges, with no spatial pruning. Kept as a separate entry point
+/// purely so it can be benchmarked against `mapf_post` and
+/// `mapf_post_sweep`, and used as the correctness reference in tests.
+pub fn mapf_post_bruteforce(mapf_result: &MapfResult) -> SemanticPlan {
+    let mut semantic_plan = init_semantic_plan_with_type1_edges(mapf_result);
+    add_type2_edges_bruteforce(&mut semantic_plan, mapf_result);
     semantic_plan
 }
 
@@ -1589,11 +1733,11 @@ mod tests {
     }
 }
 
-/// Cross-checks the AABB sweep-and-prune broad phase used by `mapf_post`'s
-/// Type 2 edge detection against a brute-force O((N*T)^2) reference
-/// implementation, to make sure the pruning never drops a true collision.
+/// Cross-checks the `AabbTree` broad phase used by `mapf_post`'s Type 2 edge
+/// detection against a brute-force O((N*T)^2) reference implementation, to
+/// make sure the pruning never drops a true collision.
 #[cfg(test)]
-mod sweep_line_tests {
+mod aabb_tree_tests {
     use super::*;
     use parry2d::na::Vector2;
     use parry2d::shape::Ball;
@@ -1635,54 +1779,14 @@ mod sweep_line_tests {
         edges
     }
 
-    /// The brute-force O((NT)^2) collision-dependency algorithm that the
-    /// sweep-and-prune broad phase replaced.
-    fn brute_force_type2_edges(
-        mapf_result: &MapfResult,
-    ) -> HashSet<(SemanticWaypoint, SemanticWaypoint)> {
-        let mut edges = HashSet::new();
-        let trajectories = &mapf_result.trajectories;
-        for agent1 in 0..trajectories.len() {
-            for ti1 in 1..trajectories[agent1].len() {
-                for agent2 in 0..trajectories.len() {
-                    if agent1 == agent2 {
-                        continue;
-                    }
-                    for ti2 in ti1 + 1..trajectories[agent2].len() {
-                        if collides(
-                            &trajectories[agent1].poses[ti1 - 1],
-                            &trajectories[agent1].poses[ti1],
-                            &*mapf_result.footprints[agent1],
-                            &trajectories[agent2].poses[ti2 - 1],
-                            &trajectories[agent2].poses[ti2],
-                            &*mapf_result.footprints[agent2],
-                            mapf_result.discretization_timestep,
-                        ) {
-                            edges.insert((
-                                SemanticWaypoint {
-                                    agent: agent1,
-                                    trajectory_index: ti1 - 1,
-                                },
-                                SemanticWaypoint {
-                                    agent: agent2,
-                                    trajectory_index: ti2 - 1,
-                                },
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        edges
-    }
-
-    /// For ball footprints, straight-line motion scenarios the sweep-line
-    /// must produce the identical dependency graph as the brute-force
-    /// implementation: the merged endpoint AABB contains each segment's swept
-    /// volume, so AABB-disjoint segments cannot collide, and both algorithms
-    /// then apply the same exact collision check.
+    /// For ball footprints, straight-line motion scenarios all three
+    /// `mapf_post*` variants must produce the identical dependency graph:
+    /// the merged endpoint AABB contains each segment's swept volume, so
+    /// AABB-disjoint segments cannot collide, and every strategy applies
+    /// the same exact `collides` check to whatever candidates its broad
+    /// phase lets through.
     #[test]
-    fn test_sweep_line_matches_bruteforce() {
+    fn test_all_strategies_agree() {
         let scenarios: Vec<(&str, Vec<Vec<(f64, f64)>>)> = vec![
             (
                 "horizontal_cross",
@@ -1745,11 +1849,16 @@ mod sweep_line_tests {
 
         for (name, paths) in scenarios {
             let mapf_result = mapf_result_from(&paths, 0.49);
-            let actual = type2_edges_of(&mapf_post(&mapf_result));
-            let expected = brute_force_type2_edges(&mapf_result);
+            let expected = type2_edges_of(&mapf_post_bruteforce(&mapf_result));
+            let sweep = type2_edges_of(&mapf_post_sweep(&mapf_result));
+            let tree = type2_edges_of(&mapf_post(&mapf_result));
             assert_eq!(
-                actual, expected,
-                "sweep-line and brute-force disagree on scenario '{name}'"
+                sweep, expected,
+                "sweep and brute-force disagree on scenario '{name}'"
+            );
+            assert_eq!(
+                tree, expected,
+                "AABB tree and brute-force disagree on scenario '{name}'"
             );
         }
     }
@@ -1758,8 +1867,8 @@ mod sweep_line_tests {
     /// ball footprints make collisions rotation-invariant. Tests that the
     /// sort-by-Y branch agrees with the sort-by-X branch.
     #[test]
-    fn test_sort_axis_invariance() {
-        // Spread is larger along X -> sweep sorts by X.
+    fn test_rotation_invariance() {
+        // Spread is larger along X, so the tree's root split picks X.
         let horizontal = mapf_result_from(
             &[
                 vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
@@ -1767,7 +1876,8 @@ mod sweep_line_tests {
             ],
             0.49,
         );
-        // Same agent/index structure rotated 90 degrees onto Y -> sweep sorts by Y.
+        // Same agent/index structure rotated 90 degrees onto Y, so the
+        // tree's root split picks Y instead.
         let vertical = mapf_result_from(
             &[
                 vec![(0.0, 0.0), (0.0, 1.0), (0.0, 2.0), (0.0, 3.0)],
@@ -1785,7 +1895,132 @@ mod sweep_line_tests {
         );
         assert_eq!(
             horizontal_edges, vertical_edges,
-            "sort-by-X and sort-by-Y branches must produce identical edges"
+            "X-split and Y-split root partitions must produce identical edges"
         );
+    }
+}
+
+/// Plain `std::time::Instant` timing for `mapf_post_sweep` vs `mapf_post`
+/// (the `AabbTree` strategy) on `grid_scene`, a layout adversarial to a
+/// single global sweep axis. No benchmarking crate, no HTML reports — just
+/// a correctness test (`test_grid_scene_has_no_collisions`, runs in the
+/// normal `cargo test`) and a `#[ignore]`d timing printer, opt in with:
+///
+///   cargo test --release -p mapf post::timing::print_grid_scene_timings -- --ignored --nocapture
+///
+/// `--release` matters a lot here (debug builds are much slower and
+/// exaggerate the gap between strategies); `--nocapture` is what makes the
+/// `println!`s show up, since `cargo test` otherwise swallows stdout for
+/// passing tests.
+#[cfg(test)]
+mod timing {
+    use super::*;
+    use parry2d::na::Vector2;
+    use parry2d::shape::Ball;
+    use std::time::Instant;
+
+    const NUM_WAYPOINTS: usize = 10;
+
+    /// Adversarial to a single global sweep axis: places agents on a
+    /// `ceil(sqrt(n))`-per-side grid, each one wiggling in a small circle in
+    /// place within its own cell (`cell_spacing` apart, so nothing ever
+    /// actually collides — this isolates broad-phase overhead from
+    /// `collides` narrow-phase cost). Crucially, every agent's motion is the
+    /// *same shape*, only translated, so every agent sharing a grid column
+    /// has an identical X extent.
+    ///
+    /// That defeats `add_type2_edges_sweep`'s single global sort axis: once
+    /// sorted by X, all `side` agents in one column share the same X range,
+    /// so the early-break condition (`seg2.aabb.mins.x > seg1.aabb.maxs.x`)
+    /// never fires *within* a column — the scan must still touch every
+    /// other segment in that column even though almost none of them
+    /// actually overlap once Y is considered. That's O(side) touches per
+    /// segment, `side` columns, so O(side^3) = O(n^1.5) total, versus the
+    /// O(n log n) a real 2D structure should manage.
+    ///
+    /// `AabbTree` isn't stuck picking one axis for the whole scene: once it
+    /// splits on X, each half's remaining X-spread shrinks below the
+    /// still-full Y-spread, so the next split picks Y instead — it adapts
+    /// to genuinely 2D-distributed data the way a fixed single-axis sweep
+    /// structurally cannot.
+    fn grid_scene(n: usize) -> MapfResult {
+        let side = (n as f64).sqrt().ceil() as usize;
+        let cell_spacing = 3.0;
+        let wiggle = 0.4;
+
+        let mut trajectories = Vec::with_capacity(n);
+        let mut footprints = Vec::with_capacity(n);
+        for idx in 0..n {
+            let col = (idx % side) as f64;
+            let row = (idx / side) as f64;
+            let cx = col * cell_spacing;
+            let cy = row * cell_spacing;
+            let poses = (0..NUM_WAYPOINTS)
+                .map(|wp_idx| {
+                    let t = wp_idx as f64 / (NUM_WAYPOINTS - 1) as f64
+                        * std::f64::consts::TAU;
+                    Isometry2::new(
+                        Vector2::new(cx + t.sin() * wiggle, cy + t.cos() * wiggle),
+                        0.0,
+                    )
+                })
+                .collect();
+            trajectories.push(Trajectory { poses });
+            footprints.push(Arc::new(Ball::new(0.49)) as Arc<dyn Shape>);
+        }
+        MapfResult {
+            trajectories,
+            footprints,
+            discretization_timestep: 1.0,
+            agent_name_to_id: HashMap::default(),
+        }
+    }
+
+    fn type2_edge_count(plan: &SemanticPlan) -> usize {
+        let mut count = 0;
+        for wp in &plan.waypoints {
+            if let Some(deps) = plan.comes_before(wp) {
+                count += deps
+                    .iter()
+                    .filter(|&&d| plan.waypoints[d].agent != wp.agent)
+                    .count();
+            }
+        }
+        count
+    }
+
+    fn time<F: FnMut()>(mut f: F, iters: u32) -> std::time::Duration {
+        let start = Instant::now();
+        for _ in 0..iters {
+            f();
+        }
+        start.elapsed() / iters
+    }
+
+    /// By construction, `grid_scene` never puts two agents close enough to
+    /// collide; all three strategies must agree on that. Runs at a size
+    /// small enough for brute-force to stay fast, as part of the normal
+    /// `cargo test`.
+    #[test]
+    fn test_grid_scene_has_no_collisions() {
+        let scene = grid_scene(9);
+        let bruteforce = type2_edge_count(&mapf_post_bruteforce(&scene));
+        let sweep = type2_edge_count(&mapf_post_sweep(&scene));
+        let aabb_tree = type2_edge_count(&mapf_post(&scene));
+        assert_eq!(bruteforce, 0, "grid scene should have zero collisions by construction");
+        assert_eq!(sweep, bruteforce, "sweep disagrees with brute-force on grid scene");
+        assert_eq!(aabb_tree, bruteforce, "aabb tree disagrees with brute-force on grid scene");
+    }
+
+    #[test]
+    #[ignore]
+    fn print_grid_scene_timings() {
+        println!("{:>10} {:>14} {:>14}", "agents", "sweep", "aabb_tree");
+        for &n in &[100, 500, 1000, 2000, 4000, 8000, 16000, 32000] {
+            let scene = grid_scene(n);
+            let sweep = time(|| { std::hint::black_box(mapf_post_sweep(&scene)); }, 3);
+            let aabb_tree = time(|| { std::hint::black_box(mapf_post(&scene)); }, 3);
+            println!("{n:>10} {sweep:>14?} {aabb_tree:>14?}");
+        }
     }
 }
