@@ -1855,14 +1855,12 @@ mod aabb_tree_tests {
     }
 }
 
-/// Plain `Instant` timing, no benchmarking crate. Run:
-///   cargo test --release -p mapf post::timing::print_grid_scene_timings -- --ignored --nocapture
+/// See `benches/grid_scene_timings.rs` for timings.
 #[cfg(test)]
 mod timing {
     use super::*;
     use parry2d::na::Vector2;
     use parry2d::shape::Ball;
-    use std::time::Instant;
 
     /// `n` agents on a `ceil(sqrt(n))`-per-side grid, each wiggling in place
     /// in its own cell (nothing collides). Adversarial to a single sweep
@@ -1916,14 +1914,6 @@ mod timing {
         count
     }
 
-    fn time<F: FnMut()>(mut f: F, iters: u32) -> std::time::Duration {
-        let start = Instant::now();
-        for _ in 0..iters {
-            f();
-        }
-        start.elapsed() / iters
-    }
-
     /// `grid_scene` never puts agents close enough to collide.
     #[test]
     fn test_grid_scene_has_no_collisions() {
@@ -1944,46 +1934,6 @@ mod timing {
                 aabb_tree, bruteforce,
                 "aabb tree disagrees with brute-force on grid scene (num_waypoints={num_waypoints})"
             );
-        }
-    }
-
-    /// Two tables (sweep, aabb_tree): agent count (rows) x trajectory
-    /// length (columns).
-    #[test]
-    #[ignore]
-    fn print_grid_scene_timings() {
-        let agent_counts = [
-            1usize, 10, 50, 100, 500, 1000, 2000, 4000, 8000, 16000, 32000,
-        ];
-        let traj_lengths = [1usize, 10, 50];
-
-        for (strategy_name, strategy) in [
-            ("sweep", mapf_post_sweep as fn(&MapfResult) -> SemanticPlan),
-            ("aabb_tree", mapf_post as fn(&MapfResult) -> SemanticPlan),
-        ] {
-            println!("\n== {strategy_name}: agents (rows) x trajectory length (columns) ==");
-            print!("{:>10}", "agents");
-            for &tl in &traj_lengths {
-                print!(" {:>14}", format!("len={tl}"));
-            }
-            println!();
-
-            for &n in &agent_counts {
-                print!("{n:>10}");
-                for &tl in &traj_lengths {
-                    let scene = grid_scene(n, tl);
-                    let segments = n * tl.saturating_sub(1);
-                    let iters = if segments > 5_000 { 1 } else { 3 };
-                    let elapsed = time(
-                        || {
-                            std::hint::black_box(strategy(&scene));
-                        },
-                        iters,
-                    );
-                    print!(" {elapsed:>14?}");
-                }
-                println!();
-            }
         }
     }
 }
