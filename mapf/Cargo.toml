@@ -35,3 +35,7 @@ csv = "1.1"
 
 [dev-dependencies]
 approx = "0.5"
+
+[[bench]]
+name = "grid_scene_timings"
+harness = false
