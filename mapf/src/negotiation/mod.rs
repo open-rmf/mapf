@@ -32,7 +32,7 @@ use crate::{
         se2::{DifferentialDriveLineFollow, WaypointSE2},
         trajectory::TrajectoryIter,
         BoundingBox, CcbsConstraint, CcbsEnvironment, CircularProfile, Duration,
-        DynamicCircularObstacle, DynamicEnvironment, TimePoint, Timed, TravelEffortCost,
+        DynamicCircularObstacle, DynamicEnvironment, Motion, TimePoint, Timed, TravelEffortCost,
     },
     planner::{halt::QueueLengthLimit, Planner},
     premade::{SippSE2, StateSippSE2},
@@ -150,7 +150,7 @@ pub fn negotiate(
             Err(err) => {
                 return Err(NegotiationError::PlanningImpossible(
                     format!("{err:?}").to_owned(),
-                ))
+                ));
             }
         }
         .solve()
@@ -650,6 +650,97 @@ impl NegotiationNode {
             id,
             parent: Some(self.id),
         }
+    }
+}
+
+impl Scenario {
+    pub fn solve(
+        &self,
+        queue_length_limit: Option<usize>,
+    ) -> Result<NegotiationNode, NegotiationError> {
+        let (solution, _, _) = negotiate(self, queue_length_limit)?;
+        Ok(solution)
+    }
+
+    fn derive_mapf_result(
+        &self,
+        solution: &NegotiationNode,
+        timestep: f64,
+    ) -> crate::post::MapfResult {
+        let mut max_finish_time = TimePoint::zero();
+        for proposal in solution.proposals.values() {
+            max_finish_time = max_finish_time.max(proposal.meta.trajectory.finish_motion().time());
+        }
+
+        for obstacle in &self.obstacles {
+            if let Some(last) = obstacle.trajectory.last() {
+                max_finish_time = max_finish_time.max(TimePoint::from_secs_f64(last.0));
+            }
+        }
+
+        let mut trajectories = Vec::new();
+        let mut footprints = Vec::new();
+        let mut agent_name_to_id = std::collections::HashMap::new();
+
+        for (i, (name, agent)) in self.agents.iter().enumerate() {
+            agent_name_to_id.insert(name.clone(), i);
+            footprints.push(
+                std::sync::Arc::new(crate::post::shape::Ball::new(agent.radius))
+                    as std::sync::Arc<dyn crate::post::shape::Shape>,
+            );
+
+            let mut poses = Vec::new();
+            if let Some(proposal) = solution.proposals.get(&i) {
+                let traj = &proposal.meta.trajectory;
+                let motion = traj.motion();
+                let start_time = traj.initial_motion().time();
+
+                let duration = max_finish_time - start_time;
+                let steps = (duration.as_secs_f64() / timestep).ceil() as usize;
+
+                for step in 0..=steps {
+                    let mut t = start_time + Duration::from_secs_f64(step as f64 * timestep);
+                    if t > max_finish_time {
+                        t = max_finish_time;
+                    }
+                    if let Ok(pos) = motion.compute_position(&t) {
+                        poses.push(pos);
+                    }
+                }
+            }
+            trajectories.push(crate::post::Trajectory { poses });
+        }
+
+        for obstacle in &self.obstacles {
+            footprints.push(
+                std::sync::Arc::new(crate::post::shape::Ball::new(obstacle.radius))
+                    as std::sync::Arc<dyn crate::post::shape::Shape>,
+            );
+
+            let mut poses = Vec::new();
+            let steps = (max_finish_time.as_secs_f64() / timestep).ceil() as usize;
+            for step in 0..=steps {
+                let t = step as f64 * timestep;
+                poses.push(obstacle.interpolate(t, self.cell_size));
+            }
+            trajectories.push(crate::post::Trajectory { poses });
+        }
+
+        crate::post::MapfResult {
+            trajectories,
+            footprints,
+            discretization_timestep: timestep,
+            agent_name_to_id,
+        }
+    }
+
+    pub fn derive_semantic_plan(
+        &self,
+        solution: &NegotiationNode,
+        timestep: f64,
+    ) -> crate::post::SemanticPlan {
+        let result = self.derive_mapf_result(solution, timestep);
+        crate::post::mapf_post(&result)
     }
 }
 

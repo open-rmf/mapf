@@ -37,6 +37,8 @@ pub mod error;
 
 pub mod premade;
 
+pub mod post;
+
 mod util;
 
 pub mod prelude {
