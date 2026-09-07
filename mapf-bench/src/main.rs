@@ -5,24 +5,31 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Run a single MAPF benchmark scenario using the negotiation solver.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Path to the Moving AI map file (.map)
     #[arg(short, long)]
     map: PathBuf,
 
+    /// Path to the Moving AI scenario file (.scen)
     #[arg(short, long)]
     scen: PathBuf,
 
+    /// Radius of the agents
     #[arg(short, long, default_value_t = 0.45)]
     radius: f64,
 
-    #[arg(short, long, default_value_t = 1.0)]
+    /// Speed of the agents
+    #[arg(long, default_value_t = 1.0)]
     speed: f64,
 
+    /// Number of agents to include in the benchmark
     #[arg(short, long, default_value_t = 10)]
     num_agents: usize,
 
+    /// Timeout in seconds (enforced by parent process)
     #[arg(short, long, default_value_t = 30)]
     timeout: u64,
 }
