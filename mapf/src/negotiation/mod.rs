@@ -223,12 +223,16 @@ pub fn negotiate_focal(
             let mut solution = None;
             let mut iters = 0;
             while !queue.is_empty() {
-                let top = {
+                let mut top = {
                     let focal_weight = weight;
-                    let min_f = queue.first().unwrap().node.cost.0;
+
+                    // SAFETY: We check that queue is not empty at the start of
+                    // each loop.
+                    let mut best_entry = queue.first().unwrap();
+
+                    let min_f = best_entry.node.cost.0;
                     let threshold = min_f * focal_weight;
 
-                    let mut best_entry = queue.first().unwrap();
                     for entry in queue.iter().take_while(|e| e.node.cost.0 <= threshold) {
                         if entry.node.negotiation.conflicts.len()
                             < best_entry.node.negotiation.conflicts.len()
@@ -236,12 +240,14 @@ pub fn negotiate_focal(
                             best_entry = entry;
                         }
                     }
-                    best_entry.clone()
+
+                    let best_id = best_entry.node.id;
+                    // SAFETY: best_entry was found inside queue, and queue was
+                    // not modified before this function was called, so a node
+                    // with this ID must still exist in the queue. Also, all IDs
+                    // within the queue are unique.
+                    queue.extract_if(.., |entry| entry.node.id == best_id).next().unwrap()
                 };
-                if !queue.remove(&top) {
-                    panic!("Failed to remove node {} from queue!", top.node.id);
-                }
-                let mut top = top;
 
                 iters += 1;
                 if iters % 10 == 0 {
