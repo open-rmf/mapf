@@ -39,6 +39,7 @@ pub struct Map {
     /// The characters in the grid represent different terrain types based on the Moving AI format:
     /// - `.` : Passable terrain
     /// - `@` : Obstacle
+    /// Full format: https://www.movingai.com/benchmarks/formats.html
     pub grid: Vec<Vec<char>>,
 }
 
