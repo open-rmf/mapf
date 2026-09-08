@@ -40,7 +40,7 @@ use crate::{
 };
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -57,6 +57,21 @@ pub enum NegotiationError {
 pub fn negotiate(
     scenario: &Scenario,
     queue_length_limit: Option<usize>,
+) -> Result<
+    (
+        NegotiationNode,
+        Vec<NegotiationNode>,
+        HashMap<usize, String>,
+    ),
+    NegotiationError,
+> {
+    negotiate_focal(scenario, queue_length_limit, 1.0)
+}
+
+pub fn negotiate_focal(
+    scenario: &Scenario,
+    queue_length_limit: Option<usize>,
+    weight: f64,
 ) -> Result<
     (
         NegotiationNode,
@@ -200,14 +215,43 @@ pub fn negotiate(
         };
 
         for root in negotiations.values() {
-            let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::new();
+            let mut queue: BTreeSet<QueueEntry> = BTreeSet::new();
             let root = NegotiationNode::from_root(root, &ideal, base_env.clone(), arena.len());
             arena.push(root.clone());
-            queue.push(QueueEntry::new(root));
+            queue.insert(QueueEntry::new(root));
 
             let mut solution = None;
             let mut iters = 0;
-            while let Some(mut top) = queue.pop() {
+            while !queue.is_empty() {
+                let mut top = {
+                    let focal_weight = weight;
+
+                    // SAFETY: We check that queue is not empty at the start of
+                    // each loop.
+                    let mut best_entry = queue.first().unwrap();
+
+                    let min_f = best_entry.node.cost.0;
+                    let threshold = min_f * focal_weight;
+
+                    for entry in queue.iter().take_while(|e| e.node.cost.0 <= threshold) {
+                        if entry.node.negotiation.conflicts.len()
+                            < best_entry.node.negotiation.conflicts.len()
+                        {
+                            best_entry = entry;
+                        }
+                    }
+
+                    let best_id = best_entry.node.id;
+                    // SAFETY: best_entry was found inside queue, and queue was
+                    // not modified before this function was called, so a node
+                    // with this ID must still exist in the queue. Also, all IDs
+                    // within the queue are unique.
+                    queue
+                        .extract_if(.., |entry| entry.node.id == best_id)
+                        .next()
+                        .unwrap()
+                };
+
                 iters += 1;
                 if iters % 10 == 0 {
                     dbg!(iters);
@@ -217,7 +261,7 @@ pub fn negotiate(
 
                     // Dump the remaining queue into the node history
                     println!("Queue begins at {}", arena.len() + 1);
-                    while let Some(remainder) = queue.pop() {
+                    while let Some(remainder) = queue.pop_first() {
                         arena.push(remainder.node);
                     }
 
@@ -395,7 +439,7 @@ pub fn negotiate(
                         arena.len(),
                     );
                     arena.push(node.clone());
-                    queue.push(QueueEntry::new(node));
+                    queue.insert(QueueEntry::new(node));
                 }
             }
 
@@ -660,27 +704,23 @@ struct QueueEntry {
 
 impl PartialOrd for QueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if f64::abs(self.node.cost.0 - other.node.cost.0) < 0.1 {
-            Reverse(self.node.depth).partial_cmp(&Reverse(other.node.depth))
-        } else {
-            Reverse(self.node.cost).partial_cmp(&Reverse(other.node.cost))
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl PartialEq for QueueEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.node.cost.eq(&other.node.cost)
+        self.node.id == other.node.id
     }
 }
 
 impl Ord for QueueEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if f64::abs(self.node.cost.0 - other.node.cost.0) < 0.1 {
-            self.node.depth.cmp(&self.node.depth)
-        } else {
-            Reverse(self.node.cost).cmp(&Reverse(other.node.cost))
-        }
+        self.node
+            .cost
+            .cmp(&other.node.cost)
+            .then_with(|| Reverse(self.node.depth).cmp(&Reverse(other.node.depth)))
+            .then_with(|| self.node.id.cmp(&other.node.id))
     }
 }
 impl Eq for QueueEntry {}

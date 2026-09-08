@@ -1009,7 +1009,11 @@ impl App {
 
             self.canvas.program.layers.3.searches.clear();
 
-            for ticket in self.search_memory.iter().take(self.debug_ticket_size as usize) {
+            for ticket in self
+                .search_memory
+                .iter()
+                .take(self.debug_ticket_size as usize)
+            {
                 if let Some(mt) = search
                     .memory()
                     .0
@@ -1319,9 +1323,9 @@ impl App {
         let mut total_length = 0.0;
         for solution in solution_node.proposals.values() {
             total_length += solution.meta.trajectory.windows(2).fold(0.0, |acc, w| {
-                (w[0].position.translation.vector - w[1].position.translation.vector).magnitude() + acc
+                (w[0].position.translation.vector - w[1].position.translation.vector).magnitude()
+                    + acc
             });
-            
         }
         println!("Total length: {total_length}");
         assert!(self.canvas.program.layers.3.solutions.is_empty());
@@ -1997,7 +2001,10 @@ impl Application for App {
                                 .push(iced::Space::with_width(Length::Units(16)))
                                 .push(
                                     Column::new()
-                                        .push(Text::new(format!("Debug Paths: {}", &self.debug_ticket_size)))
+                                        .push(Text::new(format!(
+                                            "Debug Paths: {}",
+                                            &self.debug_ticket_size
+                                        )))
                                         .push(iced::Space::with_height(Length::Units(2)))
                                         .push(
                                             Slider::new(
