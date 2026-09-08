@@ -246,7 +246,10 @@ pub fn negotiate_focal(
                     // not modified before this function was called, so a node
                     // with this ID must still exist in the queue. Also, all IDs
                     // within the queue are unique.
-                    queue.extract_if(.., |entry| entry.node.id == best_id).next().unwrap()
+                    queue
+                        .extract_if(.., |entry| entry.node.id == best_id)
+                        .next()
+                        .unwrap()
                 };
 
                 iters += 1;
