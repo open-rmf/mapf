@@ -1323,8 +1323,7 @@ impl App {
         let mut total_length = 0.0;
         for solution in solution_node.proposals.values() {
             total_length += solution.meta.trajectory.windows(2).fold(0.0, |acc, w| {
-                (w[0].position.translation.vector - w[1].position.translation.vector).magnitude()
-                    + acc
+                (w[0].position.translation.vector - w[1].position.translation.vector).magnitude() + acc
             });
         }
         println!("Total length: {total_length}");
