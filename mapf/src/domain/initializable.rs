@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_single_start() {
-        let domain = DefineTrait::<TestState>::new().with(InitFrom);
+        let domain = DefineTrait::<TestState, ()>::new().with(InitFrom);
 
         let initial_state: Result<Vec<_>, _> = domain.initialize(5, &()).into_iter().collect();
         let initial_state = initial_state.unwrap();
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_multi_start() {
-        let domain = DefineTrait::<TestState>::new().with(ManyInit(InitFrom));
+        let domain = DefineTrait::<TestState, ()>::new().with(ManyInit(InitFrom));
 
         let initial_states: Result<Vec<_>, _> = domain
             .initialize([Point::new(0.1, 0.2), Point::new(3.0, 4.0)], &())

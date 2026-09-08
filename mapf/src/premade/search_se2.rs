@@ -45,7 +45,11 @@ pub type SearchSE2<G> = InformedSearch<
     >,
     TravelTimeCost,
     Lifted<
-        DefineTrait<StateSE2<<G as Graph>::Key, DEFAULT_RES>, Anyhow>,
+        DefineTrait<
+            StateSE2<<G as Graph>::Key, DEFAULT_RES>,
+            DifferentialDriveLineFollowMotion,
+            Anyhow,
+        >,
         StateInto<StateR2<<G as Graph>::Key>>,
         DirectTravelHeuristic<SharedGraph<G>, TravelTimeCost>,
     >,
@@ -70,15 +74,16 @@ where
                 extrapolator: motion,
             },
             TravelTimeCost(1.0),
-            DefineTrait::<StateSE2<G::Key, DEFAULT_RES>>::new().lift(
-                StateInto::<StateR2<G::Key>>::new(),
-                DirectTravelHeuristic {
-                    space: DiscreteSpaceTimeR2::<G::Key>::new(),
-                    graph: graph.clone(),
-                    weight: TravelTimeCost(1.0),
-                    extrapolator: motion.into(),
-                },
-            ),
+            DefineTrait::<StateSE2<G::Key, DEFAULT_RES>, DifferentialDriveLineFollowMotion>::new()
+                .lift(
+                    StateInto::<StateR2<G::Key>>::new(),
+                    DirectTravelHeuristic {
+                        space: DiscreteSpaceTimeR2::<G::Key>::new(),
+                        graph: graph.clone(),
+                        weight: TravelTimeCost(1.0),
+                        extrapolator: motion.into(),
+                    },
+                ),
             KeyedCloser(DiscreteSpaceTimeSE2::<G::Key, DEFAULT_RES>::new()),
         )
         .with_initializer(InitializeSE2(graph))

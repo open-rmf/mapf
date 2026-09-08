@@ -40,8 +40,6 @@ pub mod premade;
 mod util;
 
 pub mod prelude {
-    pub use super::algorithm::*;
-    pub use super::domain::*;
     pub use super::graph::*;
     pub use super::planner::*;
     pub use super::premade::*;

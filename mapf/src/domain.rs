@@ -19,8 +19,8 @@
 /// its state representation and a type for errors that may occur while using
 /// the domain.
 ///
-/// Domains may also implement various traits like [`Activity`], [`Weighted`],
-/// and [`Informed`] which can be used by planners to search the domain. You can
+/// Domains may also implement various traits like [`Activity`], [`Weight`],
+/// and [`Heuristic`] which can be used by planners to search the domain. You can
 /// easily gather implementations for these traits into a domain using the
 /// `#[derive(Domain)]` macro.
 ///
@@ -29,11 +29,14 @@ pub trait Domain {
     /// Data structure that represents a state within this domain.
     type State;
 
+    /// Data structure that represents an action within this domain.
+    type Action;
+
     /// The error type that this domain may produce from its various operations.
     type Error;
 }
 
-// pub use mapf_derive::Domain;
+pub use mapf_derive::Domain;
 
 pub mod action_map;
 pub use action_map::*;
@@ -65,8 +68,8 @@ pub use domain_map::*;
 pub mod extrapolator;
 pub use extrapolator::*;
 
-pub mod informed;
-pub use informed::*;
+pub mod heuristic;
+pub use heuristic::*;
 
 pub mod initializable;
 pub use initializable::*;
@@ -86,5 +89,5 @@ pub use space::*;
 pub mod state_map;
 pub use state_map::*;
 
-pub mod weighted;
-pub use weighted::*;
+pub mod weight;
+pub use weight::*;

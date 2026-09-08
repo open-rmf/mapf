@@ -25,7 +25,7 @@ use crate::{
     },
     domain::{
         Activity, ArrivalKeyring, Backtrack, Closable, ClosedStatusForKey, Configurable,
-        Connectable, Domain, Initializable, Keyed, Keyring, Reversible, Weighted,
+        Connectable, Domain, Initializable, Keyed, Keyring, Reversible, Weight,
     },
     error::{Anyhow, ThisError},
 };
@@ -33,14 +33,22 @@ use std::ops::Add;
 
 pub struct BackwardDijkstra<D: Reversible>
 where
-    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
+    D: Domain
+        + Keyed
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Closable<D::State>,
 {
     backward: Dijkstra<D>,
 }
 
 impl<D: Reversible> BackwardDijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
+    D: Domain
+        + Keyed
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Closable<D::State>,
 {
     pub fn new(domain: &D) -> Result<Self, D::ReversalError> {
         Ok(Self {
@@ -55,14 +63,22 @@ where
 
 impl<D: Reversible> Algorithm for BackwardDijkstra<D>
 where
-    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
+    D: Domain
+        + Keyed
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Closable<D::State>,
 {
     type Memory = BackwardMemory<D>;
 }
 
 pub struct BackwardMemory<D: Reversible>
 where
-    D: Domain + Keyed + Activity<D::State> + Weighted<D::State, D::Action> + Closable<D::State>,
+    D: Domain
+        + Keyed
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Closable<D::State>,
 {
     backward: Memory<D>,
 }
@@ -72,8 +88,8 @@ where
     D: Domain
         + Keyring<D::State>
         + Initializable<Goal, Start, D::State>
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
         + Closable<D::State>
         + Connectable<D::State, D::Action, D::Key>
         + ArrivalKeyring<D::Key, Goal, Start>,
@@ -81,7 +97,7 @@ where
     D::Action: Clone,
     D::InitialError: Into<D::Error>,
     D::ArrivalKeyError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
     D::ConnectionError: Into<D::Error>,
     D::State: Clone,
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
@@ -101,8 +117,8 @@ impl<D, Goal> Solvable<Goal> for BackwardDijkstra<D>
 where
     D: Domain
         + Reversible
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
         + Keyring<D::State>
         + Closable<D::State>
         + Connectable<D::State, D::Action, D::Key>
@@ -112,7 +128,7 @@ where
     D::Cost: Clone + Ord + Add<D::Cost, Output = D::Cost>,
     D::ClosedSet<usize>: ClosedStatusForKey<D::Key, usize>,
     D::ActivityError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
     D::ConnectionError: Into<D::Error>,
     D::BacktrackError: Into<D::Error>,
 {
@@ -142,8 +158,8 @@ where
     D: Domain
         + Reversible
         + Keyed
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
         + Closable<D::State>,
     D::ReversalError: Into<Anyhow>,
 {

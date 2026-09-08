@@ -75,10 +75,12 @@ where
     E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
     type State = IncrementalState<S::State, G>;
+    type Action = E::IncrementalExtrapolation;
     type Error = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
 }
 
-impl<S, G, E> Activity<IncrementalState<S::State, G>> for IncrementalGraphMotion<S, G, E>
+impl<S, G, E> Activity<IncrementalState<S::State, G>, E::IncrementalExtrapolation>
+    for IncrementalGraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     S::Key: Borrow<G::Key>,
@@ -89,13 +91,12 @@ where
     E: IncrementalExtrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::IncrementalExtrapolationError: StdError,
 {
-    type Action = E::IncrementalExtrapolation;
     type ActivityError = GraphMotionError<G::Key, E::IncrementalExtrapolationError>;
     type Choices<'a>
         = IncrementalGraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
-        Self::Action: 'a,
+        E::IncrementalExtrapolation: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
         G::EdgeAttributes: 'a;
@@ -103,7 +104,7 @@ where
     fn choices<'a>(&'a self, from_state: IncrementalState<S::State, G>) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
+        E::IncrementalExtrapolation: 'a,
         Self::ActivityError: 'a,
         IncrementalState<S::State, G>: 'a,
     {
