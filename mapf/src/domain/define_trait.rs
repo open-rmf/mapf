@@ -20,11 +20,11 @@ use super::*;
 use anyhow::Error as AnyError;
 
 /// To begin defining a trait for a domain, use [`DefineTrait::new()`].
-pub struct DefineTrait<State, Error = AnyError> {
-    _ignore: std::marker::PhantomData<(State, Error)>,
+pub struct DefineTrait<State, Action, Error = AnyError> {
+    _ignore: std::marker::PhantomData<(State, Action, Error)>,
 }
 
-impl<State, Error> DefineTrait<State, Error> {
+impl<State, Action, Error> DefineTrait<State, Action, Error> {
     /// This function begins defining a domain by indicating what the top-level
     /// state and action representation is.
     ///
@@ -42,18 +42,19 @@ impl<State, Error> DefineTrait<State, Error> {
     }
 }
 
-impl<State, Error> Domain for DefineTrait<State, Error> {
+impl<State, Action, Error> Domain for DefineTrait<State, Action, Error> {
     type State = State;
+    type Action = Action;
     type Error = Error;
 }
 
-impl<State, Error> Clone for DefineTrait<State, Error> {
+impl<State, Action, Error> Clone for DefineTrait<State, Action, Error> {
     fn clone(&self) -> Self {
         Self::new()
     }
 }
 
-impl<State, Error> Default for DefineTrait<State, Error> {
+impl<State, Action, Error> Default for DefineTrait<State, Action, Error> {
     fn default() -> Self {
         Self::new()
     }
@@ -67,6 +68,7 @@ pub struct Incorporated<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Incorporated<Base, Prop> {
     type State = Base::State;
+    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -106,6 +108,7 @@ pub struct Chained<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Chained<Base, Prop> {
     type State = Base::State;
+    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -138,6 +141,7 @@ pub struct Mapped<Base, Prop> {
 }
 impl<Base: Domain, Prop> Domain for Mapped<Base, Prop> {
     type State = Base::State;
+    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -172,6 +176,7 @@ pub struct Lifted<Base, Lifter, Prop> {
 }
 impl<Base: Domain, Lifter, Prop> Domain for Lifted<Base, Lifter, Prop> {
     type State = Base::State;
+    type Action = Base::Action;
     type Error = Base::Error;
 }
 
@@ -196,7 +201,11 @@ pub trait Lift {
 
 type ChainedLift<Base, Lifter, Prop> = Chained<
     Base,
-    Lifted<DefineTrait<<Base as Domain>::State, <Base as Domain>::Error>, Lifter, Prop>,
+    Lifted<
+        DefineTrait<<Base as Domain>::State, <Base as Domain>::Action, <Base as Domain>::Error>,
+        Lifter,
+        Prop,
+    >,
 >;
 
 impl<D: Domain> Lift for D {
@@ -215,6 +224,6 @@ impl<D: Domain> Lift for D {
     where
         Self: Sized,
     {
-        self.chain(DefineTrait::<D::State, D::Error>::new().lift(lifter, prop))
+        self.chain(DefineTrait::<D::State, D::Action, D::Error>::new().lift(lifter, prop))
     }
 }

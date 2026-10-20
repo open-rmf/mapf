@@ -20,8 +20,8 @@ use crate::{
         tree::*, Algorithm, Coherent, MinimumCostBound, Path, QueueLength, SearchStatus, Solvable,
     },
     domain::{
-        Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Informed,
-        Initializable, Satisfiable, Weighted,
+        Activity, Closable, CloseResult, ClosedSet, Configurable, Connectable, Domain, Heuristic,
+        Initializable, Satisfiable, Weight,
     },
     error::{Anyhow, ThisError},
 };
@@ -31,8 +31,8 @@ use std::ops::Add;
 /// * [`Initializable`]
 /// * [`Closable`]
 /// * [`Activity`]
-/// * [`Weighted`]
-/// * [`Informed`]
+/// * [`Weight`]
+/// * [`Heuristic`]
 /// * [`Satisfiable`]
 ///
 /// The following templates implement these traits:
@@ -78,14 +78,14 @@ pub enum AStarSearchError<D> {
 }
 
 impl<D> AStar<D> {
-    fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
+    pub fn domain_err(err: impl Into<D::Error>) -> AStarSearchError<D::Error>
     where
         D: Domain,
     {
         AStarSearchError::Domain(err.into())
     }
 
-    fn algo_err(err: TreeError) -> AStarSearchError<D::Error>
+    pub fn algo_err(err: TreeError) -> AStarSearchError<D::Error>
     where
         D: Domain,
     {
@@ -95,10 +95,10 @@ impl<D> AStar<D> {
 
 impl<D> AStar<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
     D::State: Clone,
     D::Action: Clone,
-    D::WeightedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
 {
     #[inline]
@@ -108,9 +108,9 @@ where
         goal: &Goal,
     ) -> Result<<Self as Algorithm>::Memory, AStarSearchError<D::Error>>
     where
-        D: Initializable<Start, Goal, D::State> + Informed<D::State, Goal, CostEstimate = D::Cost>,
+        D: Initializable<Start, Goal, D::State> + Heuristic<D::State, Goal, CostEstimate = D::Cost>,
         D::InitialError: Into<D::Error>,
-        D::InformedError: Into<D::Error>,
+        D::HeuristicError: Into<D::Error>,
     {
         let mut memory = Memory(Tree::new(domain.new_closed_set()));
 
@@ -151,7 +151,7 @@ where
         goal: &Goal,
     ) -> Result<Flow<(usize, Node<D::State, D::Action, D::Cost>), D>, AStarSearchError<D::Error>>
     where
-        D: Satisfiable<D::State, Goal> + Activity<D::State>,
+        D: Satisfiable<D::State, Goal> + Activity<D::State, D::Action>,
         D::SatisfactionError: Into<D::Error>,
     {
         let top_id = match queue.pop() {
@@ -194,11 +194,11 @@ where
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
     where
-        D: Activity<D::State>,
+        D: Activity<D::State, D::Action>,
         D::Action: Into<D::Action>,
         D::ActivityError: Into<D::Error>,
-        D: Informed<D::State, Goal, CostEstimate = D::Cost>,
-        D::InformedError: Into<D::Error>,
+        D: Heuristic<D::State, Goal, CostEstimate = D::Cost>,
+        D::HeuristicError: Into<D::Error>,
     {
         for next in domain.choices(parent.state.clone()) {
             let (action, child_state) = next.map_err(Self::domain_err)?;
@@ -229,8 +229,8 @@ where
         goal: &Goal,
     ) -> Result<(), AStarSearchError<D::Error>>
     where
-        D: Informed<D::State, Goal, CostEstimate = D::Cost>,
-        D::InformedError: Into<D::Error>,
+        D: Heuristic<D::State, Goal, CostEstimate = D::Cost>,
+        D::HeuristicError: Into<D::Error>,
     {
         let cost = match domain
             .cost(parent_state, &action, &child_state)
@@ -264,7 +264,7 @@ where
 
 impl<D> Algorithm for AStar<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
 }
@@ -274,15 +274,15 @@ where
     D: Domain
         + Initializable<Start, Goal, D::State>
         + Closable<D::State>
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Informed<D::State, Goal, CostEstimate = D::Cost>,
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Heuristic<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
     D::Action: Clone,
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::InitialError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
-    D::InformedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
+    D::HeuristicError: Into<D::Error>,
 {
     type InitError = AStarSearchError<D::Error>;
 
@@ -295,9 +295,9 @@ impl<D, Goal> Solvable<Goal> for AStar<D>
 where
     D: Domain
         + Closable<D::State>
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Informed<D::State, Goal, CostEstimate = D::Cost>
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Heuristic<D::State, Goal, CostEstimate = D::Cost>
         + Satisfiable<D::State, Goal>,
     D::State: Clone,
     D::Action: Clone,
@@ -305,8 +305,8 @@ where
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
     D::ActivityError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
-    D::InformedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
+    D::HeuristicError: Into<D::Error>,
 {
     type Solution = Path<D::State, D::Action, D::Cost>;
     type StepError = AStarSearchError<D::Error>;
@@ -345,7 +345,7 @@ impl<D: Configurable> Configurable for AStar<D> {
 
 impl<D> Algorithm for AStarConnect<D>
 where
-    D: Domain + Closable<D::State> + Activity<D::State> + Weighted<D::State, D::Action>,
+    D: Domain + Closable<D::State> + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
 {
     type Memory = Memory<D::ClosedSet<usize>, D::State, D::Action, D::Cost>;
 }
@@ -355,15 +355,15 @@ where
     D: Domain
         + Initializable<Start, Goal, D::State>
         + Closable<D::State>
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Informed<D::State, Goal, CostEstimate = D::Cost>,
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Heuristic<D::State, Goal, CostEstimate = D::Cost>,
     D::State: Clone,
     D::Action: Clone,
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::InitialError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
-    D::InformedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
+    D::HeuristicError: Into<D::Error>,
 {
     type InitError = AStarSearchError<D::Error>;
 
@@ -376,9 +376,9 @@ impl<D, Goal> Solvable<Goal> for AStarConnect<D>
 where
     D: Domain
         + Closable<D::State>
-        + Activity<D::State>
-        + Weighted<D::State, D::Action>
-        + Informed<D::State, Goal, CostEstimate = D::Cost>
+        + Activity<D::State, D::Action>
+        + Weight<D::State, D::Action>
+        + Heuristic<D::State, Goal, CostEstimate = D::Cost>
         + Satisfiable<D::State, Goal>
         + Connectable<D::State, D::Action, Goal>,
     D::State: Clone,
@@ -386,8 +386,8 @@ where
     D::Cost: Ord + Add<Output = D::Cost> + Clone,
     D::SatisfactionError: Into<D::Error>,
     D::ActivityError: Into<D::Error>,
-    D::WeightedError: Into<D::Error>,
-    D::InformedError: Into<D::Error>,
+    D::WeightError: Into<D::Error>,
+    D::HeuristicError: Into<D::Error>,
     D::ConnectionError: Into<D::Error>,
 {
     type Solution = Path<D::State, D::Action, D::Cost>;
@@ -442,10 +442,10 @@ impl<D: Configurable> Configurable for AStarConnect<D> {
 
 #[derive(Debug, Clone)]
 pub struct Node<State, Action, Cost> {
-    state: State,
-    cost: Cost,
-    remaining_cost_estimate: Cost,
-    parent: Option<(usize, Action)>,
+    pub state: State,
+    pub cost: Cost,
+    pub remaining_cost_estimate: Cost,
+    pub parent: Option<(usize, Action)>,
 }
 
 impl<State, Action, Cost> Node<State, Action, Cost> {
@@ -494,7 +494,7 @@ where
 /// Control flow return value for functions that constitute step()
 enum Flow<T, D>
 where
-    D: Domain + Activity<D::State> + Weighted<D::State, D::Action>,
+    D: Domain + Activity<D::State, D::Action> + Weight<D::State, D::Action>,
     // D::Error: StdError,
 {
     Proceed(T),

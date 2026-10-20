@@ -101,6 +101,12 @@ macro_rules! cost_impl {
                 self.0 /= rhs.0;
             }
         }
+        impl Mul<$f> for Cost<$f> {
+            type Output = Self;
+            fn mul(self, rhs: $f) -> Self {
+                Cost(self.0 * rhs)
+            }
+        }
         impl Zero for Cost<$f> {
             fn zero() -> Self {
                 Cost(0.0)

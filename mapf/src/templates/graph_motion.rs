@@ -66,10 +66,11 @@ where
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
 {
     type State = S::State;
+    type Action = E::Extrapolation;
     type Error = GraphMotionError<G::Key, E::ExtrapolationError>;
 }
 
-impl<S, G, E> Activity<S::State> for GraphMotion<S, G, E>
+impl<S, G, E> Activity<S::State, E::Extrapolation> for GraphMotion<S, G, E>
 where
     S: KeyedSpace<G::Key>,
     S::Key: Borrow<G::Key>,
@@ -80,13 +81,12 @@ where
     E: Extrapolator<S::Waypoint, G::Vertex, G::EdgeAttributes, G::Key>,
     E::ExtrapolationError: StdError,
 {
-    type Action = E::Extrapolation;
     type ActivityError = GraphMotionError<G::Key, E::ExtrapolationError>;
     type Choices<'a>
         = GraphMotionChoices<'a, S, G, E>
     where
         Self: 'a,
-        Self::Action: 'a,
+        E::Extrapolation: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
         G::EdgeAttributes: 'a,
@@ -96,7 +96,7 @@ where
     fn choices<'a>(&'a self, from_state: S::State) -> Self::Choices<'a>
     where
         Self: 'a,
-        Self::Action: 'a,
+        E::Extrapolation: 'a,
         Self::ActivityError: 'a,
         S::State: 'a,
         G::Key: 'a,

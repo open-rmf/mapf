@@ -16,7 +16,7 @@
 */
 
 use crate::{
-    domain::{Cost, Reversible, Weighted},
+    domain::{Cost, Reversible, Weight},
     error::NoError,
     motion::{Measurable, Timed},
 };
@@ -82,16 +82,16 @@ impl Default for TravelEffortCost {
     }
 }
 
-impl<State: Timed, Action: Measurable<State>> Weighted<State, Action> for TravelEffortCost {
+impl<State: Timed, Action: Measurable<State>> Weight<State, Action> for TravelEffortCost {
     type Cost = Cost<f64>;
-    type WeightedError = NoError;
+    type WeightError = NoError;
 
     fn cost(
         &self,
         from_state: &State,
         action: &Action,
         to_state: &State,
-    ) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    ) -> Result<Option<Self::Cost>, Self::WeightError> {
         // Using the absolute value of the difference allows this same
         // implementation to work both forwards and backwards in time. We are
         // assuming that any case where time is decreasing in the child state,
@@ -105,7 +105,7 @@ impl<State: Timed, Action: Measurable<State>> Weighted<State, Action> for Travel
         Ok(Some(Cost(cost)))
     }
 
-    fn initial_cost(&self, _: &State) -> Result<Option<Self::Cost>, Self::WeightedError> {
+    fn initial_cost(&self, _: &State) -> Result<Option<Self::Cost>, Self::WeightError> {
         Ok(Some(Cost(0.0)))
     }
 }
